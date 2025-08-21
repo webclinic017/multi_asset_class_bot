@@ -36,21 +36,21 @@ class ForexStrategy(bt.Strategy):
     4. Use volume profile for additional confirmation
     """
     params = (
-        # Moving Average Parameters
-        ('fast_length', 10),
-        ('slow_length', 30),
+        # Moving Average Parameters - OPTIMIZED VALUES
+        ('fast_length', 15),           # Optimized from 10 to 15
+        ('slow_length', 35),           # Optimized from 30 to 35
         
-        # Technical Indicator Parameters
-        ('rsi_period', 14),            # RSI period
-        ('rsi_oversold', 30),          # RSI oversold level
-        ('rsi_overbought', 70),        # RSI overbought level
+        # Technical Indicator Parameters - OPTIMIZED VALUES
+        ('rsi_period', 21),            # Optimized from 14 to 21
+        ('rsi_oversold', 20),          # Optimized from 30 to 20
+        ('rsi_overbought', 80),        # Optimized from 70 to 80
         ('macd_fast', 12),             # MACD fast EMA
         ('macd_slow', 26),             # MACD slow EMA
         ('macd_signal', 9),            # MACD signal line
         
-        # Risk Management
-        ('stop_loss_percent', 0.005), # 0.5% stop loss
-        ('take_profit_percent', 0.01), # 1% take profit
+        # Risk Management - OPTIMIZED VALUES
+        ('stop_loss_percent', 0.015),  # Optimized from 0.005 to 0.015 (1.5% stop loss)
+        ('take_profit_percent', 0.045), # Optimized from 0.01 to 0.045 (4.5% take profit)
         
         # Supply/Demand Parameters
         ('pivot_period', 5),           # Period for pivot calculation

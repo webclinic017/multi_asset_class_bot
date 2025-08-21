@@ -139,12 +139,35 @@ def run_backtest_mode(config):
         logger.error(f"An error occurred during backtesting: {e}")
 
 def run_live_trading_mode(config):
-    """Runs the bot in live trading mode with actual signal generation."""
+    """Runs the bot in live trading mode with dynamic optimization and actual signal generation."""
     import time
     import pandas as pd
     from datetime import datetime, timedelta
+    from utils.dynamic_optimizer import DynamicOptimizer
     
-    logger.info("Starting trading bot in LIVE TRADING mode.")
+    logger.info("Starting trading bot in LIVE TRADING mode with DYNAMIC OPTIMIZATION.")
+    
+    # Initialize dynamic optimizer
+    logger.info("=== INITIALIZING DYNAMIC OPTIMIZATION ===")
+    dynamic_optimizer = DynamicOptimizer(
+        config_path='config/config.yaml',
+        output_dir='output'
+    )
+    
+    # Get optimized parameters (will run optimization if needed)
+    optimized_params = dynamic_optimizer.get_optimized_parameters(
+        max_age_minutes=5,  # Run optimization if CSV is older than 5 minutes
+        auto_optimize=True,  # Automatically run optimization if needed
+        generations=40,      # Use 40 generations for optimization
+        population=60        # Use population of 60
+    )
+    
+    if optimized_params:
+        logger.info("=== OPTIMIZED PARAMETERS LOADED ===")
+        for param, value in optimized_params.items():
+            logger.info(f"  {param}: {value}")
+    else:
+        logger.warning("Could not load optimized parameters - using default config values")
     
     # Initialize components for live trading
     broker_type = "oanda"
@@ -194,9 +217,15 @@ def run_live_trading_mode(config):
             
         logger.info(f"Starting live trading for {forex_symbol} on {timeframe} timeframe")
         
-        # Initialize strategy with parameters
+        # Initialize strategy with parameters (use optimized if available)
         strategy_params = config.get('strategy', {}).get('params', {})
-        logger.info(f"Strategy parameters: {strategy_params}")
+        
+        # Override with optimized parameters if available
+        if optimized_params:
+            logger.info("Using dynamically optimized parameters for live trading")
+            strategy_params.update(optimized_params)
+        
+        logger.info(f"Final strategy parameters for live trading: {strategy_params}")
         
         # Live trading loop
         iteration = 0
