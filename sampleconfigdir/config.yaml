@@ -1,0 +1,70 @@
+logging:
+  level: INFO
+  file: logs/trading_bot.log
+
+data:
+  symbols:
+    - name: EUR_USD
+      type: forex
+      timeframe: H1
+  oanda:
+    account_id:
+    access_token:
+    practice: true
+  preprocessing:
+    add_technical_indicators: true
+    normalize_features: true
+
+oanda:
+  account_id: 
+  access_token: 
+  practice: true
+
+strategy:
+  name: ForexStrategy
+  params:
+    fast_length: 10
+    slow_length: 30
+    stop_loss_percent: 0.01
+    take_profit_percent: 0.02
+    pivot_period: 5
+    zone_lookback: 50
+    min_zone_strength: 2.0
+    zone_buffer: 0.0005
+    max_zones: 10
+    volume_period: 50
+    volume_levels: 20
+    use_supply_demand: true
+    use_volume_filter: true
+    min_risk_reward: 2.0
+    printlog: true
+
+risk:
+  risk_per_trade: 0.01
+  max_drawdown_limit: 0.20
+  max_concurrent_positions: 5
+  position_sizing_method: fixed_fraction
+  fixed_fraction: 0.02
+
+backtesting:
+  initial_capital: 10000
+  commission: 0.001
+  slippage: 0.0005
+  start_date: "2023-01-01"
+  end_date: "2023-12-31"
+
+ccxt:
+  api_key: ${CCXT_API_KEY}
+  secret: ${CCXT_SECRET}
+  password: ${CCXT_PASSWORD}
+
+ibkr:
+  host: 127.0.0.1
+  port: 7497
+  client_id: 1
+
+optimization:
+  method: genetic_algorithm
+  population_size: 20
+  generations: 30
+  mutation_probability: 0.15

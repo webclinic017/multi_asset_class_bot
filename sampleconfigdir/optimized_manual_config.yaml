@@ -1,0 +1,83 @@
+logging:
+  level: INFO
+  file: logs/trading_bot.log
+
+data:
+  symbols:
+    - name: EUR_USD
+      type: forex
+      timeframe: H1
+  oanda:
+    account_id:
+    access_token: 
+    practice: true
+  preprocessing:
+    add_technical_indicators: true
+    normalize_features: true
+
+strategy:
+  name: ForexStrategy
+  params:
+    # Optimized MA parameters for better trend detection
+    fast_ma: 8
+    slow_ma: 21
+    # RSI parameters for better overbought/oversold detection
+    rsi_period: 21
+    rsi_overbought: 75
+    rsi_oversold: 25
+    # Supply/demand parameters for stronger zones
+    pivot_period: 7
+    zone_lookback: 75
+    min_zone_strength: 3.0
+    # Better risk management
+    stop_loss_pct: 1.5
+    take_profit_pct: 3.0
+    volume_threshold: 1.2
+    printlog: true
+
+risk:
+  risk_per_trade: 0.01
+  max_drawdown_limit: 0.20
+  max_concurrent_positions: 5
+  position_sizing_method: fixed_fraction
+  fixed_fraction: 0.02
+
+backtesting:
+  initial_capital: 10000
+  commission: 0.001
+  slippage: 0.0005
+  start_date: "2023-01-01"
+  end_date: "2023-12-31"
+
+# Legacy trading section for main.py compatibility
+trading:
+  forex_pairs:
+    - EUR_USD
+  data_timeframe: H1
+  risk_per_trade: 0.01
+  max_drawdown_limit: 0.20
+  max_concurrent_positions: 5
+  position_sizing_method: fixed_fraction
+  fixed_fraction: 0.02
+  live_data_fetch_interval: 60
+
+oanda:
+  account_id: 
+  access_token:
+  practice: true
+
+ccxt:
+  api_key: ${CCXT_API_KEY}
+  secret: ${CCXT_SECRET}
+  password: ${CCXT_PASSWORD}
+
+ibkr:
+  host: 127.0.0.1
+  port: 7497
+  client_id: 1
+
+optimization:
+  method: genetic_algorithm
+  population_size: 20
+  generations: 30
+  mutation_probability: 0.15

@@ -1,0 +1,59 @@
+backtesting:
+  commission: 0.001
+  end_date: '2023-12-31'
+  initial_capital: 10000
+  slippage: 0.0005
+  start_date: '2023-01-01'
+ccxt:
+  api_key: ${CCXT_API_KEY}
+  password: ${CCXT_PASSWORD}
+  secret: ${CCXT_SECRET}
+data:
+  oanda:
+    access_token: 
+    account_id: 
+    practice: true
+  preprocessing:
+    add_technical_indicators: true
+    normalize_features: true
+  symbols:
+  - name: EUR_USD
+    timeframe: H1
+    type: forex
+ibkr:
+  client_id: 1
+  host: 127.0.0.1
+  port: 7497
+logging:
+  file: logs/trading_bot.log
+  level: INFO
+oanda:
+  access_token: 
+  account_id: 
+  practice: true
+optimization:
+  generations: 30
+  method: genetic_algorithm
+  mutation_probability: 0.15
+  population_size: 20
+risk:
+  fixed_fraction: 0.02
+  max_concurrent_positions: 5
+  max_drawdown_limit: 0.2
+  position_sizing_method: fixed_fraction
+  risk_per_trade: 0.01
+strategy:
+  name: ForexStrategy
+  params:
+    fast_ma: 20
+    min_zone_strength: 5.0
+    pivot_period: 3
+    printlog: true
+    rsi_overbought: 65.0
+    rsi_oversold: 15.0
+    rsi_period: 30
+    slow_ma: 50
+    stop_loss_pct: 0.5
+    take_profit_pct: 5.0
+    volume_threshold: 0.8
+    zone_lookback: 100
