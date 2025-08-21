@@ -8,6 +8,8 @@ from ta.volatility import BollingerBands, AverageTrueRange \
 + Backtrader cpu maxcpus options enables multiprocessing without pool
 high memory usage switch 8-10 core
 
++ Rename sampleconfigdir to config and fill ount oanda credentials in yaml files
+
 + python main.py --mode live --config config/config.yaml
 
 + python main.py --mode backtest --config config/config.yaml

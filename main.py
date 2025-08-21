@@ -328,37 +328,110 @@ def run_live_trading_mode(config):
             logger.info("Disconnected from broker.")
 
 def run_optimization_mode(config):
-    """Runs the bot in strategy optimization mode."""
+    """Runs the bot in strategy optimization mode using genetic algorithm."""
     logger.info("Starting trading bot in OPTIMIZATION mode.")
     
-    optimizer = Optimizer(config=config)
-    engine = BacktestEngine(config=config) # Re-use BacktestEngine for data loading
-
-    # Example: Optimize ForexStrategy
-    # Get symbol info from new config structure
-    if 'data' in config and 'symbols' in config['data']:
-        symbol_info = config['data']['symbols'][0]
-        forex_symbol = symbol_info['name']
-        forex_timeframe = symbol_info['timeframe']
-    else:
-        # Fallback to old structure
-        forex_symbol = config['trading']['forex_pairs'][0]
-        forex_timeframe = config['trading']['data_timeframe']
-    
+    # Use our genetic algorithm optimization instead of the old optimizer
     try:
-        forex_data = engine.load_data(forex_symbol, 'forex', forex_timeframe)
-        if forex_data is not None:
-            # The optimizer expects a backtrader data feed
-            optimization_results = optimizer.optimize(ForexStrategy, forex_data) # Optimize ForexStrategy
-            logger.info("Optimization Results:")
-            print(optimization_results)
+        # Import our genetic optimizer
+        from optimization.genetic_optimizer import GeneticOptimizer
+        
+        # Create a temporary config file for the genetic optimizer
+        import tempfile
+        import os
+        
+        # Create temporary config file
+        temp_config_fd, temp_config_path = tempfile.mkstemp(suffix='.yaml', text=True)
+        
+        try:
+            with os.fdopen(temp_config_fd, 'w') as temp_file:
+                yaml.dump(config, temp_file, default_flow_style=False, indent=2)
             
-            # Optionally, save results to a file
-            # optimization_results.to_csv('optimization_results.csv')
-        else:
-            logger.error(f"Could not load data for {forex_symbol}. Optimization aborted.")
-    except NotImplementedError as e:
-        logger.error(f"Optimization error: {e}")
+            # Initialize genetic optimizer with config file path
+            genetic_optimizer = GeneticOptimizer(temp_config_path)
+            
+            logger.info("Starting genetic algorithm optimization...")
+            logger.info(f"Population size: {config.get('optimization', {}).get('population_size', 20)}")
+            logger.info(f"Generations: {config.get('optimization', {}).get('generations', 30)}")
+            
+            # Run optimization
+            results = genetic_optimizer.optimize(
+                num_generations=config.get('optimization', {}).get('generations', 30),
+                sol_per_pop=config.get('optimization', {}).get('population_size', 20),
+                mutation_probability=config.get('optimization', {}).get('mutation_probability', 0.15)
+            )
+            
+            best_params = results['best_params']  # Complete parameters
+            best_optimized_params = results['best_optimized_params']  # Just optimized ones
+            best_fitness = results['best_fitness']
+            
+            logger.info("=== OPTIMIZATION RESULTS ===")
+            logger.info(f"Best fitness score: {best_fitness:.4f}")
+            logger.info("Best optimized parameters:")
+            for param, value in best_optimized_params.items():
+                logger.info(f"  {param}: {value}")
+            
+            # Save optimized config
+            optimized_config_path = "config/optimized_config.yaml"
+            genetic_optimizer.save_optimized_config(best_optimized_params, optimized_config_path)
+            logger.info(f"Optimized configuration saved to: {optimized_config_path}")
+            
+            # Test the optimized parameters
+            logger.info("Testing optimized parameters...")
+            
+            # Initialize components for testing
+            data_feed = OANDADataFeed(config)
+            preprocessor = DataPreprocessor()
+            risk_manager = RiskManager(config)
+            
+            engine = BacktestEngine(
+                data_feed=data_feed,
+                preprocessor=preprocessor,
+                risk_manager=risk_manager,
+                config=config
+            )
+            
+            # Get symbol info
+            if 'data' in config and 'symbols' in config['data']:
+                symbol_info = config['data']['symbols'][0]
+                forex_symbol = symbol_info['name']
+                forex_timeframe = symbol_info['timeframe']
+                asset_type = symbol_info['type']
+            else:
+                forex_symbol = config['trading']['forex_pairs'][0]
+                forex_timeframe = config['trading']['data_timeframe']
+                asset_type = 'forex'
+            
+            # Load data and test optimized strategy
+            forex_data = engine.load_data(forex_symbol, asset_type, forex_timeframe)
+            if forex_data is not None:
+                # Use the complete parameters (already includes base + optimized)
+                test_params = best_params.copy()
+                test_params['printlog'] = False  # Disable logging for optimization test
+                
+                # Add optimized strategy
+                engine.add_strategy('ForexStrategy', **test_params)
+                test_results = engine.run()
+                
+                if test_results:
+                    logger.info("=== OPTIMIZED STRATEGY RESULTS ===")
+                    logger.info(f"Final Portfolio Value: {test_results['final_value']:.2f}")
+                    logger.info(f"Total Return: {test_results['total_return']:.2f}%")
+                    logger.info(f"Sharpe Ratio: {test_results['sharpe_ratio']:.2f}")
+                    logger.info(f"Max Drawdown: {test_results['max_drawdown']:.2f}%")
+                    logger.info(f"Total Trades: {test_results['total_trades']}")
+                    logger.info(f"Win Rate: {test_results['win_rate']:.2f}%")
+                    logger.info(f"Average Win: {test_results['avg_win']:.4f}")
+                    logger.info(f"Average Loss: {test_results['avg_loss']:.4f}")
+            
+        finally:
+            # Clean up temporary config file
+            if os.path.exists(temp_config_path):
+                os.unlink(temp_config_path)
+                
+    except ImportError as e:
+        logger.error(f"Could not import genetic optimizer: {e}")
+        logger.error("Please ensure the genetic optimizer is properly installed.")
     except Exception as e:
         logger.error(f"An error occurred during optimization: {e}")
 

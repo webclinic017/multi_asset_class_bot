@@ -50,26 +50,18 @@ class GeneticOptimizer:
         Each parameter has [min_value, max_value] bounds
         """
         self.param_bounds = {
-            # Moving Average parameters
-            'fast_ma': [5, 20],      # Fast MA period
-            'slow_ma': [20, 50],     # Slow MA period
-            
-            # RSI parameters
-            'rsi_period': [10, 30],           # RSI calculation period
-            'rsi_overbought': [65, 85],       # RSI overbought threshold
-            'rsi_oversold': [15, 35],         # RSI oversold threshold
+            # Moving Average parameters (match ForexStrategy parameter names)
+            'fast_length': [5, 20],      # Fast MA period
+            'slow_length': [20, 50],     # Slow MA period
             
             # Supply/Demand parameters
             'pivot_period': [3, 10],          # Pivot detection period
             'zone_lookback': [20, 100],       # Zone lookback period
             'min_zone_strength': [1.0, 5.0], # Minimum zone strength
             
-            # Risk Management parameters
-            'stop_loss_pct': [0.5, 3.0],     # Stop loss percentage
-            'take_profit_pct': [1.0, 5.0],   # Take profit percentage
-            
-            # Volume confirmation threshold
-            'volume_threshold': [0.8, 1.5],   # Volume multiplier threshold
+            # Risk Management parameters (match ForexStrategy parameter names)
+            'stop_loss_percent': [0.005, 0.03],     # Stop loss percentage (0.5% to 3%)
+            'take_profit_percent': [0.01, 0.05],    # Take profit percentage (1% to 5%)
         }
         
         # Create parameter names list and bounds arrays for PyGAD
@@ -88,7 +80,7 @@ class GeneticOptimizer:
         """
         params = {}
         for i, param_name in enumerate(self.param_names):
-            if param_name in ['fast_ma', 'slow_ma', 'rsi_period', 'pivot_period', 'zone_lookback']:
+            if param_name in ['fast_length', 'slow_length', 'pivot_period', 'zone_lookback']:
                 # Integer parameters
                 params[param_name] = int(solution[i])
             else:
@@ -107,24 +99,14 @@ class GeneticOptimizer:
         Returns:
             Complete configuration dictionary
         """
-        config = self.base_config.copy()
+        import copy
+        config = copy.deepcopy(self.base_config)
         
-        # Update strategy parameters
-        config['strategy']['params']['fast_ma'] = params['fast_ma']
-        config['strategy']['params']['slow_ma'] = params['slow_ma']
-        config['strategy']['params']['rsi_period'] = params['rsi_period']
-        config['strategy']['params']['rsi_overbought'] = params['rsi_overbought']
-        config['strategy']['params']['rsi_oversold'] = params['rsi_oversold']
-        
-        # Update supply/demand parameters
-        config['strategy']['params']['pivot_period'] = params['pivot_period']
-        config['strategy']['params']['zone_lookback'] = params['zone_lookback']
-        config['strategy']['params']['min_zone_strength'] = params['min_zone_strength']
-        
-        # Update risk management parameters
-        config['strategy']['params']['stop_loss_pct'] = params['stop_loss_pct']
-        config['strategy']['params']['take_profit_pct'] = params['take_profit_pct']
-        config['strategy']['params']['volume_threshold'] = params['volume_threshold']
+        # Only update parameters that exist in our parameter space
+        # This ensures we don't add unexpected parameters
+        for param_name, param_value in params.items():
+            if param_name in self.param_names:
+                config['strategy']['params'][param_name] = param_value
         
         return config
         
@@ -145,8 +127,8 @@ class GeneticOptimizer:
             # Decode parameters
             params = self.decode_solution(solution)
             
-            # Ensure fast_ma < slow_ma
-            if params['fast_ma'] >= params['slow_ma']:
+            # Ensure fast_length < slow_length
+            if params['fast_length'] >= params['slow_length']:
                 return -1000  # Penalty for invalid parameter combination
                 
             # Create configuration with optimized parameters
@@ -238,41 +220,54 @@ class GeneticOptimizer:
             Composite fitness score
         """
         try:
-            # Extract key metrics
-            total_return = results.get('total_return', 0)
-            sharpe_ratio = results.get('sharpe_ratio', 0)
-            max_drawdown = results.get('max_drawdown', 100)
-            win_rate = results.get('win_rate', 0)
-            total_trades = results.get('total_trades', 0)
+            # Extract key metrics with safe defaults
+            total_return = results.get('total_return', 0) or 0
+            sharpe_ratio = results.get('sharpe_ratio', 0) or 0
+            max_drawdown = results.get('max_drawdown', 100) or 100
+            win_rate = results.get('win_rate', 0) or 0
+            total_trades = results.get('total_trades', 0) or 0
+            
+            # Convert None values to safe defaults
+            if total_return is None:
+                total_return = 0
+            if sharpe_ratio is None:
+                sharpe_ratio = 0
+            if max_drawdown is None:
+                max_drawdown = 100
+            if win_rate is None:
+                win_rate = 0
+            if total_trades is None:
+                total_trades = 0
             
             # Ensure minimum number of trades
             if total_trades < 10:
                 return -1000
                 
             # Normalize max drawdown (lower is better)
-            drawdown_score = max(0, (10 - max_drawdown) / 10)
+            drawdown_score = max(0, (10 - abs(max_drawdown)) / 10)
             
             # Composite fitness score
             # Weights: win_rate (40%), sharpe_ratio (30%), total_return (20%), drawdown (10%)
             fitness_score = (
-                0.4 * (win_rate / 100) +           # Win rate component (0-1)
-                0.3 * max(0, min(sharpe_ratio, 3) / 3) +  # Sharpe ratio component (0-1, capped at 3)
-                0.2 * max(0, min(total_return, 50) / 50) + # Return component (0-1, capped at 50%)
+                0.4 * (abs(win_rate) / 100) +           # Win rate component (0-1)
+                0.3 * max(0, min(abs(sharpe_ratio), 3) / 3) +  # Sharpe ratio component (0-1, capped at 3)
+                0.2 * max(0, min(abs(total_return), 50) / 50) + # Return component (0-1, capped at 50%)
                 0.1 * drawdown_score                # Drawdown component (0-1)
             )
             
             # Bonus for high win rate
-            if win_rate > 50:
+            if win_rate and win_rate > 50:
                 fitness_score += 0.1 * ((win_rate - 50) / 50)
                 
             # Bonus for positive Sharpe ratio
-            if sharpe_ratio > 1:
+            if sharpe_ratio and sharpe_ratio > 1:
                 fitness_score += 0.05 * min((sharpe_ratio - 1), 2)
                 
             return fitness_score
             
         except Exception as e:
             logger.error(f"Error calculating fitness score: {e}")
+            logger.error(f"Results: {results}")
             return -1000
             
     def optimize(self, 
@@ -318,19 +313,43 @@ class GeneticOptimizer:
         
         # Get best solution
         solution, solution_fitness, solution_idx = ga_instance.best_solution()
-        best_params = self.decode_solution(solution)
+        best_optimized_params = self.decode_solution(solution)
+        
+        # Get complete strategy parameters
+        best_complete_params = self.get_complete_strategy_params(best_optimized_params)
         
         logger.info("Optimization completed!")
         logger.info(f"Best fitness score: {solution_fitness:.4f}")
-        logger.info(f"Best parameters: {best_params}")
+        logger.info(f"Best optimized parameters: {best_optimized_params}")
         
         return {
-            'best_params': best_params,
+            'best_params': best_complete_params,  # Return complete parameters
+            'best_optimized_params': best_optimized_params,  # Also return just optimized ones
             'best_fitness': solution_fitness,
             'ga_instance': ga_instance,
             'optimization_history': ga_instance.best_solutions_fitness
         }
         
+    def get_complete_strategy_params(self, optimized_params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get complete strategy parameters by merging optimized params with base config
+        
+        Args:
+            optimized_params: Optimized parameters from genetic algorithm
+            
+        Returns:
+            Complete parameter dictionary for strategy
+        """
+        # Start with base strategy parameters
+        complete_params = self.base_config['strategy']['params'].copy()
+        
+        # Update with optimized parameters
+        for param_name, param_value in optimized_params.items():
+            if param_name in self.param_names:
+                complete_params[param_name] = param_value
+        
+        return complete_params
+    
     def save_optimized_config(self, best_params: Dict[str, Any], output_path: str):
         """
         Save optimized configuration to file
