@@ -7,6 +7,8 @@ import pygad
 import numpy as np
 import yaml
 import logging
+import pandas as pd
+from datetime import datetime
 from typing import Dict, List, Tuple, Any
 import sys
 import os
@@ -38,6 +40,7 @@ class GeneticOptimizer:
         self.setup_parameter_space()
         self.best_fitness = -np.inf
         self.best_params = None
+        self.optimization_results = []  # Store all optimization results
         
     def load_base_config(self):
         """Load the base configuration"""
@@ -143,6 +146,18 @@ class GeneticOptimizer:
                 self.best_params = params.copy()
                 logger.info(f"New best fitness: {fitness_score:.4f}")
                 logger.info(f"Best params: {self.best_params}")
+            
+            # Store results for DataFrame export
+            result_record = params.copy()
+            result_record['fitness_score'] = fitness_score
+            result_record['generation'] = getattr(ga_instance, 'generations_completed', 0) if ga_instance else 0
+            result_record['solution_idx'] = solution_idx
+            
+            # Add results from backtest if available
+            if hasattr(self, '_last_backtest_results') and self._last_backtest_results:
+                result_record.update(self._last_backtest_results)
+            
+            self.optimization_results.append(result_record)
                 
             return fitness_score
             
@@ -200,6 +215,9 @@ class GeneticOptimizer:
             if results is None:
                 return -1000
                 
+            # Store results for later use in fitness function
+            self._last_backtest_results = results.copy() if results else {}
+            
             # Calculate fitness score
             fitness_score = self.calculate_fitness_score(results)
             
@@ -327,7 +345,8 @@ class GeneticOptimizer:
             'best_optimized_params': best_optimized_params,  # Also return just optimized ones
             'best_fitness': solution_fitness,
             'ga_instance': ga_instance,
-            'optimization_history': ga_instance.best_solutions_fitness
+            'optimization_history': ga_instance.best_solutions_fitness,
+            'all_results': self.optimization_results  # Include all results
         }
         
     def get_complete_strategy_params(self, optimized_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -364,6 +383,71 @@ class GeneticOptimizer:
             yaml.dump(optimized_config, file, default_flow_style=False, indent=2)
             
         logger.info(f"Optimized configuration saved to: {output_path}")
+    
+    def export_results_to_csv(self, output_dir: str = "output") -> str:
+        """
+        Export optimization results to CSV file with timestamp
+        
+        Args:
+            output_dir: Directory to save the CSV file
+            
+        Returns:
+            Path to the saved CSV file
+        """
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_filename = f"optimization_results_{timestamp}.csv"
+        csv_path = os.path.join(output_dir, csv_filename)
+        
+        if not self.optimization_results:
+            logger.warning("No optimization results to export")
+            return csv_path
+        
+        # Create DataFrame from results
+        df = pd.DataFrame(self.optimization_results)
+        
+        # Reorder columns for better readability
+        priority_columns = [
+            'generation', 'solution_idx', 'fitness_score',
+            'fast_length', 'slow_length', 'pivot_period', 'zone_lookback',
+            'min_zone_strength', 'stop_loss_percent', 'take_profit_percent',
+            'final_value', 'total_return', 'sharpe_ratio', 'max_drawdown',
+            'total_trades', 'winning_trades', 'losing_trades', 'win_rate',
+            'avg_win', 'avg_loss', 'profit_factor'
+        ]
+        
+        # Reorder columns, keeping any additional columns at the end
+        available_columns = [col for col in priority_columns if col in df.columns]
+        remaining_columns = [col for col in df.columns if col not in priority_columns]
+        ordered_columns = available_columns + remaining_columns
+        
+        df = df[ordered_columns]
+        
+        # Sort by fitness score (best first)
+        df = df.sort_values('fitness_score', ascending=False)
+        
+        # Round numeric columns for better readability
+        numeric_columns = df.select_dtypes(include=[np.number]).columns
+        df[numeric_columns] = df[numeric_columns].round(6)
+        
+        # Export to CSV
+        df.to_csv(csv_path, index=False)
+        
+        logger.info(f"Optimization results exported to: {csv_path}")
+        logger.info(f"Total results exported: {len(df)} parameter combinations")
+        
+        # Log summary statistics
+        if len(df) > 0:
+            logger.info(f"Best fitness score: {df['fitness_score'].max():.6f}")
+            logger.info(f"Average fitness score: {df['fitness_score'].mean():.6f}")
+            if 'win_rate' in df.columns:
+                logger.info(f"Best win rate: {df['win_rate'].max():.2f}%")
+                logger.info(f"Average win rate: {df['win_rate'].mean():.2f}%")
+        
+        return csv_path
 
 def main():
     """Main function for running optimization"""

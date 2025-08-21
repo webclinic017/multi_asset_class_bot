@@ -371,6 +371,11 @@ def run_optimization_mode(config):
             for param, value in best_optimized_params.items():
                 logger.info(f"  {param}: {value}")
             
+            # Export optimization results to CSV
+            logger.info("Exporting optimization results to CSV...")
+            csv_path = genetic_optimizer.export_results_to_csv("output")
+            logger.info(f"Optimization results CSV saved to: {csv_path}")
+            
             # Save optimized config
             optimized_config_path = "config/optimized_config.yaml"
             genetic_optimizer.save_optimized_config(best_optimized_params, optimized_config_path)
