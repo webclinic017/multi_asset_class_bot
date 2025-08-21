@@ -16,6 +16,7 @@ import pandas as pd
 from data.data_feed import OANDADataFeed, CCXTDataFeed # Assuming these are the primary data sources for backtesting
 from data.preprocessing import DataPreprocessor
 from strategies.forex_strategy import ForexStrategy
+from strategies.profitable_forex_strategy import ProfitableForexStrategy
 from strategies.crypto_strategy import CryptoStrategy
 from strategies.futures_strategy import FuturesStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
@@ -129,6 +130,8 @@ class BacktestEngine:
         # Import strategy class based on name
         if strategy_name == 'ForexStrategy':
             strategy_class = ForexStrategy
+        elif strategy_name == 'ProfitableForexStrategy':
+            strategy_class = ProfitableForexStrategy
         elif strategy_name == 'CryptoStrategy':
             strategy_class = CryptoStrategy
         elif strategy_name == 'FuturesStrategy':
@@ -175,23 +178,47 @@ class BacktestEngine:
         returns_analysis = strategy.analyzers.returns.get_analysis()
         trade_analysis = strategy.analyzers.trade_analyzer.get_analysis()
         
-        # Extract metrics with safe defaults
-        sharpe_ratio = sharpe_analysis.get('sharperatio', 0.0) or 0.0
-        max_drawdown = drawdown_analysis.get('max', {}).get('drawdown', 0.0) or 0.0
-        total_return = returns_analysis.get('rtot', 0.0) or 0.0
+        # Extract metrics with safe defaults and None handling
+        sharpe_ratio = sharpe_analysis.get('sharperatio')
+        if sharpe_ratio is None:
+            sharpe_ratio = 0.0
+        else:
+            sharpe_ratio = float(sharpe_ratio)
+            
+        max_drawdown = drawdown_analysis.get('max', {}).get('drawdown')
+        if max_drawdown is None:
+            max_drawdown = 0.0
+        else:
+            max_drawdown = float(max_drawdown)
+            
+        total_return = returns_analysis.get('rtot')
+        if total_return is None:
+            total_return = 0.0
+        else:
+            total_return = float(total_return)
         
         # Convert to percentage
         max_drawdown_pct = max_drawdown * 100 if max_drawdown else 0.0
         total_return_pct = total_return * 100 if total_return else 0.0
         
-        # Trade statistics
-        total_trades = trade_analysis.get('total', {}).get('closed', 0)
-        winning_trades = trade_analysis.get('won', {}).get('total', 0)
-        losing_trades = trade_analysis.get('lost', {}).get('total', 0)
+        # Trade statistics with None handling
+        total_trades = trade_analysis.get('total', {}).get('closed', 0) or 0
+        winning_trades = trade_analysis.get('won', {}).get('total', 0) or 0
+        losing_trades = trade_analysis.get('lost', {}).get('total', 0) or 0
         
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
-        avg_win = trade_analysis.get('won', {}).get('pnl', {}).get('average', 0.0) or 0.0
-        avg_loss = trade_analysis.get('lost', {}).get('pnl', {}).get('average', 0.0) or 0.0
+        
+        avg_win = trade_analysis.get('won', {}).get('pnl', {}).get('average')
+        if avg_win is None:
+            avg_win = 0.0
+        else:
+            avg_win = float(avg_win)
+            
+        avg_loss = trade_analysis.get('lost', {}).get('pnl', {}).get('average')
+        if avg_loss is None:
+            avg_loss = 0.0
+        else:
+            avg_loss = float(avg_loss)
         
         # Log results
         self.logger.info(f'Sharpe Ratio: {sharpe_ratio:.2f}')
@@ -217,7 +244,7 @@ class BacktestEngine:
             'win_rate': win_rate,
             'avg_win': avg_win,
             'avg_loss': avg_loss,
-            'profit_factor': abs(avg_win * winning_trades / (avg_loss * losing_trades)) if (avg_loss != 0 and losing_trades > 0) else 0.0
+            'profit_factor': abs(avg_win * winning_trades / (avg_loss * losing_trades)) if (avg_loss != 0 and losing_trades > 0 and avg_win != 0 and winning_trades > 0) else 0.0
         }
 
 if __name__ == '__main__':
