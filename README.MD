@@ -1,11 +1,13 @@
 # Important
-+ Rename sampleconfigdir to config and fill ount oanda credentials in yaml files
+▪ Add kraken and futures api keys
 
-+ python main.py --mode live --config config/config.yaml
+▪ Rename sampleconfigdir to config and fill ount oanda credentials in yaml files
 
-+ python main.py --mode backtest --config config/config.yaml
+▪ python main.py --mode live --config config/config.yaml
 
-+ python main.py --mode optimize --config config/config.yaml
+▪ python main.py --mode backtest --config config/config.yaml
+
+▪ python main.py --mode optimize --config config/config.yaml
 
 ## Notes from earlier experiments
 + Use working_bot_aug11_2025.py for updated code
