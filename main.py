@@ -139,18 +139,21 @@ def run_backtest_mode(config):
         logger.error(f"An error occurred during backtesting: {e}")
 
 def run_live_trading_mode(config):
-    """Runs the bot in live trading mode."""
+    """Runs the bot in live trading mode with actual signal generation."""
+    import time
+    import pandas as pd
+    from datetime import datetime, timedelta
+    
     logger.info("Starting trading bot in LIVE TRADING mode.")
     
     # Initialize components for live trading
-    # Choose broker connector based on configuration or strategy
-    broker_type = "oanda" # Example: could be dynamic based on config
+    broker_type = "oanda"
     
     broker_connector = None
     if broker_type == "oanda":
         broker_connector = OANDABrokerConnector(config=config)
     elif broker_type == "ccxt":
-        broker_connector = CCXTBrokerConnector(config=config, exchange_id='binance') # Or other exchange
+        broker_connector = CCXTBrokerConnector(config=config, exchange_id='binance')
     elif broker_type == "ibkr":
         broker_connector = IBKRBrokerConnector(config=config)
     else:
@@ -166,6 +169,10 @@ def run_live_trading_mode(config):
         order_manager = OrderManager(broker_connector, config=config)
         risk_manager = RiskManager(config=config)
         
+        # Initialize data feed and preprocessor for live data
+        data_feed = OANDADataFeed(config)
+        preprocessor = DataPreprocessor()
+        
         # Get initial balance
         balance_info = broker_connector.get_balance()
         if balance_info:
@@ -175,23 +182,143 @@ def run_live_trading_mode(config):
         else:
             logger.warning("Could not retrieve initial account balance.")
 
-        # Example: Live trading loop (simplified)
-        # In a real scenario, this would involve continuous data fetching,
-        # strategy signal generation, and order execution.
+        # Get symbol info from config structure
+        if 'data' in config and 'symbols' in config['data']:
+            symbol_info = config['data']['symbols'][0]
+            forex_symbol = symbol_info['name']
+            timeframe = symbol_info['timeframe']
+        else:
+            # Fallback to old structure
+            forex_symbol = config['trading']['forex_pairs'][0]
+            timeframe = config['trading']['data_timeframe']
+            
+        logger.info(f"Starting live trading for {forex_symbol} on {timeframe} timeframe")
         
-        # For demonstration, let's just get a price and balance
-        forex_symbol = config['trading']['forex_pairs'][0]
-        current_price = broker_connector.get_current_price(forex_symbol)
-        if current_price:
-            logger.info(f"Current price for {forex_symbol}: {current_price}")
+        # Initialize strategy with parameters
+        strategy_params = config.get('strategy', {}).get('params', {})
+        logger.info(f"Strategy parameters: {strategy_params}")
         
-        # This loop would typically run indefinitely, checking for signals
-        # while True:
-        #     # Fetch latest data
-        #     # Generate signals from strategy
-        #     # Evaluate trade with risk manager
-        #     # Place orders via order manager
-        #     time.sleep(config['trading']['live_data_fetch_interval']) # e.g., 60 seconds
+        # Live trading loop
+        iteration = 0
+        max_iterations = 10  # Limit for demonstration
+        
+        logger.info("=== STARTING LIVE TRADING LOOP ===")
+        logger.info(f"Will run for {max_iterations} iterations with 30-second intervals")
+        
+        while iteration < max_iterations:
+            try:
+                iteration += 1
+                logger.info(f"\n--- Live Trading Iteration {iteration}/{max_iterations} ---")
+                
+                # Get current price
+                current_price = broker_connector.get_current_price(forex_symbol)
+                if current_price:
+                    logger.info(f"Current {forex_symbol} price: {current_price}")
+                else:
+                    logger.warning(f"Could not get current price for {forex_symbol}")
+                    time.sleep(30)
+                    continue
+                
+                # Fetch recent historical data for signal generation
+                end_time = datetime.utcnow()
+                start_time = end_time - timedelta(days=30)  # Get 30 days of data
+                
+                logger.info(f"Fetching historical data from {start_time} to {end_time}")
+                historical_data = data_feed.get_forex_data(
+                    symbol=forex_symbol,
+                    timeframe=timeframe,
+                    start_date=start_time.strftime('%Y-%m-%d'),
+                    end_date=end_time.strftime('%Y-%m-%d')
+                )
+                
+                if historical_data is not None and len(historical_data) > 100:
+                    logger.info(f"Retrieved {len(historical_data)} historical data points")
+                    
+                    # Preprocess the data
+                    processed_data = preprocessor.preprocess(historical_data)
+                    logger.info(f"Processed data shape: {processed_data.shape}")
+                    
+                    # Create a simple signal generator based on our strategy logic
+                    # Get the latest data point for signal generation
+                    latest_data = processed_data.tail(50).copy()  # Use last 50 points for analysis
+                    
+                    # Simple moving average crossover signal
+                    fast_ma = strategy_params.get('fast_length', 10)
+                    slow_ma = strategy_params.get('slow_length', 30)
+                    
+                    if len(latest_data) >= slow_ma:
+                        latest_data[f'MA_{fast_ma}'] = latest_data['close'].rolling(fast_ma).mean()
+                        latest_data[f'MA_{slow_ma}'] = latest_data['close'].rolling(slow_ma).mean()
+                        
+                        # Get current values
+                        current_fast_ma = latest_data[f'MA_{fast_ma}'].iloc[-1]
+                        current_slow_ma = latest_data[f'MA_{slow_ma}'].iloc[-1]
+                        prev_fast_ma = latest_data[f'MA_{fast_ma}'].iloc[-2]
+                        prev_slow_ma = latest_data[f'MA_{slow_ma}'].iloc[-2]
+                        
+                        # Generate signals
+                        signal = None
+                        if current_fast_ma > current_slow_ma and prev_fast_ma <= prev_slow_ma:
+                            signal = "BUY"
+                            logger.info(f"[BUY SIGNAL] Generated!")
+                            logger.info(f"   Fast MA ({fast_ma}): {current_fast_ma:.5f}")
+                            logger.info(f"   Slow MA ({slow_ma}): {current_slow_ma:.5f}")
+                            logger.info(f"   Current Price: {current_price}")
+                        elif current_fast_ma < current_slow_ma and prev_fast_ma >= prev_slow_ma:
+                            signal = "SELL"
+                            logger.info(f"[SELL SIGNAL] Generated!")
+                            logger.info(f"   Fast MA ({fast_ma}): {current_fast_ma:.5f}")
+                            logger.info(f"   Slow MA ({slow_ma}): {current_slow_ma:.5f}")
+                            logger.info(f"   Current Price: {current_price}")
+                        else:
+                            logger.info(f"[NO SIGNAL] Fast MA: {current_fast_ma:.5f}, Slow MA: {current_slow_ma:.5f}")
+                        
+                        # Calculate RSI for additional confirmation
+                        if 'rsi' in latest_data.columns:
+                            current_rsi = latest_data['rsi'].iloc[-1]
+                            logger.info(f"   RSI: {current_rsi:.2f}")
+                            
+                            # RSI confirmation
+                            if signal == "BUY" and current_rsi < 70:
+                                logger.info(f"   [RSI CONFIRM] RSI confirms BUY signal (RSI < 70)")
+                            elif signal == "SELL" and current_rsi > 30:
+                                logger.info(f"   [RSI CONFIRM] RSI confirms SELL signal (RSI > 30)")
+                            elif signal:
+                                logger.info(f"   [RSI WARNING] RSI does not confirm signal")
+                        
+                        # Risk management check
+                        if signal:
+                            position_size = risk_manager.calculate_position_size(
+                                current_price,
+                                strategy_params.get('stop_loss_percent', 0.01)
+                            )
+                            logger.info(f"   [POSITION] Calculated position size: {position_size}")
+                            
+                            # In a real implementation, you would place the order here:
+                            # order_manager.place_order(signal, forex_symbol, position_size, current_price)
+                            logger.info(f"   [ORDER] Would place {signal} order for {position_size} units at {current_price}")
+                    
+                else:
+                    logger.warning("Insufficient historical data for signal generation")
+                
+                # Get current account balance
+                balance_info = broker_connector.get_balance()
+                if balance_info:
+                    current_balance = balance_info.get('total', 0.0)
+                    logger.info(f"[BALANCE] Current account balance: ${current_balance:,.2f}")
+                
+                # Wait before next iteration
+                if iteration < max_iterations:
+                    logger.info(f"[WAIT] Waiting 30 seconds before next iteration...")
+                    time.sleep(30)
+                    
+            except Exception as e:
+                logger.error(f"Error in live trading iteration {iteration}: {e}")
+                time.sleep(30)
+                continue
+        
+        logger.info("=== LIVE TRADING LOOP COMPLETED ===")
+        logger.info("In a real implementation, this would run continuously until stopped.")
         
     except Exception as e:
         logger.critical(f"An error occurred during live trading: {e}")
@@ -208,8 +335,15 @@ def run_optimization_mode(config):
     engine = BacktestEngine(config=config) # Re-use BacktestEngine for data loading
 
     # Example: Optimize ForexStrategy
-    forex_symbol = config['trading']['forex_pairs'][0]
-    forex_timeframe = config['trading']['data_timeframe']
+    # Get symbol info from new config structure
+    if 'data' in config and 'symbols' in config['data']:
+        symbol_info = config['data']['symbols'][0]
+        forex_symbol = symbol_info['name']
+        forex_timeframe = symbol_info['timeframe']
+    else:
+        # Fallback to old structure
+        forex_symbol = config['trading']['forex_pairs'][0]
+        forex_timeframe = config['trading']['data_timeframe']
     
     try:
         forex_data = engine.load_data(forex_symbol, 'forex', forex_timeframe)
