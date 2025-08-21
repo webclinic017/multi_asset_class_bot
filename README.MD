@@ -9,7 +9,7 @@
 
 ▪ python main.py --mode optimize --config config/config.yaml
 
-▪ python fast_optimize.py --generations 15 --population 12
+▪ python fast_optimize.py --config config/config.yaml --generations 3 --population 4
 
 ## Notes from earlier experiments
 + Use working_bot_aug11_2025.py for updated code

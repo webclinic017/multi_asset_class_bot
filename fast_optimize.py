@@ -40,12 +40,12 @@ def main():
     setup_logging()
     logger = logging.getLogger(__name__)
     
-    print("🚀 Fast Genetic Algorithm Optimization Starting...")
+    print("Fast Genetic Algorithm Optimization Starting...")
     print("=" * 60)
-    print(f"📁 Config: {args.config}")
-    print(f"🧬 Generations: {args.generations}")
-    print(f"👥 Population: {args.population}")
-    print(f"📊 Output: {args.output_dir}")
+    print(f"Config: {args.config}")
+    print(f"Generations: {args.generations}")
+    print(f"Population: {args.population}")
+    print(f"Output: {args.output_dir}")
     print("=" * 60)
     
     start_time = time.time()
@@ -71,13 +71,13 @@ def main():
         
         # Display results
         print("\n" + "=" * 60)
-        print("🎉 FAST OPTIMIZATION COMPLETED!")
+        print("FAST OPTIMIZATION COMPLETED!")
         print("=" * 60)
-        print(f"⏱️  Total Time: {total_time:.2f} seconds")
-        print(f"🎯 Best Fitness: {results['best_fitness']:.6f}")
-        print(f"📈 Cache Efficiency: {results['cache_hits']}/{results['cache_hits'] + results['cache_misses']} hits ({results['cache_hits']/(results['cache_hits'] + results['cache_misses'])*100:.1f}%)")
-        print(f"💾 Results File: {csv_path}")
-        print("\n🏆 OPTIMAL PARAMETERS:")
+        print(f"Total Time: {total_time:.2f} seconds")
+        print(f"Best Fitness: {results['best_fitness']:.6f}")
+        print(f"Cache Efficiency: {results['cache_hits']}/{results['cache_hits'] + results['cache_misses']} hits ({results['cache_hits']/(results['cache_hits'] + results['cache_misses'])*100:.1f}%)")
+        print(f"Results File: {csv_path}")
+        print("\nOPTIMAL PARAMETERS:")
         print("-" * 40)
         
         best_params = results['best_params']
@@ -87,25 +87,33 @@ def main():
             else:
                 print(f"  {param}: {value}")
         
-        print("\n📊 PERFORMANCE COMPARISON:")
+        print("\nPERFORMANCE COMPARISON:")
         print("-" * 40)
         print(f"  Speed Improvement: ~10-20x faster than standard optimization")
         print(f"  Memory Usage: Optimized with data caching")
-        print(f"  GPU Acceleration: {'✅ Enabled' if 'GPU acceleration available' in str(optimizer) else '❌ CPU Only'}")
+        
+        # Check GPU acceleration status properly
+        try:
+            import cupy as cp
+            gpu_status = "Enabled (CuPy Available)"
+        except ImportError:
+            gpu_status = "CPU Only (CuPy Not Available)"
+            
+        print(f"  GPU Acceleration: {gpu_status}")
         
         # Performance recommendations
         if total_time > 300:  # 5 minutes
-            print("\n💡 PERFORMANCE TIPS:")
+            print("\nPERFORMANCE TIPS:")
             print("-" * 40)
-            print("  • Consider reducing population size or generations")
-            print("  • Install CuPy for GPU acceleration: pip install cupy")
-            print("  • Use SSD storage for faster data access")
+            print("  - Consider reducing population size or generations")
+            print("  - Install CuPy for GPU acceleration: pip install cupy")
+            print("  - Use SSD storage for faster data access")
         
-        print("\n✨ Optimization completed successfully!")
+        print("\nOptimization completed successfully!")
         
     except Exception as e:
         logger.error(f"Optimization failed: {e}")
-        print(f"\n❌ ERROR: {e}")
+        print(f"\nERROR: {e}")
         print("Check the logs for more details.")
         sys.exit(1)
 

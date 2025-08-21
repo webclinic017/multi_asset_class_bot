@@ -199,6 +199,19 @@ class FastGeneticOptimizer:
             strategy_params = params.copy()
             strategy_params['printlog'] = False
             
+            # Add required parameters that might be missing
+            strategy_params.update({
+                'use_supply_demand': True,
+                'use_rsi_filter': True,
+                'use_macd_filter': True,
+                'use_volume_filter': True,
+                'max_zones': 10,
+                'min_risk_reward': 2.0,
+                'zone_buffer': 0.0005,
+                'volume_levels': 20,
+                'volume_period': 50
+            })
+            
             backtest_engine.add_strategy(
                 self.base_config['strategy']['name'],
                 **strategy_params
@@ -207,10 +220,26 @@ class FastGeneticOptimizer:
             # Run fast backtest
             results = backtest_engine.run()
             
-            if results:
+            if results and isinstance(results, dict):
+                # Ensure all required fields are present with safe defaults
+                safe_results = self.get_default_results()
+                safe_results.update(results)
+                
+                # Additional safety checks for None values
+                for key, value in safe_results.items():
+                    if value is None:
+                        if key in ['final_value']:
+                            safe_results[key] = 10000.0
+                        elif key in ['total_return', 'sharpe_ratio', 'win_rate', 'avg_win', 'avg_loss', 'profit_factor']:
+                            safe_results[key] = 0.0
+                        elif key in ['max_drawdown']:
+                            safe_results[key] = 100.0
+                        elif key in ['total_trades', 'winning_trades', 'losing_trades']:
+                            safe_results[key] = 0
+                
                 # Cache results
-                self.backtest_cache[param_hash] = results
-                return results
+                self.backtest_cache[param_hash] = safe_results
+                return safe_results
             else:
                 return self.get_default_results()
                 
@@ -243,16 +272,19 @@ class FastGeneticOptimizer:
             return np.array([self.calculate_fitness_score_cpu(r) for r in results_batch])
             
         try:
-            # Convert to GPU arrays
+            # Convert to GPU arrays with safe None handling
+            def safe_extract(results_list, key, default):
+                return [default if r.get(key) is None else r.get(key, default) for r in results_list]
+            
             batch_size = len(results_batch)
             
-            # Extract metrics
-            total_returns = cp.array([r.get('total_return', 0.0) for r in results_batch])
-            sharpe_ratios = cp.array([r.get('sharpe_ratio', 0.0) for r in results_batch])
-            max_drawdowns = cp.array([r.get('max_drawdown', 100.0) for r in results_batch])
-            win_rates = cp.array([r.get('win_rate', 0.0) for r in results_batch])
-            total_trades = cp.array([r.get('total_trades', 0) for r in results_batch])
-            final_values = cp.array([r.get('final_value', 10000.0) for r in results_batch])
+            # Extract metrics with None safety
+            total_returns = cp.array(safe_extract(results_batch, 'total_return', 0.0))
+            sharpe_ratios = cp.array(safe_extract(results_batch, 'sharpe_ratio', 0.0))
+            max_drawdowns = cp.array(safe_extract(results_batch, 'max_drawdown', 100.0))
+            win_rates = cp.array(safe_extract(results_batch, 'win_rate', 0.0))
+            total_trades = cp.array(safe_extract(results_batch, 'total_trades', 0))
+            final_values = cp.array(safe_extract(results_batch, 'final_value', 10000.0))
             
             # Vectorized fitness calculation on GPU
             initial_capital = 10000.0
@@ -302,13 +334,29 @@ class FastGeneticOptimizer:
     def calculate_fitness_score_cpu(self, results: Dict[str, Any]) -> float:
         """CPU-based fitness calculation for single result"""
         try:
-            # Extract metrics with safe defaults
-            total_return = float(results.get('total_return') or 0.0)
-            sharpe_ratio = float(results.get('sharpe_ratio') or 0.0)
-            max_drawdown = float(results.get('max_drawdown') or 100.0)
-            win_rate = float(results.get('win_rate') or 0.0)
-            total_trades = int(results.get('total_trades') or 0)
-            final_value = float(results.get('final_value') or 10000.0)
+            # Extract metrics with safe defaults and None handling
+            def safe_float(value, default=0.0):
+                if value is None:
+                    return default
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return default
+                    
+            def safe_int(value, default=0):
+                if value is None:
+                    return default
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return default
+            
+            total_return = safe_float(results.get('total_return'), 0.0)
+            sharpe_ratio = safe_float(results.get('sharpe_ratio'), 0.0)
+            max_drawdown = safe_float(results.get('max_drawdown'), 100.0)
+            win_rate = safe_float(results.get('win_rate'), 0.0)
+            total_trades = safe_int(results.get('total_trades'), 0)
+            final_value = safe_float(results.get('final_value'), 10000.0)
             
             # Minimum trades requirement
             if total_trades < 5:
@@ -379,7 +427,7 @@ class FastGeneticOptimizer:
             logger.error(f"Error in fitness function: {e}")
             return -1000
             
-    def optimize(self, 
+    def optimize(self,
                  num_generations: int = 20,  # Reduced for faster testing
                  num_parents_mating: int = 8,
                  sol_per_pop: int = 16,  # Reduced population size
@@ -389,9 +437,17 @@ class FastGeneticOptimizer:
         """
         start_time = time.time()
         
+        # Validate and adjust parameters
+        if num_parents_mating >= sol_per_pop:
+            num_parents_mating = max(2, sol_per_pop // 2)
+            logger.warning(f"Adjusted num_parents_mating to {num_parents_mating} (must be < sol_per_pop)")
+            
+        keep_parents = min(2, num_parents_mating // 2)
+        
         logger.info("Starting fast genetic algorithm optimization...")
         logger.info(f"GPU acceleration: {'Enabled' if GPU_AVAILABLE else 'Disabled'}")
         logger.info(f"Generations: {num_generations}, Population: {sol_per_pop}")
+        logger.info(f"Parents for mating: {num_parents_mating}, Keep parents: {keep_parents}")
         logger.info(f"Cached data shape: {self.cached_data.shape if self.cached_data is not None else 'None'}")
         
         # Initialize genetic algorithm with optimized settings
@@ -403,13 +459,13 @@ class FastGeneticOptimizer:
             num_genes=len(self.param_names),
             gene_space=self.gene_space,
             parent_selection_type="sss",
-            keep_parents=2,
+            keep_parents=keep_parents,
             crossover_type="single_point",
             mutation_type="random",
             mutation_probability=mutation_probability,
             random_seed=42,
             suppress_warnings=True,
-            parallel_processing=['thread', 4]  # Enable parallel processing
+            parallel_processing=['thread', min(4, sol_per_pop)]  # Enable parallel processing
         )
         
         # Run optimization
