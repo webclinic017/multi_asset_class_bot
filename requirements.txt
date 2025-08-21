@@ -7,6 +7,7 @@ ccxt
 oandapyV20
 ibapi # For Interactive Brokers API
 python-dotenv # For loading environment variables from .env file
+cupy
 
 # Logging
 # No specific logging library needed beyond standard Python logging, but if a custom one was used, it would go here.
