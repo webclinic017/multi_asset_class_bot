@@ -12,9 +12,18 @@ import logging
 import yaml
 import os
 import numpy as np
+import sys
 
 # Import custom indicators
 from indicators.custom_indicators import PivotHighLow, SupplyDemandZones, VolumeProfile
+
+# Import sentiment analysis
+try:
+    from sentiment.news_analyzer import news_analyzer
+    SENTIMENT_AVAILABLE = True
+except ImportError:
+    SENTIMENT_AVAILABLE = False
+    print("Warning: Sentiment analysis not available. Install required packages: pip install textblob feedparser beautifulsoup4")
 
 class ForexStrategy(bt.Strategy):
     """
@@ -53,6 +62,15 @@ class ForexStrategy(bt.Strategy):
         # Volume Profile Parameters
         ('volume_period', 50),         # Volume profile lookback
         ('volume_levels', 20),         # Number of price levels for volume analysis
+        
+        # Sentiment Analysis Parameters
+        ('use_sentiment_filter', True),    # Enable/disable sentiment analysis
+        ('sentiment_weight', 0.3),         # Weight of sentiment in final decision (0.0-1.0)
+        ('sentiment_threshold', 0.2),      # Minimum sentiment strength to consider
+        ('news_lookback_hours', 12),       # Hours to look back for news
+        ('sentiment_boost_multiplier', 1.3), # Boost signal strength when sentiment aligns
+        ('sentiment_veto_threshold', -0.6), # Strong negative sentiment can veto trades
+        ('min_sentiment_confidence', 0.3), # Minimum confidence in sentiment analysis
         
         # Strategy Filters
         ('use_supply_demand', True),   # Enable/disable supply demand logic
@@ -118,8 +136,16 @@ class ForexStrategy(bt.Strategy):
                 price_levels=self.p.volume_levels
             )
 
+        # Sentiment Analysis tracking
+        self.last_sentiment_check = None
+        self.current_sentiment = None
+        self.sentiment_cache_duration = 300  # 5 minutes cache
+        
         self.logger = logging.getLogger(__name__)
-        self.logger.info("Enhanced ForexStrategy with Supply/Demand initialized")
+        if SENTIMENT_AVAILABLE and self.p.use_sentiment_filter:
+            self.logger.info("Enhanced ForexStrategy with Supply/Demand and Sentiment Analysis initialized")
+        else:
+            self.logger.info("Enhanced ForexStrategy with Supply/Demand initialized (Sentiment disabled)")
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
@@ -155,6 +181,42 @@ class ForexStrategy(bt.Strategy):
         self.log('OPERATION PROFIT, GROSS %.2f, NET %.2f' %
                  (trade.pnl, trade.pnlcomm))
 
+    def get_sentiment_signal(self):
+        """Get current sentiment signal with caching"""
+        if not SENTIMENT_AVAILABLE or not self.p.use_sentiment_filter:
+            return {
+                'signal_direction': 0.0,
+                'signal_strength': 0.0,
+                'confidence': 0.0,
+                'recommendation': 'NEUTRAL'
+            }
+        
+        try:
+            current_time = self.datas[0].datetime.datetime(0)
+            
+            # Check if we need to update sentiment
+            if (self.last_sentiment_check is None or
+                (current_time - self.last_sentiment_check).total_seconds() > self.sentiment_cache_duration):
+                
+                # Get fresh sentiment data
+                self.current_sentiment = news_analyzer.get_trading_signal(self.p.news_lookback_hours)
+                self.last_sentiment_check = current_time
+                
+                self.log(f'SENTIMENT UPDATE - Direction: {self.current_sentiment["signal_direction"]:.3f}, '
+                        f'Strength: {self.current_sentiment["signal_strength"]:.3f}, '
+                        f'Recommendation: {self.current_sentiment["recommendation"]}')
+            
+            return self.current_sentiment
+            
+        except Exception as e:
+            self.logger.error(f"Error getting sentiment signal: {e}")
+            return {
+                'signal_direction': 0.0,
+                'signal_strength': 0.0,
+                'confidence': 0.0,
+                'recommendation': 'NEUTRAL'
+            }
+
     def next(self):
         self.log('Close, %.2f' % self.dataclose[0])
 
@@ -164,6 +226,16 @@ class ForexStrategy(bt.Strategy):
         if not self.position:  # Not in the market
             # Get current market conditions
             current_price = self.dataclose[0]
+            
+            # Get sentiment signal
+            sentiment = self.get_sentiment_signal()
+            
+            # Check for sentiment veto (strong negative news can override technical signals)
+            if (self.p.use_sentiment_filter and
+                sentiment['signal_strength'] > 0.5 and
+                sentiment['signal_direction'] < self.p.sentiment_veto_threshold):
+                self.log(f'SENTIMENT VETO - Strong negative sentiment: {sentiment["signal_direction"]:.3f}')
+                return
             
             # Basic trend direction from moving averages
             bullish_trend = self.crossover > 0 or self.sma_fast[0] > self.sma_slow[0]
@@ -189,52 +261,19 @@ class ForexStrategy(bt.Strategy):
                 macd_bearish = (self.macd[0] < self.macd_signal[0] and  # MACD below signal
                                self.macd_histogram[0] < 0)              # Negative histogram
             
-            # Supply/Demand analysis
-            buy_signal = False
-            sell_signal = False
+            # Calculate technical signal strength
+            technical_signals = self._calculate_technical_signals(
+                bullish_trend, bearish_trend, rsi_bullish, rsi_bearish,
+                macd_bullish, macd_bearish, current_price
+            )
             
-            if self.p.use_supply_demand:
-                zone_type = self.supply_demand.zone_type[0]
-                zone_strength = self.supply_demand.zone_strength[0]
-                
-                # Buy signal: Price at demand zone + all bullish conditions
-                if (zone_type == 1 and zone_strength >= self.p.min_zone_strength and
-                    bullish_trend and rsi_bullish and macd_bullish):
-                    
-                    demand_high = self.supply_demand.demand_zone_high[0]
-                    demand_low = self.supply_demand.demand_zone_low[0]
-                    
-                    if not np.isnan(demand_high) and not np.isnan(demand_low):
-                        # Check if we have a good risk/reward setup
-                        potential_stop = demand_low - (demand_low * 0.001)  # Stop below demand zone
-                        potential_target = current_price + (current_price - potential_stop) * self.p.min_risk_reward
-                        
-                        if self._validate_risk_reward(current_price, potential_stop, potential_target):
-                            buy_signal = True
-                            self.log(f'DEMAND ZONE BUY SIGNAL - Zone Strength: {zone_strength}, Price: {current_price:.5f}')
-                
-                # Sell signal: Price at supply zone + all bearish conditions
-                elif (zone_type == -1 and zone_strength >= self.p.min_zone_strength and
-                      bearish_trend and rsi_bearish and macd_bearish):
-                    
-                    supply_high = self.supply_demand.supply_zone_high[0]
-                    supply_low = self.supply_demand.supply_zone_low[0]
-                    
-                    if not np.isnan(supply_high) and not np.isnan(supply_low):
-                        # Check if we have a good risk/reward setup
-                        potential_stop = supply_high + (supply_high * 0.001)  # Stop above supply zone
-                        potential_target = current_price - (potential_stop - current_price) * self.p.min_risk_reward
-                        
-                        if self._validate_risk_reward(current_price, potential_stop, potential_target):
-                            sell_signal = True
-                            self.log(f'SUPPLY ZONE SELL SIGNAL - Zone Strength: {zone_strength}, Price: {current_price:.5f}')
+            # Combine technical and sentiment signals
+            combined_signals = self._combine_technical_sentiment_signals(technical_signals, sentiment)
             
-            else:
-                # Fallback to simple MA crossover if supply/demand disabled
-                if self.crossover > 0 and rsi_bullish and macd_bullish:
-                    buy_signal = True
-                elif self.crossover < 0 and rsi_bearish and macd_bearish:
-                    sell_signal = True
+            # Determine final buy/sell signals
+            buy_signal = combined_signals['buy_signal']
+            sell_signal = combined_signals['sell_signal']
+            signal_strength = combined_signals['signal_strength']
             
             # Volume confirmation (if enabled)
             volume_confirmed = True
@@ -245,17 +284,138 @@ class ForexStrategy(bt.Strategy):
             
             # Execute trades
             if buy_signal and volume_confirmed:
-                self.log('BUY CREATE, %.2f' % current_price)
+                sentiment_info = f"Sentiment: {sentiment['recommendation']} ({sentiment['signal_direction']:.3f})" if self.p.use_sentiment_filter else "No Sentiment"
+                self.log(f'SENTIMENT-ENHANCED BUY CREATE - Price: {current_price:.5f}, Strength: {signal_strength:.3f}, {sentiment_info}')
                 self.order = self.buy()
                 self.entry_bar = len(self)
                 
             elif sell_signal and volume_confirmed:
-                self.log('SELL CREATE, %.2f' % current_price)
+                sentiment_info = f"Sentiment: {sentiment['recommendation']} ({sentiment['signal_direction']:.3f})" if self.p.use_sentiment_filter else "No Sentiment"
+                self.log(f'SENTIMENT-ENHANCED SELL CREATE - Price: {current_price:.5f}, Strength: {signal_strength:.3f}, {sentiment_info}')
                 self.order = self.sell()
                 self.entry_bar = len(self)
                 
         else:  # Already in the market - manage position
             self._manage_position()
+    
+    def _calculate_technical_signals(self, bullish_trend, bearish_trend, rsi_bullish, rsi_bearish,
+                                   macd_bullish, macd_bearish, current_price):
+        """Calculate technical signal strength and determine buy/sell signals"""
+        buy_signal = False
+        sell_signal = False
+        technical_strength = 0.0
+        
+        if self.p.use_supply_demand:
+            zone_type = self.supply_demand.zone_type[0]
+            zone_strength = self.supply_demand.zone_strength[0]
+            
+            # Buy signal: Price at demand zone + all bullish conditions
+            if (zone_type == 1 and zone_strength >= self.p.min_zone_strength and
+                bullish_trend and rsi_bullish and macd_bullish):
+                
+                demand_high = self.supply_demand.demand_zone_high[0]
+                demand_low = self.supply_demand.demand_zone_low[0]
+                
+                if not np.isnan(demand_high) and not np.isnan(demand_low):
+                    # Check if we have a good risk/reward setup
+                    potential_stop = demand_low - (demand_low * 0.001)  # Stop below demand zone
+                    potential_target = current_price + (current_price - potential_stop) * self.p.min_risk_reward
+                    
+                    if self._validate_risk_reward(current_price, potential_stop, potential_target):
+                        buy_signal = True
+                        technical_strength = min(zone_strength / 5.0, 1.0)  # Normalize zone strength
+                        self.log(f'DEMAND ZONE TECHNICAL SIGNAL - Zone Strength: {zone_strength}, Price: {current_price:.5f}')
+            
+            # Sell signal: Price at supply zone + all bearish conditions
+            elif (zone_type == -1 and zone_strength >= self.p.min_zone_strength and
+                  bearish_trend and rsi_bearish and macd_bearish):
+                
+                supply_high = self.supply_demand.supply_zone_high[0]
+                supply_low = self.supply_demand.supply_zone_low[0]
+                
+                if not np.isnan(supply_high) and not np.isnan(supply_low):
+                    # Check if we have a good risk/reward setup
+                    potential_stop = supply_high + (supply_high * 0.001)  # Stop above supply zone
+                    potential_target = current_price - (potential_stop - current_price) * self.p.min_risk_reward
+                    
+                    if self._validate_risk_reward(current_price, potential_stop, potential_target):
+                        sell_signal = True
+                        technical_strength = min(zone_strength / 5.0, 1.0)  # Normalize zone strength
+                        self.log(f'SUPPLY ZONE TECHNICAL SIGNAL - Zone Strength: {zone_strength}, Price: {current_price:.5f}')
+        
+        else:
+            # Fallback to simple MA crossover if supply/demand disabled
+            if self.crossover > 0 and rsi_bullish and macd_bullish:
+                buy_signal = True
+                technical_strength = 0.7  # Strong technical signal
+            elif self.crossover < 0 and rsi_bearish and macd_bearish:
+                sell_signal = True
+                technical_strength = 0.7  # Strong technical signal
+        
+        return {
+            'buy_signal': buy_signal,
+            'sell_signal': sell_signal,
+            'technical_strength': technical_strength
+        }
+    
+    def _combine_technical_sentiment_signals(self, technical_signals, sentiment):
+        """Combine technical analysis with sentiment analysis"""
+        # Get sentiment components
+        sentiment_direction = sentiment.get('signal_direction', 0.0)
+        sentiment_strength = sentiment.get('signal_strength', 0.0)
+        sentiment_confidence = sentiment.get('confidence', 0.0)
+        
+        # Check if sentiment meets minimum requirements
+        sentiment_valid = (sentiment_strength >= self.p.sentiment_threshold and
+                          sentiment_confidence >= self.p.min_sentiment_confidence)
+        
+        # Calculate weights
+        technical_weight = 1.0 - self.p.sentiment_weight
+        sentiment_weight = self.p.sentiment_weight if sentiment_valid else 0.0
+        
+        # Adjust technical weight if sentiment is not valid
+        if not sentiment_valid:
+            technical_weight = 1.0
+        
+        # Calculate combined signal strength
+        buy_signal = False
+        sell_signal = False
+        combined_strength = 0.0
+        
+        if technical_signals['buy_signal']:
+            # Calculate buy signal strength
+            technical_component = technical_signals['technical_strength'] * technical_weight
+            sentiment_component = max(0, sentiment_direction) * sentiment_strength * sentiment_weight
+            combined_strength = technical_component + sentiment_component
+            
+            # Apply sentiment boost if sentiment strongly aligns
+            if (sentiment_valid and sentiment_direction > 0.4 and sentiment_strength > 0.6):
+                combined_strength *= self.p.sentiment_boost_multiplier
+                self.log(f'SENTIMENT BOOST APPLIED (BUY) - New strength: {combined_strength:.3f}')
+            
+            buy_signal = combined_strength > 0.5  # Minimum threshold for trade execution
+            
+        elif technical_signals['sell_signal']:
+            # Calculate sell signal strength
+            technical_component = technical_signals['technical_strength'] * technical_weight
+            sentiment_component = max(0, -sentiment_direction) * sentiment_strength * sentiment_weight
+            combined_strength = technical_component + sentiment_component
+            
+            # Apply sentiment boost if sentiment strongly aligns
+            if (sentiment_valid and sentiment_direction < -0.4 and sentiment_strength > 0.6):
+                combined_strength *= self.p.sentiment_boost_multiplier
+                self.log(f'SENTIMENT BOOST APPLIED (SELL) - New strength: {combined_strength:.3f}')
+            
+            sell_signal = combined_strength > 0.5  # Minimum threshold for trade execution
+        
+        return {
+            'buy_signal': buy_signal,
+            'sell_signal': sell_signal,
+            'signal_strength': min(combined_strength, 1.0),  # Cap at 1.0
+            'technical_component': technical_signals['technical_strength'],
+            'sentiment_component': sentiment_strength if sentiment_valid else 0.0,
+            'sentiment_direction': sentiment_direction
+        }
     
     def _validate_risk_reward(self, entry_price, stop_price, target_price):
         """Validate if the trade meets minimum risk/reward criteria"""
@@ -272,8 +432,11 @@ class ForexStrategy(bt.Strategy):
         return risk_reward_ratio >= self.p.min_risk_reward
     
     def _manage_position(self):
-        """Advanced position management with supply/demand levels"""
+        """Advanced position management with supply/demand levels and sentiment-based exits"""
         current_price = self.dataclose[0]
+        
+        # Get current sentiment for exit decisions
+        sentiment = self.get_sentiment_signal()
         
         if self.position.size > 0:  # Long position
             # Dynamic stop loss based on supply/demand zones
@@ -296,6 +459,12 @@ class ForexStrategy(bt.Strategy):
                 self.close()
             elif current_price >= take_profit_price:
                 self.log('TAKE PROFIT HIT (LONG), %.2f' % current_price)
+                self.close()
+            # Sentiment-based early exit for long positions
+            elif (self.p.use_sentiment_filter and
+                  sentiment['signal_strength'] > 0.6 and
+                  sentiment['signal_direction'] < -0.5):
+                self.log(f'SENTIMENT EXIT (LONG) - Negative sentiment: {sentiment["signal_direction"]:.3f}')
                 self.close()
             # Trail stop if in significant profit
             elif current_price > self.buyprice * 1.01:  # 1% profit
@@ -324,6 +493,12 @@ class ForexStrategy(bt.Strategy):
                 self.close()
             elif current_price <= take_profit_price:
                 self.log('TAKE PROFIT HIT (SHORT), %.2f' % current_price)
+                self.close()
+            # Sentiment-based early exit for short positions
+            elif (self.p.use_sentiment_filter and
+                  sentiment['signal_strength'] > 0.6 and
+                  sentiment['signal_direction'] > 0.5):
+                self.log(f'SENTIMENT EXIT (SHORT) - Positive sentiment: {sentiment["signal_direction"]:.3f}')
                 self.close()
             # Trail stop if in significant profit
             elif current_price < self.buyprice * 0.99:  # 1% profit
