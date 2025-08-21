@@ -56,25 +56,29 @@ class ProfitOptimizer:
             
     def setup_parameter_space(self):
         """
-        Define simplified parameter space focused on profitable parameters
+        Define enhanced parameter space for 1%+ profitability target
         """
         self.param_bounds = {
-            # Moving Average parameters (most important)
-            'fast_length': [5, 20],
-            'slow_length': [20, 50],
+            # Moving Average parameters - optimized for trends
+            'fast_length': [5, 15],
+            'slow_length': [15, 35],
             
-            # RSI parameters
+            # RSI parameters - more aggressive ranges
             'rsi_period': [10, 21],
-            'rsi_oversold': [25, 35],
-            'rsi_overbought': [65, 75],
+            'rsi_oversold': [20, 30],
+            'rsi_overbought': [70, 80],
             
-            # Risk Management (critical for profitability)
-            'stop_loss_percent': [0.005, 0.02],    # 0.5% to 2%
-            'take_profit_percent': [0.01, 0.04],   # 1% to 4%
+            # Risk Management - higher reward ratios for 1%+ target
+            'stop_loss_percent': [0.006, 0.015],    # 0.6% to 1.5%
+            'take_profit_percent': [0.018, 0.045],  # 1.8% to 4.5% (3:1 ratio)
             
-            # Trade management
-            'max_trades_per_day': [2, 5],
-            'min_bars_between_trades': [3, 10],
+            # Trade management - more aggressive
+            'max_trades_per_day': [3, 8],
+            'min_bars_between_trades': [2, 8],
+            
+            # Enhanced parameters for profitability
+            'volatility_multiplier': [1.2, 2.0],
+            'trend_strength_min': [0.5, 0.8],
         }
         
         self.param_names = list(self.param_bounds.keys())
@@ -120,11 +124,22 @@ class ProfitOptimizer:
         """Decode genetic algorithm solution to parameter dictionary"""
         params = {}
         for i, param_name in enumerate(self.param_names):
-            if param_name in ['fast_length', 'slow_length', 'rsi_period', 
+            if param_name in ['fast_length', 'slow_length', 'rsi_period',
                              'max_trades_per_day', 'min_bars_between_trades']:
                 params[param_name] = int(solution[i])
             else:
                 params[param_name] = float(solution[i])
+        
+        # Add fixed enhanced parameters for profitability
+        params.update({
+            'use_rsi_filter': True,
+            'use_macd_filter': True,
+            'use_trend_filter': True,
+            'use_momentum_filter': True,
+            'use_breakout_filter': True,
+            'printlog': False
+        })
+        
         return params
         
     def evaluate_strategy(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -244,8 +259,8 @@ class ProfitOptimizer:
             else:
                 profit_factor = float(profit_factor)
             
-            # Minimum trades requirement
-            if total_trades < 10:
+            # Minimum trades requirement - reduced for aggressive strategy
+            if total_trades < 5:
                 return -1000
                 
             # Calculate actual profit
@@ -272,19 +287,23 @@ class ProfitOptimizer:
                            0.10 * win_rate_score + 
                            0.05 * drawdown_score)
             
-            # BONUSES for exceptional performance
-            if profit_percentage > 10:  # 10%+ returns
+            # ENHANCED BONUSES for 1%+ target
+            if profit_percentage > 5:   # 5%+ returns - huge bonus
+                fitness_score += 200
+            elif profit_percentage > 3:  # 3%+ returns - large bonus
+                fitness_score += 100
+            elif profit_percentage > 1:  # 1%+ returns - target bonus
                 fitness_score += 50
-            elif profit_percentage > 5:  # 5%+ returns
+            elif profit_percentage > 0.5:  # 0.5%+ returns - good bonus
                 fitness_score += 25
-            elif profit_percentage > 2:  # 2%+ returns
+            elif profit_percentage > 0:  # Any positive return - small bonus
                 fitness_score += 10
                 
-            # PENALTIES for poor performance
-            if profit_percentage < -5:  # Losing more than 5%
-                fitness_score -= 100
-            elif profit_percentage < -2:  # Losing more than 2%
-                fitness_score -= 50
+            # REDUCED PENALTIES to encourage risk-taking
+            if profit_percentage < -3:  # Losing more than 3%
+                fitness_score -= 75
+            elif profit_percentage < -1:  # Losing more than 1%
+                fitness_score -= 25
                 
             # Penalty for excessive drawdown
             if max_drawdown > 20:
