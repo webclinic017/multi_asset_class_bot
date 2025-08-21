@@ -1,0 +1,66 @@
+# Core dependencies
+pandas
+numpy
+pyyaml
+backtrader
+ccxt
+oandapyV20
+ibapi # For Interactive Brokers API
+python-dotenv # For loading environment variables from .env file
+
+# Logging
+# No specific logging library needed beyond standard Python logging, but if a custom one was used, it would go here.
+
+# For development and testing (optional)
+ipython
+jupyter_client
+jupyter_core
+matplotlib-inline
+prompt_toolkit
+psutil
+Pygments
+stack-data
+tornado
+traitlets
+wcwidth
+
+# Other dependencies that might be useful or were in the original list
+asttokens
+build
+certifi
+charset-normalizer
+colorama
+comm
+debugpy
+decorator
+exceptiongroup
+executing
+idna
+importlib_metadata
+jedi
+narwhals
+nest-asyncio
+packaging
+pandas-ta
+parso
+patsy
+platformdirs
+plotly
+plotly-express
+pure_eval
+pyproject_hooks
+python-dateutil
+pytz
+pywin32
+pyzmq
+requests
+scipy
+six
+statsmodels
+ta
+TA-Lib
+tomli
+typing_extensions
+tzdata
+urllib3
+zipp
