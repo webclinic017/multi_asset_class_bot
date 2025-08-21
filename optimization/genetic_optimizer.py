@@ -53,16 +53,26 @@ class GeneticOptimizer:
         Each parameter has [min_value, max_value] bounds
         """
         self.param_bounds = {
-            # Moving Average parameters (match ForexStrategy parameter names)
+            # Moving Average parameters
             'fast_length': [5, 20],      # Fast MA period
             'slow_length': [20, 50],     # Slow MA period
+            
+            # RSI parameters
+            'rsi_period': [10, 21],           # RSI period
+            'rsi_oversold': [20, 35],         # RSI oversold level
+            'rsi_overbought': [65, 80],       # RSI overbought level
+            
+            # MACD parameters
+            'macd_fast': [8, 16],             # MACD fast EMA
+            'macd_slow': [20, 30],            # MACD slow EMA
+            'macd_signal': [7, 12],           # MACD signal line
             
             # Supply/Demand parameters
             'pivot_period': [3, 10],          # Pivot detection period
             'zone_lookback': [20, 100],       # Zone lookback period
             'min_zone_strength': [1.0, 5.0], # Minimum zone strength
             
-            # Risk Management parameters (match ForexStrategy parameter names)
+            # Risk Management parameters
             'stop_loss_percent': [0.005, 0.03],     # Stop loss percentage (0.5% to 3%)
             'take_profit_percent': [0.01, 0.05],    # Take profit percentage (1% to 5%)
         }
@@ -83,7 +93,9 @@ class GeneticOptimizer:
         """
         params = {}
         for i, param_name in enumerate(self.param_names):
-            if param_name in ['fast_length', 'slow_length', 'pivot_period', 'zone_lookback']:
+            if param_name in ['fast_length', 'slow_length', 'pivot_period', 'zone_lookback',
+                             'rsi_period', 'rsi_oversold', 'rsi_overbought',
+                             'macd_fast', 'macd_slow', 'macd_signal']:
                 # Integer parameters
                 params[param_name] = int(solution[i])
             else:
@@ -230,6 +242,7 @@ class GeneticOptimizer:
     def calculate_fitness_score(self, results: Dict[str, Any]) -> float:
         """
         Calculate fitness score from backtest results
+        Focus on maximizing Sharpe ratio and profit
         
         Args:
             results: Backtest results dictionary
@@ -238,49 +251,71 @@ class GeneticOptimizer:
             Composite fitness score
         """
         try:
-            # Extract key metrics with safe defaults
-            total_return = results.get('total_return', 0) or 0
-            sharpe_ratio = results.get('sharpe_ratio', 0) or 0
-            max_drawdown = results.get('max_drawdown', 100) or 100
-            win_rate = results.get('win_rate', 0) or 0
-            total_trades = results.get('total_trades', 0) or 0
+            # Extract key metrics with safe defaults and None handling
+            total_return = results.get('total_return')
+            sharpe_ratio = results.get('sharpe_ratio')
+            max_drawdown = results.get('max_drawdown')
+            win_rate = results.get('win_rate')
+            total_trades = results.get('total_trades')
+            final_value = results.get('final_value')
             
             # Convert None values to safe defaults
-            if total_return is None:
-                total_return = 0
-            if sharpe_ratio is None:
-                sharpe_ratio = 0
-            if max_drawdown is None:
-                max_drawdown = 100
-            if win_rate is None:
-                win_rate = 0
-            if total_trades is None:
-                total_trades = 0
+            total_return = float(total_return) if total_return is not None else 0.0
+            sharpe_ratio = float(sharpe_ratio) if sharpe_ratio is not None else 0.0
+            max_drawdown = float(max_drawdown) if max_drawdown is not None else 100.0
+            win_rate = float(win_rate) if win_rate is not None else 0.0
+            total_trades = int(total_trades) if total_trades is not None else 0
+            final_value = float(final_value) if final_value is not None else 10000.0
             
             # Ensure minimum number of trades
-            if total_trades < 10:
+            if total_trades < 5:
                 return -1000
                 
-            # Normalize max drawdown (lower is better)
-            drawdown_score = max(0, (10 - abs(max_drawdown)) / 10)
+            # Calculate actual profit/loss
+            initial_capital = 10000  # From config
+            actual_profit = (final_value or 10000) - initial_capital
+            profit_percentage = (actual_profit / initial_capital) * 100
             
-            # Composite fitness score
-            # Weights: win_rate (40%), sharpe_ratio (30%), total_return (20%), drawdown (10%)
+            # Normalize metrics for scoring
+            # Sharpe ratio component (0-1, higher weight)
+            sharpe_score = 0
+            if sharpe_ratio > 0:
+                sharpe_score = min(sharpe_ratio / 3.0, 1.0)  # Cap at 3.0 Sharpe
+            elif sharpe_ratio < 0:
+                sharpe_score = max(sharpe_ratio / 3.0, -1.0)  # Penalty for negative Sharpe
+            
+            # Profit component (0-1, focus on actual profit)
+            profit_score = 0
+            if profit_percentage > 0:
+                profit_score = min(profit_percentage / 20.0, 1.0)  # Cap at 20% return
+            elif profit_percentage < 0:
+                profit_score = max(profit_percentage / 20.0, -1.0)  # Penalty for losses
+            
+            # Win rate component (0-1)
+            win_rate_score = win_rate / 100.0
+            
+            # Drawdown component (0-1, lower drawdown is better)
+            drawdown_score = max(0, (5 - abs(max_drawdown)) / 5)
+            
+            # Enhanced composite fitness score
+            # Weights: Sharpe ratio (40%), Profit (35%), Win rate (15%), Drawdown (10%)
             fitness_score = (
-                0.4 * (abs(win_rate) / 100) +           # Win rate component (0-1)
-                0.3 * max(0, min(abs(sharpe_ratio), 3) / 3) +  # Sharpe ratio component (0-1, capped at 3)
-                0.2 * max(0, min(abs(total_return), 50) / 50) + # Return component (0-1, capped at 50%)
-                0.1 * drawdown_score                # Drawdown component (0-1)
+                0.40 * sharpe_score +      # Sharpe ratio (most important)
+                0.35 * profit_score +      # Actual profit (second most important)
+                0.15 * win_rate_score +    # Win rate
+                0.10 * drawdown_score      # Risk control
             )
             
-            # Bonus for high win rate
-            if win_rate and win_rate > 50:
-                fitness_score += 0.1 * ((win_rate - 50) / 50)
-                
-            # Bonus for positive Sharpe ratio
-            if sharpe_ratio and sharpe_ratio > 1:
-                fitness_score += 0.05 * min((sharpe_ratio - 1), 2)
-                
+            # Bonus for exceptional performance
+            if sharpe_ratio > 1.5 and profit_percentage > 5:
+                fitness_score += 0.2  # Significant bonus for great performance
+            elif sharpe_ratio > 1.0 and profit_percentage > 2:
+                fitness_score += 0.1  # Moderate bonus for good performance
+            
+            # Penalty for poor performance
+            if sharpe_ratio < 0 or profit_percentage < -5:
+                fitness_score -= 0.5  # Heavy penalty for losses
+            
             return fitness_score
             
         except Exception as e:
@@ -412,7 +447,8 @@ class GeneticOptimizer:
         # Reorder columns for better readability
         priority_columns = [
             'generation', 'solution_idx', 'fitness_score',
-            'fast_length', 'slow_length', 'pivot_period', 'zone_lookback',
+            'fast_length', 'slow_length', 'rsi_period', 'rsi_oversold', 'rsi_overbought',
+            'macd_fast', 'macd_slow', 'macd_signal', 'pivot_period', 'zone_lookback',
             'min_zone_strength', 'stop_loss_percent', 'take_profit_percent',
             'final_value', 'total_return', 'sharpe_ratio', 'max_drawdown',
             'total_trades', 'winning_trades', 'losing_trades', 'win_rate',

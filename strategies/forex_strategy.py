@@ -31,6 +31,14 @@ class ForexStrategy(bt.Strategy):
         ('fast_length', 10),
         ('slow_length', 30),
         
+        # Technical Indicator Parameters
+        ('rsi_period', 14),            # RSI period
+        ('rsi_oversold', 30),          # RSI oversold level
+        ('rsi_overbought', 70),        # RSI overbought level
+        ('macd_fast', 12),             # MACD fast EMA
+        ('macd_slow', 26),             # MACD slow EMA
+        ('macd_signal', 9),            # MACD signal line
+        
         # Risk Management
         ('stop_loss_percent', 0.005), # 0.5% stop loss
         ('take_profit_percent', 0.01), # 1% take profit
@@ -49,6 +57,8 @@ class ForexStrategy(bt.Strategy):
         # Strategy Filters
         ('use_supply_demand', True),   # Enable/disable supply demand logic
         ('use_volume_filter', True),   # Enable/disable volume confirmation
+        ('use_rsi_filter', True),      # Enable/disable RSI confirmation
+        ('use_macd_filter', True),     # Enable/disable MACD confirmation
         ('min_risk_reward', 2.0),      # Minimum risk/reward ratio
         
         # Logging
@@ -78,7 +88,17 @@ class ForexStrategy(bt.Strategy):
         self.crossover = bt.indicators.CrossOver(self.sma_fast, self.sma_slow)
         
         # RSI for additional confirmation
-        self.rsi = bt.indicators.RSI(self.datas[0], period=14)
+        self.rsi = bt.indicators.RSI(self.datas[0], period=self.p.rsi_period)
+        
+        # MACD for trend confirmation
+        self.macd = bt.indicators.MACD(
+            self.datas[0],
+            period_me1=self.p.macd_fast,
+            period_me2=self.p.macd_slow,
+            period_signal=self.p.macd_signal
+        )
+        self.macd_signal = self.macd.signal
+        self.macd_histogram = self.macd.macd - self.macd.signal  # Calculate histogram manually
         
         # Custom Supply/Demand Indicators
         if self.p.use_supply_demand:
@@ -149,9 +169,25 @@ class ForexStrategy(bt.Strategy):
             bullish_trend = self.crossover > 0 or self.sma_fast[0] > self.sma_slow[0]
             bearish_trend = self.crossover < 0 or self.sma_fast[0] < self.sma_slow[0]
             
-            # RSI conditions (avoid overbought/oversold extremes)
-            rsi_bullish = self.rsi[0] > 30 and self.rsi[0] < 70
-            rsi_bearish = self.rsi[0] > 30 and self.rsi[0] < 70
+            # RSI conditions
+            rsi_bullish = True
+            rsi_bearish = True
+            if self.p.use_rsi_filter:
+                rsi_bullish = (self.rsi[0] > self.p.rsi_oversold and
+                              self.rsi[0] < self.p.rsi_overbought and
+                              self.rsi[0] > self.rsi[-1])  # RSI rising
+                rsi_bearish = (self.rsi[0] > self.p.rsi_oversold and
+                              self.rsi[0] < self.p.rsi_overbought and
+                              self.rsi[0] < self.rsi[-1])  # RSI falling
+            
+            # MACD conditions
+            macd_bullish = True
+            macd_bearish = True
+            if self.p.use_macd_filter:
+                macd_bullish = (self.macd[0] > self.macd_signal[0] and  # MACD above signal
+                               self.macd_histogram[0] > 0)              # Positive histogram
+                macd_bearish = (self.macd[0] < self.macd_signal[0] and  # MACD below signal
+                               self.macd_histogram[0] < 0)              # Negative histogram
             
             # Supply/Demand analysis
             buy_signal = False
@@ -161,9 +197,9 @@ class ForexStrategy(bt.Strategy):
                 zone_type = self.supply_demand.zone_type[0]
                 zone_strength = self.supply_demand.zone_strength[0]
                 
-                # Buy signal: Price at demand zone + bullish trend
+                # Buy signal: Price at demand zone + all bullish conditions
                 if (zone_type == 1 and zone_strength >= self.p.min_zone_strength and
-                    bullish_trend and rsi_bullish):
+                    bullish_trend and rsi_bullish and macd_bullish):
                     
                     demand_high = self.supply_demand.demand_zone_high[0]
                     demand_low = self.supply_demand.demand_zone_low[0]
@@ -177,9 +213,9 @@ class ForexStrategy(bt.Strategy):
                             buy_signal = True
                             self.log(f'DEMAND ZONE BUY SIGNAL - Zone Strength: {zone_strength}, Price: {current_price:.5f}')
                 
-                # Sell signal: Price at supply zone + bearish trend
+                # Sell signal: Price at supply zone + all bearish conditions
                 elif (zone_type == -1 and zone_strength >= self.p.min_zone_strength and
-                      bearish_trend and rsi_bearish):
+                      bearish_trend and rsi_bearish and macd_bearish):
                     
                     supply_high = self.supply_demand.supply_zone_high[0]
                     supply_low = self.supply_demand.supply_zone_low[0]
@@ -195,9 +231,9 @@ class ForexStrategy(bt.Strategy):
             
             else:
                 # Fallback to simple MA crossover if supply/demand disabled
-                if self.crossover > 0 and rsi_bullish:
+                if self.crossover > 0 and rsi_bullish and macd_bullish:
                     buy_signal = True
-                elif self.crossover < 0 and rsi_bearish:
+                elif self.crossover < 0 and rsi_bearish and macd_bearish:
                     sell_signal = True
             
             # Volume confirmation (if enabled)
