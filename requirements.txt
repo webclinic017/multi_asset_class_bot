@@ -57,6 +57,17 @@ pyzmq
 requests
 scipy
 six
+
+# Sentiment Analysis Dependencies
+textblob
+feedparser
+beautifulsoup4
+nltk
+vaderSentiment
+newspaper3k
+lxml
+pygad
+yfinance
 statsmodels
 ta
 TA-Lib

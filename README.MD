@@ -11,6 +11,8 @@
 
 ▪ python fast_optimize.py --config config/config.yaml --generations 3 --population 4
 
+▪ python test_sentiment_simple.py
+
 ## Notes from earlier experiments
 + Use working_bot_aug11_2025.py for updated code
 + Imports below are available from pip install ta \
