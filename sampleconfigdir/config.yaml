@@ -11,6 +11,9 @@ data:
     account_id:
     access_token:
     practice: true
+  kraken:
+    api_key: 
+    api_secret:
   preprocessing:
     add_technical_indicators: true
     normalize_features: true
