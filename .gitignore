@@ -1,6 +1,8 @@
 __pycache__
 .env
 config/
+logs/
+output/
 **/*.csv
 **/*.log
 **/*.json
