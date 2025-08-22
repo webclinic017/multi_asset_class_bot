@@ -53,7 +53,7 @@ class DynamicOptimizer:
             logger.error(f"Error finding latest CSV file: {e}")
             return None, None
     
-    def run_fast_optimization(self, generations=40, population=60):
+    def run_fast_optimization(self, generations=500, population=600):
         """
         Run fast optimization using the fast_optimize.py script.
         Returns True if successful, False otherwise.

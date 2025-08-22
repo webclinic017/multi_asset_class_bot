@@ -83,15 +83,27 @@ def load_config(config_path='config/config.yaml'):
         exit(1)
 
 def run_backtest_mode(config):
-    """Runs the bot in backtesting mode."""
-    logger.info("Starting trading bot in BACKTESTING mode.")
+    """Runs the bot in backtesting mode with multi-asset support."""
+    logger.info("Starting trading bot in BACKTESTING mode with MULTI-ASSET support.")
     
+    # Check if multi-asset mode is enabled
+    multi_asset_enabled = config.get('multi_asset', {}).get('enabled', False)
+    
+    if multi_asset_enabled:
+        logger.info("=== MULTI-ASSET BACKTESTING ENABLED ===")
+        run_multi_asset_backtest(config)
+    else:
+        logger.info("=== SINGLE ASSET BACKTESTING ===")
+        run_single_asset_backtest(config)
+
+def run_single_asset_backtest(config):
+    """Run backtest for single asset (legacy mode)"""
     # Initialize components
     data_feed = OANDADataFeed(config)
     preprocessor = DataPreprocessor()
     risk_manager = RiskManager(config)
     
-    # Initialize backtest engine with new structure
+    # Initialize backtest engine
     engine = BacktestEngine(
         data_feed=data_feed,
         preprocessor=preprocessor,
@@ -99,7 +111,7 @@ def run_backtest_mode(config):
         config=config
     )
 
-    # Get symbol info from new config structure
+    # Get symbol info from config structure
     if 'data' in config and 'symbols' in config['data']:
         symbol_info = config['data']['symbols'][0]
         forex_symbol = symbol_info['name']
@@ -116,13 +128,14 @@ def run_backtest_mode(config):
         if forex_data is not None:
             # Get strategy parameters
             strategy_params = config.get('strategy', {}).get('params', {})
-            strategy_params['printlog'] = True  # Enable logging to see supply/demand signals
+            strategy_params['printlog'] = True  # Enable logging to see signals
             
             engine.add_strategy('ForexStrategy', **strategy_params)
             results = engine.run()
             
             if results:
-                logger.info("=== BACKTEST RESULTS ===")
+                logger.info("=== SINGLE ASSET BACKTEST RESULTS ===")
+                logger.info(f"Asset: {forex_symbol} ({asset_type})")
                 logger.info(f"Final Portfolio Value: {results['final_value']:.2f}")
                 logger.info(f"Total Return: {results['total_return']:.2f}%")
                 logger.info(f"Sharpe Ratio: {results['sharpe_ratio']:.2f}")
@@ -133,19 +146,102 @@ def run_backtest_mode(config):
                 logger.info(f"Average Loss: {results['avg_loss']:.4f}")
         else:
             logger.error(f"Could not load data for {forex_symbol}. Backtest aborted.")
-    except NotImplementedError as e:
-        logger.error(f"Backtesting error: {e}")
     except Exception as e:
-        logger.error(f"An error occurred during backtesting: {e}")
+        logger.error(f"An error occurred during single asset backtesting: {e}")
+
+def run_multi_asset_backtest(config):
+    """Run backtest for multiple assets and compare performance"""
+    from data.kraken_feed import KrakenDataFeed
+    
+    # Initialize components
+    oanda_feed = OANDADataFeed(config)
+    kraken_feed = KrakenDataFeed(config)
+    preprocessor = DataPreprocessor()
+    risk_manager = RiskManager(config)
+    
+    # Initialize backtest engine with multi-asset support
+    engine = BacktestEngine(
+        data_feed=oanda_feed,  # Primary data feed (forex)
+        preprocessor=preprocessor,
+        risk_manager=risk_manager,
+        config=config
+    )
+    
+    # Get symbols from config
+    symbols_config = config.get('data', {}).get('symbols', [])
+    
+    if not symbols_config:
+        logger.error("No symbols configured for multi-asset backtesting")
+        return
+    
+    try:
+        # Run multi-asset backtest
+        multi_results = engine.run_multi_asset_backtest(symbols_config)
+        
+        if multi_results:
+            logger.info("=== MULTI-ASSET BACKTEST COMPLETE ===")
+            
+            # Display individual results
+            for symbol, data in multi_results['individual_results'].items():
+                results = data['results']
+                asset_type = data['asset_type']
+                logger.info(f"\n--- {symbol} ({asset_type.upper()}) ---")
+                logger.info(f"Final Value: ${results['final_value']:.2f}")
+                logger.info(f"Total Return: {results['total_return']:.2f}%")
+                logger.info(f"Sharpe Ratio: {results['sharpe_ratio']:.2f}")
+                logger.info(f"Win Rate: {results['win_rate']:.2f}%")
+                logger.info(f"Total Trades: {results['total_trades']}")
+            
+            # Display analysis results
+            comparison = multi_results['comparison']
+            allocation = multi_results['allocation']
+            recommendation = multi_results['recommendation']
+            
+            logger.info("\n=== MULTI-ASSET ANALYSIS ===")
+            logger.info(f"Forex Average Score: {comparison['forex']['avg_score']:.1f}")
+            logger.info(f"Crypto Average Score: {comparison['crypto']['avg_score']:.1f}")
+            logger.info(f"Recommendation: Focus on {recommendation['primary_focus'].upper()}")
+            logger.info(f"Confidence: {comparison['confidence']:.1f}%")
+            logger.info(f"Optimal Allocation: {allocation['forex_allocation']:.1f}% Forex, {allocation['crypto_allocation']:.1f}% Crypto")
+            logger.info(f"Next Trade Asset: {recommendation['next_trade_asset'].upper()}")
+            logger.info(f"Reasoning: {allocation['reasoning']}")
+            
+            if multi_results['report_path']:
+                logger.info(f"Detailed report saved to: {multi_results['report_path']}")
+        
+        else:
+            logger.error("Multi-asset backtest failed")
+            
+    except Exception as e:
+        logger.error(f"An error occurred during multi-asset backtesting: {e}")
 
 def run_live_trading_mode(config):
-    """Runs the bot in live trading mode with dynamic optimization and actual signal generation."""
+    """Runs the bot in live trading mode with multi-asset support and dynamic optimization."""
     import time
     import pandas as pd
     from datetime import datetime, timedelta
     from utils.dynamic_optimizer import DynamicOptimizer
+    from utils.multi_asset_analyzer import MultiAssetAnalyzer
+    from data.kraken_feed import KrakenDataFeed
     
-    logger.info("Starting trading bot in LIVE TRADING mode with DYNAMIC OPTIMIZATION.")
+    logger.info("Starting trading bot in LIVE TRADING mode with MULTI-ASSET support.")
+    
+    # Check if multi-asset mode is enabled
+    multi_asset_enabled = config.get('multi_asset', {}).get('enabled', False)
+    
+    if multi_asset_enabled:
+        logger.info("=== MULTI-ASSET LIVE TRADING ENABLED ===")
+        run_multi_asset_live_trading(config)
+    else:
+        logger.info("=== SINGLE ASSET LIVE TRADING ===")
+        run_single_asset_live_trading(config)
+
+def run_single_asset_live_trading(config):
+    """Run live trading for single asset (legacy mode)"""
+    import time
+    import pandas as pd
+    from datetime import datetime, timedelta
+    from utils.dynamic_optimizer import DynamicOptimizer
     
     # Initialize dynamic optimizer
     logger.info("=== INITIALIZING DYNAMIC OPTIMIZATION ===")
@@ -514,3 +610,262 @@ def main():
 
 if __name__ == "__main__":
     main()
+def run_multi_asset_live_trading(config):
+    """Run live trading with multi-asset support and intelligent asset selection"""
+    import time
+    import pandas as pd
+    from datetime import datetime, timedelta
+    from utils.dynamic_optimizer import DynamicOptimizer
+    from utils.multi_asset_analyzer import MultiAssetAnalyzer
+    from data.kraken_feed import KrakenDataFeed
+    
+    logger.info("=== INITIALIZING MULTI-ASSET LIVE TRADING ===")
+    
+    # Initialize multi-asset analyzer
+    multi_asset_analyzer = MultiAssetAnalyzer(config_path='config/config.yaml')
+    
+    # Initialize dynamic optimizer
+    dynamic_optimizer = DynamicOptimizer(
+        config_path='config/config.yaml',
+        output_dir='output'
+    )
+    
+    # Run initial multi-asset backtest to determine optimal allocation
+    logger.info("Running initial multi-asset analysis...")
+    try:
+        from data.data_feed import OANDADataFeed
+        
+        # Initialize data feeds
+        oanda_feed = OANDADataFeed(config)
+        kraken_feed = KrakenDataFeed(config)
+        
+        # Run quick backtests for both assets
+        symbols_config = config.get('data', {}).get('symbols', [])
+        
+        # Initialize backtest engine for analysis
+        from backtesting.backtest_engine import BacktestEngine
+        from data.preprocessing import DataPreprocessor
+        from risk.risk_manager import RiskManager
+        
+        preprocessor = DataPreprocessor()
+        risk_manager = RiskManager(config)
+        
+        engine = BacktestEngine(
+            data_feed=oanda_feed,
+            preprocessor=preprocessor,
+            risk_manager=risk_manager,
+            config=config
+        )
+        
+        # Run multi-asset analysis
+        multi_results = engine.run_multi_asset_backtest(symbols_config)
+        
+        if multi_results:
+            recommendation = multi_results['recommendation']
+            allocation = multi_results['allocation']
+            
+            logger.info("=== INITIAL MULTI-ASSET ANALYSIS COMPLETE ===")
+            logger.info(f"Recommended focus: {recommendation['primary_focus']}")
+            logger.info(f"Next trade asset: {recommendation['next_trade_asset']}")
+            logger.info(f"Allocation: {allocation['forex_allocation']:.1f}% Forex, {allocation['crypto_allocation']:.1f}% Crypto")
+            
+            # Start live trading with recommended asset
+            selected_asset = recommendation['next_trade_asset']
+            
+        else:
+            logger.warning("Multi-asset analysis failed, defaulting to forex")
+            selected_asset = 'forex'
+            
+    except Exception as e:
+        logger.error(f"Error in initial multi-asset analysis: {e}")
+        selected_asset = 'forex'  # Default to forex
+    
+    # Initialize live trading for selected asset
+    logger.info(f"=== STARTING LIVE TRADING FOR {selected_asset.upper()} ===")
+    
+    if selected_asset == 'forex':
+        run_forex_live_trading(config, dynamic_optimizer, multi_asset_analyzer)
+    else:
+        run_crypto_live_trading(config, dynamic_optimizer, multi_asset_analyzer)
+
+def run_forex_live_trading(config, dynamic_optimizer, multi_asset_analyzer):
+    """Run live trading for forex assets"""
+    import time
+    from datetime import datetime, timedelta
+    
+    logger.info("Starting FOREX live trading...")
+    
+    # Get optimized forex parameters
+    optimized_params = dynamic_optimizer.get_optimized_parameters(
+        max_age_minutes=5,
+        auto_optimize=True,
+        generations=40,
+        population=60
+    )
+    
+    # Initialize forex components
+    broker_type = "oanda"
+    
+    broker_connector = None
+    if broker_type == "oanda":
+        from execution.broker_connect import OANDABrokerConnector
+        broker_connector = OANDABrokerConnector(config=config)
+    
+    if not broker_connector:
+        logger.error("Forex broker connector could not be initialized.")
+        return
+    
+    try:
+        broker_connector.connect()
+        from execution.order_manager import OrderManager
+        from risk.risk_manager import RiskManager
+        from data.data_feed import OANDADataFeed
+        from data.preprocessing import DataPreprocessor
+        
+        order_manager = OrderManager(broker_connector, config=config)
+        risk_manager = RiskManager(config=config)
+        data_feed = OANDADataFeed(config)
+        preprocessor = DataPreprocessor()
+        
+        # Get forex symbol configuration
+        forex_symbols = [s for s in config.get('data', {}).get('symbols', []) if s['type'] == 'forex']
+        if not forex_symbols:
+            logger.error("No forex symbols configured")
+            return
+        
+        forex_symbol = forex_symbols[0]['name']
+        timeframe = forex_symbols[0]['timeframe']
+        
+        logger.info(f"Trading {forex_symbol} on {timeframe} timeframe")
+        
+        # Get strategy parameters
+        strategy_params = config.get('strategies', {}).get('forex', {}).get('params', {})
+        if optimized_params:
+            strategy_params.update(optimized_params)
+        
+        # Live trading loop
+        iteration = 0
+        max_iterations = 20  # Extended for multi-asset
+        
+        while iteration < max_iterations:
+            try:
+                iteration += 1
+                logger.info(f"\n--- FOREX Trading Iteration {iteration}/{max_iterations} ---")
+                
+                # Get current price
+                current_price = broker_connector.get_current_price(forex_symbol)
+                if current_price:
+                    logger.info(f"Current {forex_symbol} price: {current_price}")
+                    
+                    # Update market conditions for multi-asset analyzer
+                    multi_asset_analyzer.update_market_conditions('forex', {
+                        'price': current_price,
+                        'volatility': 0.02,  # Placeholder - would calculate from recent data
+                        'trend_strength': 0.7,  # Placeholder
+                        'volume': 1.0  # Placeholder
+                    })
+                    
+                    # Generate trading signals (simplified for demo)
+                    # In real implementation, this would use the full strategy logic
+                    logger.info(f"[FOREX SIGNAL] Monitoring {forex_symbol} at ${current_price}")
+                    
+                    # Check if we should switch to crypto based on performance
+                    if iteration % 5 == 0:  # Check every 5 iterations
+                        recommendation = multi_asset_analyzer.get_trading_recommendation()
+                        if recommendation['next_trade_asset'] == 'crypto':
+                            logger.info("Multi-asset analyzer recommends switching to CRYPTO")
+                            break
+                
+                # Wait before next iteration
+                if iteration < max_iterations:
+                    logger.info("Waiting 30 seconds before next iteration...")
+                    time.sleep(30)
+                    
+            except Exception as e:
+                logger.error(f"Error in forex trading iteration {iteration}: {e}")
+                time.sleep(30)
+                continue
+        
+        logger.info("=== FOREX LIVE TRADING COMPLETED ===")
+        
+    except Exception as e:
+        logger.error(f"Error in forex live trading: {e}")
+    finally:
+        if broker_connector:
+            broker_connector.disconnect()
+
+def run_crypto_live_trading(config, dynamic_optimizer, multi_asset_analyzer):
+    """Run live trading for crypto assets"""
+    import time
+    from datetime import datetime, timedelta
+    from data.kraken_feed import KrakenDataFeed
+    
+    logger.info("Starting CRYPTO live trading...")
+    
+    # Initialize Kraken data feed
+    kraken_feed = KrakenDataFeed(config)
+    
+    # Get crypto symbol configuration
+    crypto_symbols = [s for s in config.get('data', {}).get('symbols', []) if s['type'] == 'crypto']
+    if not crypto_symbols:
+        logger.error("No crypto symbols configured")
+        return
+    
+    crypto_symbol = crypto_symbols[0]['name']  # SOL/USD
+    timeframe = crypto_symbols[0]['timeframe']
+    
+    logger.info(f"Trading {crypto_symbol} on {timeframe} timeframe")
+    
+    # Get strategy parameters
+    strategy_params = config.get('strategies', {}).get('crypto', {}).get('params', {})
+    
+    # Live trading loop
+    iteration = 0
+    max_iterations = 20
+    
+    try:
+        while iteration < max_iterations:
+            try:
+                iteration += 1
+                logger.info(f"\n--- CRYPTO Trading Iteration {iteration}/{max_iterations} ---")
+                
+                # Get current price from Kraken
+                current_price = kraken_feed.get_current_price('SOLUSD')
+                if current_price:
+                    logger.info(f"Current {crypto_symbol} price: ${current_price:.4f}")
+                    
+                    # Update market conditions for multi-asset analyzer
+                    multi_asset_analyzer.update_market_conditions('crypto', {
+                        'price': current_price,
+                        'volatility': 0.08,  # Higher volatility for crypto
+                        'trend_strength': 0.6,
+                        'volume': 1.2
+                    })
+                    
+                    # Generate trading signals (simplified for demo)
+                    logger.info(f"[CRYPTO SIGNAL] Monitoring {crypto_symbol} at ${current_price:.4f}")
+                    
+                    # Check if we should switch to forex based on performance
+                    if iteration % 5 == 0:  # Check every 5 iterations
+                        recommendation = multi_asset_analyzer.get_trading_recommendation()
+                        if recommendation['next_trade_asset'] == 'forex':
+                            logger.info("Multi-asset analyzer recommends switching to FOREX")
+                            break
+                
+                else:
+                    logger.warning(f"Could not get current price for {crypto_symbol}")
+                
+                # Wait before next iteration
+                if iteration < max_iterations:
+                    logger.info("Waiting 30 seconds before next iteration...")
+                    time.sleep(30)
+                    
+            except Exception as e:
+                logger.error(f"Error in crypto trading iteration {iteration}: {e}")
+                time.sleep(30)
+                continue
+        
+        logger.info("=== CRYPTO LIVE TRADING COMPLETED ===")
+        
+    except Exception as e:
+        logger.error(f"Error in crypto live trading: {e}")

@@ -14,12 +14,14 @@ import pandas as pd
 
 # Import components from our trading bot structure
 from data.data_feed import OANDADataFeed, CCXTDataFeed # Assuming these are the primary data sources for backtesting
+from data.kraken_feed import KrakenDataFeed
 from data.preprocessing import DataPreprocessor
 from strategies.forex_strategy import ForexStrategy
 from strategies.profitable_forex_strategy import ProfitableForexStrategy
-from strategies.crypto_strategy import CryptoStrategy
+from strategies.crypto_strategy import CryptoStrategy, SOLStrategy
 from strategies.futures_strategy import FuturesStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
+from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
 class BacktestEngine:
     """
@@ -31,7 +33,7 @@ class BacktestEngine:
         Initialize the BacktestEngine.
  
         Args:
-            data_feed: Data feed instance
+            data_feed: Data feed instance (can be OANDA, Kraken, etc.)
             preprocessor: Data preprocessor instance
             risk_manager: Risk manager instance
             config (dict): Configuration dictionary.
@@ -45,6 +47,18 @@ class BacktestEngine:
         self.data_feed = data_feed
         self.data_preprocessor = preprocessor or DataPreprocessor()
         self.risk_manager = risk_manager
+        
+        # Initialize multi-asset analyzer if enabled
+        self.multi_asset_analyzer = None
+        if self.config.get('multi_asset', {}).get('analysis_enabled', False):
+            self.multi_asset_analyzer = MultiAssetAnalyzer(config_path='config/config.yaml')
+            self.logger.info("Multi-asset analyzer initialized")
+        
+        # Initialize additional data feeds for multi-asset support
+        self.kraken_feed = None
+        if 'kraken' in self.config:
+            self.kraken_feed = KrakenDataFeed(self.config)
+            self.logger.info("Kraken data feed initialized")
 
         # Get backtesting config with defaults
         backtest_config = self.config.get('backtesting', {})
@@ -81,9 +95,28 @@ class BacktestEngine:
             return None
             
         try:
-            # Get data from data feed
+            # Get data from appropriate data feed
             if asset_type == 'forex':
+                if not self.data_feed:
+                    self.logger.error("No forex data feed available")
+                    return None
                 raw_data_df = self.data_feed.get_forex_data(
+                    symbol,
+                    timeframe,
+                    self.start_date.strftime('%Y-%m-%d'),
+                    self.end_date.strftime('%Y-%m-%d')
+                )
+            elif asset_type == 'crypto':
+                if not self.kraken_feed:
+                    # Initialize Kraken feed if not already done
+                    try:
+                        self.kraken_feed = KrakenDataFeed(self.config)
+                        self.logger.info("Kraken data feed initialized for crypto backtesting")
+                    except Exception as e:
+                        self.logger.error(f"Failed to initialize Kraken feed: {e}")
+                        return None
+                
+                raw_data_df = self.kraken_feed.get_crypto_data(
                     symbol,
                     timeframe,
                     self.start_date.strftime('%Y-%m-%d'),
@@ -124,7 +157,7 @@ class BacktestEngine:
         Adds a trading strategy to the backtesting engine.
 
         Args:
-            strategy_name (str): Name of the strategy ('ForexStrategy', etc.)
+            strategy_name (str): Name of the strategy ('ForexStrategy', 'SOLStrategy', etc.)
             **kwargs: Parameters to pass to the strategy.
         """
         # Import strategy class based on name
@@ -134,6 +167,8 @@ class BacktestEngine:
             strategy_class = ProfitableForexStrategy
         elif strategy_name == 'CryptoStrategy':
             strategy_class = CryptoStrategy
+        elif strategy_name == 'SOLStrategy':
+            strategy_class = SOLStrategy
         elif strategy_name == 'FuturesStrategy':
             strategy_class = FuturesStrategy
         else:
@@ -231,8 +266,8 @@ class BacktestEngine:
         self.logger.info(f'Avg Win: {avg_win:.2f}')
         self.logger.info(f'Avg Loss: {avg_loss:.2f}')
         
-        # Return comprehensive results
-        return {
+        # Prepare comprehensive results
+        results = {
             'final_value': final_value,
             'initial_capital': self.initial_capital,
             'sharpe_ratio': sharpe_ratio,
@@ -246,6 +281,115 @@ class BacktestEngine:
             'avg_loss': avg_loss,
             'profit_factor': abs(avg_win * winning_trades / (avg_loss * losing_trades)) if (avg_loss != 0 and losing_trades > 0 and avg_win != 0 and winning_trades > 0) else 0.0
         }
+        
+        return results
+    
+    def run_multi_asset_backtest(self, symbols_config: list):
+        """
+        Run backtests for multiple assets and compare performance
+        
+        Args:
+            symbols_config (list): List of symbol configurations from config file
+            
+        Returns:
+            dict: Multi-asset analysis results
+        """
+        self.logger.info("Starting multi-asset backtest...")
+        
+        if not self.multi_asset_analyzer:
+            self.logger.warning("Multi-asset analyzer not initialized")
+            return None
+        
+        all_results = {}
+        
+        for symbol_config in symbols_config:
+            symbol = symbol_config['name']
+            asset_type = symbol_config['type']
+            timeframe = symbol_config['timeframe']
+            
+            self.logger.info(f"Running backtest for {symbol} ({asset_type})")
+            
+            try:
+                # Create new cerebro instance for each asset
+                self.cerebro = bt.Cerebro()
+                self.cerebro.broker.setcash(self.initial_capital)
+                self.cerebro.broker.setcommission(commission=self.commission)
+                self.cerebro.broker.set_slippage_perc(perc=self.slippage)
+                
+                # Load data for this asset
+                data = self.load_data(symbol, asset_type, timeframe)
+                if data is None:
+                    self.logger.error(f"Failed to load data for {symbol}")
+                    continue
+                
+                # Add appropriate strategy
+                if asset_type == 'forex':
+                    strategy_config = self.config.get('strategies', {}).get('forex', {})
+                    strategy_name = strategy_config.get('name', 'ForexStrategy')
+                    strategy_params = strategy_config.get('params', {})
+                elif asset_type == 'crypto':
+                    strategy_config = self.config.get('strategies', {}).get('crypto', {})
+                    strategy_name = strategy_config.get('name', 'SOLStrategy')
+                    strategy_params = strategy_config.get('params', {})
+                else:
+                    self.logger.error(f"Unsupported asset type: {asset_type}")
+                    continue
+                
+                # Disable logging for individual backtests
+                strategy_params['printlog'] = False
+                
+                self.add_strategy(strategy_name, **strategy_params)
+                
+                # Run backtest
+                results = self.run()
+                
+                if results:
+                    all_results[symbol] = {
+                        'asset_type': asset_type,
+                        'results': results
+                    }
+                    
+                    # Analyze with multi-asset analyzer
+                    self.multi_asset_analyzer.analyze_asset_performance(
+                        asset_type, symbol, results
+                    )
+                    
+                    self.logger.info(f"Completed backtest for {symbol}: "
+                                   f"Return: {results['total_return']:.2f}%, "
+                                   f"Sharpe: {results['sharpe_ratio']:.2f}")
+                
+            except Exception as e:
+                self.logger.error(f"Error running backtest for {symbol}: {e}")
+                continue
+        
+        # Generate multi-asset analysis
+        if all_results:
+            comparison = self.multi_asset_analyzer.compare_asset_classes()
+            allocation = self.multi_asset_analyzer.get_optimal_asset_allocation()
+            recommendation = self.multi_asset_analyzer.get_trading_recommendation()
+            
+            # Export analysis report
+            report_path = self.multi_asset_analyzer.export_analysis_report()
+            
+            multi_asset_results = {
+                'individual_results': all_results,
+                'comparison': comparison,
+                'allocation': allocation,
+                'recommendation': recommendation,
+                'report_path': report_path
+            }
+            
+            self.logger.info("=== MULTI-ASSET ANALYSIS COMPLETE ===")
+            self.logger.info(f"Recommendation: Focus on {recommendation['primary_focus']}")
+            self.logger.info(f"Allocation: {allocation['forex_allocation']:.1f}% Forex, "
+                           f"{allocation['crypto_allocation']:.1f}% Crypto")
+            self.logger.info(f"Next trade: {recommendation['next_trade_asset']}")
+            
+            return multi_asset_results
+        
+        else:
+            self.logger.error("No successful backtests completed")
+            return None
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

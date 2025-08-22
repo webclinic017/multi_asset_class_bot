@@ -70,8 +70,8 @@ The system uses these default settings (can be modified in `utils/dynamic_optimi
 max_age_minutes = 5
 
 # Optimization parameters
-generations = 40      # Number of genetic algorithm generations
-population = 60       # Population size for genetic algorithm
+generations = 500      # Number of genetic algorithm generations
+population = 800       # Population size for genetic algorithm
 
 # Auto-optimization
 auto_optimize = True  # Automatically run optimization when needed
@@ -85,8 +85,8 @@ To modify the behavior, edit `utils/dynamic_optimizer.py`:
 optimized_params = dynamic_optimizer.get_optimized_parameters(
     max_age_minutes=10,  # Use 10 minutes instead of 5
     auto_optimize=True,
-    generations=50,      # Use more generations
-    population=80        # Use larger population
+    generations=500,      # Use more generations
+    population=800        # Use larger population
 )
 ```
 
