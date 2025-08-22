@@ -4,3 +4,4 @@ config/
 **/*.csv
 **/*.log
 **/*.json
+**/*.log.1
