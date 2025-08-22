@@ -216,54 +216,95 @@ def run_multi_asset_backtest(config):
         logger.error(f"An error occurred during multi-asset backtesting: {e}")
 
 def run_live_trading_mode(config):
-    """Runs the bot in live trading mode with multi-asset support and dynamic optimization."""
+    """Runs the bot in live trading mode with enhanced dynamic optimization and automatic parameter management."""
     import time
     import pandas as pd
     from datetime import datetime, timedelta
-    from utils.dynamic_optimizer import DynamicOptimizer
+    from utils.enhanced_dynamic_optimizer import EnhancedDynamicOptimizer
     from utils.multi_asset_analyzer import MultiAssetAnalyzer
     from data.kraken_feed import KrakenDataFeed
     
-    logger.info("Starting trading bot in LIVE TRADING mode with MULTI-ASSET support.")
+    logger.info("Starting trading bot in LIVE TRADING mode with ENHANCED OPTIMIZATION.")
+    
+    # Initialize enhanced dynamic optimizer
+    logger.info("=== INITIALIZING ENHANCED DYNAMIC OPTIMIZATION ===")
+    dynamic_optimizer = EnhancedDynamicOptimizer(
+        config_path='config/config.yaml',
+        output_dir='output'
+    )
+    
+    # Set parameter age threshold (default 24 hours, configurable)
+    max_age_hours = config.get('optimization', {}).get('max_parameter_age_hours', 24)
+    dynamic_optimizer.max_age_minutes = max_age_hours * 60
+    
+    logger.info(f"Parameter age threshold: {max_age_hours} hours")
     
     # Check if multi-asset mode is enabled
     multi_asset_enabled = config.get('multi_asset', {}).get('enabled', False)
     
     if multi_asset_enabled:
-        logger.info("=== MULTI-ASSET LIVE TRADING ENABLED ===")
-        run_multi_asset_live_trading(config)
+        logger.info("=== MULTI-ASSET LIVE TRADING WITH ENHANCED OPTIMIZATION ===")
+        run_enhanced_multi_asset_live_trading(config, dynamic_optimizer)
     else:
-        logger.info("=== SINGLE ASSET LIVE TRADING ===")
-        run_single_asset_live_trading(config)
+        logger.info("=== SINGLE ASSET LIVE TRADING WITH ENHANCED OPTIMIZATION ===")
+        run_enhanced_single_asset_live_trading(config, dynamic_optimizer)
 
-def run_single_asset_live_trading(config):
-    """Run live trading for single asset (legacy mode)"""
+def run_enhanced_single_asset_live_trading(config, dynamic_optimizer):
+    """Run enhanced live trading for single asset with automatic optimization"""
     import time
     import pandas as pd
     from datetime import datetime, timedelta
-    from utils.dynamic_optimizer import DynamicOptimizer
     
-    # Initialize dynamic optimizer
-    logger.info("=== INITIALIZING DYNAMIC OPTIMIZATION ===")
-    dynamic_optimizer = DynamicOptimizer(
-        config_path='config/config.yaml',
-        output_dir='output'
-    )
+    logger.info("=== ENHANCED SINGLE ASSET LIVE TRADING ===")
     
-    # Get optimized parameters (will run optimization if needed)
-    optimized_params = dynamic_optimizer.get_optimized_parameters(
-        max_age_minutes=5,  # Run optimization if CSV is older than 5 minutes
-        auto_optimize=True,  # Automatically run optimization if needed
-        generations=40,      # Use 40 generations for optimization
-        population=60        # Use population of 60
-    )
+    # Determine primary strategy type from config
+    symbols_config = config.get('data', {}).get('symbols', [])
+    primary_strategy = 'forex'  # Default
     
-    if optimized_params:
-        logger.info("=== OPTIMIZED PARAMETERS LOADED ===")
-        for param, value in optimized_params.items():
-            logger.info(f"  {param}: {value}")
+    if symbols_config:
+        primary_symbol = symbols_config[0]
+        primary_strategy = primary_symbol.get('type', 'forex')
+    
+    logger.info(f"Primary strategy type: {primary_strategy}")
+    
+    # Check parameter status and auto-optimize if needed
+    logger.info("=== CHECKING PARAMETER STATUS ===")
+    summary = dynamic_optimizer.get_parameter_performance_summary(primary_strategy)
+    
+    if summary['has_parameters']:
+        logger.info(f"Current parameters age: {summary['age_hours']:.1f} hours")
+        logger.info(f"Performance score: {summary['performance_score']:.4f}")
+        logger.info(f"Total return: {summary['total_return']:.2f}%")
+        logger.info(f"Sharpe ratio: {summary['sharpe_ratio']:.2f}")
     else:
-        logger.warning("Could not load optimized parameters - using default config values")
+        logger.warning("No parameters found - optimization will be triggered")
+    
+    # Auto-optimize if needed
+    logger.info("=== AUTO-OPTIMIZATION CHECK ===")
+    optimization_result = dynamic_optimizer.auto_optimize_if_needed(primary_strategy)
+    
+    if optimization_result['optimization_run']:
+        if optimization_result['success']:
+            logger.info("✅ Auto-optimization completed successfully!")
+            logger.info(f"New performance: {optimization_result['performance_metrics']['total_return']:.2f}% return")
+        else:
+            logger.error(f"❌ Auto-optimization failed: {optimization_result.get('error', 'Unknown error')}")
+    else:
+        logger.info(f"⏸️ Auto-optimization skipped: {optimization_result['reason']}")
+    
+    # Get current best parameters
+    latest_params = dynamic_optimizer.get_latest_parameters(primary_strategy)
+    if latest_params:
+        optimized_params = latest_params.parameters
+        logger.info("=== USING OPTIMIZED PARAMETERS ===")
+        for param, value in optimized_params.items():
+            if isinstance(value, float):
+                logger.info(f"  {param}: {value:.4f}")
+            else:
+                logger.info(f"  {param}: {value}")
+    else:
+        logger.warning("No optimized parameters available - using config defaults")
+        optimized_params = {}
     
     # Initialize components for live trading
     broker_type = "oanda"
@@ -453,117 +494,152 @@ def run_single_asset_live_trading(config):
             logger.info("Disconnected from broker.")
 
 def run_optimization_mode(config):
-    """Runs the bot in strategy optimization mode using genetic algorithm."""
-    logger.info("Starting trading bot in OPTIMIZATION mode.")
+    """Runs the bot in enhanced optimization mode with multi-strategy support."""
+    logger.info("Starting trading bot in ENHANCED OPTIMIZATION mode.")
     
-    # Use our genetic algorithm optimization instead of the old optimizer
     try:
-        # Import our genetic optimizer
-        from optimization.genetic_optimizer import GeneticOptimizer
+        # Initialize enhanced dynamic optimizer
+        from utils.enhanced_dynamic_optimizer import EnhancedDynamicOptimizer
         
-        # Create a temporary config file for the genetic optimizer
-        import tempfile
-        import os
+        dynamic_optimizer = EnhancedDynamicOptimizer(
+            config_path='config/config.yaml',
+            output_dir='output'
+        )
         
-        # Create temporary config file
-        temp_config_fd, temp_config_path = tempfile.mkstemp(suffix='.yaml', text=True)
+        # Get optimization configuration
+        opt_config = config.get('optimization', {})
+        generations = opt_config.get('generations', 50)
+        population = opt_config.get('population_size', 24)
+        multi_asset_optimization = opt_config.get('multi_asset_optimization', True)
         
-        try:
-            with os.fdopen(temp_config_fd, 'w') as temp_file:
-                yaml.dump(config, temp_file, default_flow_style=False, indent=2)
+        logger.info("=== ENHANCED OPTIMIZATION CONFIGURATION ===")
+        logger.info(f"Generations: {generations}")
+        logger.info(f"Population: {population}")
+        logger.info(f"Multi-asset optimization: {multi_asset_optimization}")
+        
+        # Determine strategies to optimize
+        strategies_to_optimize = []
+        
+        if multi_asset_optimization:
+            # Check which strategies are configured
+            symbols_config = config.get('data', {}).get('symbols', [])
+            strategy_types = set()
             
-            # Initialize genetic optimizer with config file path
-            genetic_optimizer = GeneticOptimizer(temp_config_path)
-            
-            logger.info("Starting genetic algorithm optimization...")
-            logger.info(f"Population size: {config.get('optimization', {}).get('population_size', 20)}")
-            logger.info(f"Generations: {config.get('optimization', {}).get('generations', 30)}")
-            
-            # Run optimization
-            results = genetic_optimizer.optimize(
-                num_generations=config.get('optimization', {}).get('generations', 30),
-                sol_per_pop=config.get('optimization', {}).get('population_size', 20),
-                mutation_probability=config.get('optimization', {}).get('mutation_probability', 0.15)
-            )
-            
-            best_params = results['best_params']  # Complete parameters
-            best_optimized_params = results['best_optimized_params']  # Just optimized ones
-            best_fitness = results['best_fitness']
-            
-            logger.info("=== OPTIMIZATION RESULTS ===")
-            logger.info(f"Best fitness score: {best_fitness:.4f}")
-            logger.info("Best optimized parameters:")
-            for param, value in best_optimized_params.items():
-                logger.info(f"  {param}: {value}")
-            
-            # Export optimization results to CSV
-            logger.info("Exporting optimization results to CSV...")
-            csv_path = genetic_optimizer.export_results_to_csv("output")
-            logger.info(f"Optimization results CSV saved to: {csv_path}")
-            
-            # Save optimized config
-            optimized_config_path = "config/optimized_config.yaml"
-            genetic_optimizer.save_optimized_config(best_optimized_params, optimized_config_path)
-            logger.info(f"Optimized configuration saved to: {optimized_config_path}")
-            
-            # Test the optimized parameters
-            logger.info("Testing optimized parameters...")
-            
-            # Initialize components for testing
-            data_feed = OANDADataFeed(config)
-            preprocessor = DataPreprocessor()
-            risk_manager = RiskManager(config)
-            
-            engine = BacktestEngine(
-                data_feed=data_feed,
-                preprocessor=preprocessor,
-                risk_manager=risk_manager,
-                config=config
-            )
-            
-            # Get symbol info
+            for symbol in symbols_config:
+                strategy_types.add(symbol.get('type', 'forex'))
+                
+            strategies_to_optimize = list(strategy_types)
+            logger.info(f"Multi-asset optimization for: {strategies_to_optimize}")
+        else:
+            # Single strategy optimization (default to forex)
+            primary_strategy = 'forex'
             if 'data' in config and 'symbols' in config['data']:
-                symbol_info = config['data']['symbols'][0]
-                forex_symbol = symbol_info['name']
-                forex_timeframe = symbol_info['timeframe']
-                asset_type = symbol_info['type']
+                primary_strategy = config['data']['symbols'][0].get('type', 'forex')
+            strategies_to_optimize = [primary_strategy]
+            logger.info(f"Single strategy optimization for: {primary_strategy}")
+        
+        # Run optimization for each strategy
+        optimization_results = {}
+        total_start_time = time.time()
+        
+        for strategy_type in strategies_to_optimize:
+            logger.info(f"\n=== OPTIMIZING {strategy_type.upper()} STRATEGY ===")
+            
+            start_time = time.time()
+            result = dynamic_optimizer.run_enhanced_optimization(
+                strategy_type=strategy_type,
+                generations=generations,
+                population=population,
+                force=True  # Force optimization in optimize mode
+            )
+            end_time = time.time()
+            
+            optimization_results[strategy_type] = result
+            
+            if result['success']:
+                logger.info(f"✅ {strategy_type.upper()} optimization completed!")
+                logger.info(f"⏱️ Duration: {end_time - start_time:.2f} seconds")
+                logger.info(f"🎯 Best fitness: {result.get('best_fitness', 0):.4f}")
+                
+                metrics = result['performance_metrics']
+                logger.info(f"📈 Total return: {metrics['total_return']:.2f}%")
+                logger.info(f"📊 Sharpe ratio: {metrics['sharpe_ratio']:.2f}")
+                logger.info(f"📉 Max drawdown: {metrics['max_drawdown']:.1f}%")
+                logger.info(f"🎲 Win rate: {metrics['win_rate']:.1f}%")
+                logger.info(f"💾 Results saved to: {result.get('csv_path', 'N/A')}")
+                
+                # Display best parameters
+                logger.info("🏆 Best parameters:")
+                for param, value in result['best_parameters'].items():
+                    if isinstance(value, float):
+                        logger.info(f"  {param}: {value:.4f}")
+                    else:
+                        logger.info(f"  {param}: {value}")
             else:
-                forex_symbol = config['trading']['forex_pairs'][0]
-                forex_timeframe = config['trading']['data_timeframe']
-                asset_type = 'forex'
+                logger.error(f"❌ {strategy_type.upper()} optimization failed!")
+                logger.error(f"Error: {result.get('error', 'Unknown error')}")
+        
+        total_end_time = time.time()
+        total_duration = total_end_time - total_start_time
+        
+        # Summary report
+        logger.info(f"\n=== OPTIMIZATION SUMMARY ===")
+        logger.info(f"⏱️ Total duration: {total_duration:.2f} seconds")
+        
+        successful_optimizations = sum(1 for r in optimization_results.values() if r.get('success'))
+        failed_optimizations = len(optimization_results) - successful_optimizations
+        
+        logger.info(f"✅ Successful optimizations: {successful_optimizations}")
+        logger.info(f"❌ Failed optimizations: {failed_optimizations}")
+        
+        # Performance comparison
+        if len(optimization_results) > 1:
+            logger.info(f"\n=== STRATEGY PERFORMANCE COMPARISON ===")
             
-            # Load data and test optimized strategy
-            forex_data = engine.load_data(forex_symbol, asset_type, forex_timeframe)
-            if forex_data is not None:
-                # Use the complete parameters (already includes base + optimized)
-                test_params = best_params.copy()
-                test_params['printlog'] = False  # Disable logging for optimization test
-                
-                # Add optimized strategy
-                engine.add_strategy('ForexStrategy', **test_params)
-                test_results = engine.run()
-                
-                if test_results:
-                    logger.info("=== OPTIMIZED STRATEGY RESULTS ===")
-                    logger.info(f"Final Portfolio Value: {test_results['final_value']:.2f}")
-                    logger.info(f"Total Return: {test_results['total_return']:.2f}%")
-                    logger.info(f"Sharpe Ratio: {test_results['sharpe_ratio']:.2f}")
-                    logger.info(f"Max Drawdown: {test_results['max_drawdown']:.2f}%")
-                    logger.info(f"Total Trades: {test_results['total_trades']}")
-                    logger.info(f"Win Rate: {test_results['win_rate']:.2f}%")
-                    logger.info(f"Average Win: {test_results['avg_win']:.4f}")
-                    logger.info(f"Average Loss: {test_results['avg_loss']:.4f}")
+            for strategy_type, result in optimization_results.items():
+                if result.get('success'):
+                    metrics = result['performance_metrics']
+                    logger.info(f"{strategy_type.upper()}:")
+                    logger.info(f"  Return: {metrics['total_return']:.2f}%")
+                    logger.info(f"  Sharpe: {metrics['sharpe_ratio']:.2f}")
+                    logger.info(f"  Drawdown: {metrics['max_drawdown']:.1f}%")
+                    
+            # Recommend best strategy
+            best_strategy = None
+            best_score = -float('inf')
             
-        finally:
-            # Clean up temporary config file
-            if os.path.exists(temp_config_path):
-                os.unlink(temp_config_path)
-                
-    except ImportError as e:
-        logger.error(f"Could not import genetic optimizer: {e}")
-        logger.error("Please ensure the genetic optimizer is properly installed.")
+            for strategy_type, result in optimization_results.items():
+                if result.get('success'):
+                    score = result.get('best_fitness', 0)
+                    if score > best_score:
+                        best_score = score
+                        best_strategy = strategy_type
+                        
+            if best_strategy:
+                logger.info(f"\n🏆 RECOMMENDED STRATEGY: {best_strategy.upper()}")
+                logger.info(f"Best fitness score: {best_score:.4f}")
+        
+        # Save comprehensive results
+        results_summary = {
+            'timestamp': datetime.now().isoformat(),
+            'total_duration': total_duration,
+            'strategies_optimized': list(optimization_results.keys()),
+            'successful_optimizations': successful_optimizations,
+            'failed_optimizations': failed_optimizations,
+            'results': optimization_results
+        }
+        
+        summary_path = os.path.join('output', f'optimization_summary_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+        with open(summary_path, 'w') as f:
+            import json
+            json.dump(results_summary, f, indent=2, default=str)
+            
+        logger.info(f"📄 Comprehensive results saved to: {summary_path}")
+        logger.info("🎉 Enhanced optimization completed successfully!")
+        
     except Exception as e:
-        logger.error(f"An error occurred during optimization: {e}")
+        logger.error(f"An error occurred during enhanced optimization: {e}")
+        raise
 
 def main():
     parser = argparse.ArgumentParser(description="Trading Bot Main Script")
@@ -610,8 +686,253 @@ def main():
 
 if __name__ == "__main__":
     main()
+def run_enhanced_multi_asset_live_trading(config, dynamic_optimizer):
+    """Run enhanced multi-asset live trading with automatic optimization and intelligent asset selection"""
+    import time
+    import pandas as pd
+    from datetime import datetime, timedelta
+    from utils.multi_asset_analyzer import MultiAssetAnalyzer
+    from data.kraken_feed import KrakenDataFeed
+    
+    logger.info("=== ENHANCED MULTI-ASSET LIVE TRADING ===")
+    
+    # Initialize multi-asset analyzer
+    multi_asset_analyzer = MultiAssetAnalyzer(config_path='config/config.yaml')
+    
+    # Get configured strategies
+    symbols_config = config.get('data', {}).get('symbols', [])
+    strategy_types = list(set(symbol.get('type', 'forex') for symbol in symbols_config))
+    
+    logger.info(f"Configured strategy types: {strategy_types}")
+    
+    # Check and optimize parameters for all strategy types
+    logger.info("=== MULTI-STRATEGY PARAMETER OPTIMIZATION ===")
+    
+    optimization_results = {}
+    for strategy_type in strategy_types:
+        logger.info(f"\n--- Checking {strategy_type.upper()} parameters ---")
+        
+        # Get parameter summary
+        summary = dynamic_optimizer.get_parameter_performance_summary(strategy_type)
+        
+        if summary['has_parameters']:
+            logger.info(f"Current {strategy_type} parameters:")
+            logger.info(f"  Age: {summary['age_hours']:.1f} hours")
+            logger.info(f"  Performance score: {summary['performance_score']:.4f}")
+            logger.info(f"  Total return: {summary['total_return']:.2f}%")
+            logger.info(f"  Sharpe ratio: {summary['sharpe_ratio']:.2f}")
+        else:
+            logger.warning(f"No {strategy_type} parameters found")
+        
+        # Auto-optimize if needed
+        optimization_result = dynamic_optimizer.auto_optimize_if_needed(strategy_type)
+        optimization_results[strategy_type] = optimization_result
+        
+        if optimization_result['optimization_run']:
+            if optimization_result['success']:
+                logger.info(f"✅ {strategy_type} auto-optimization completed!")
+                metrics = optimization_result['performance_metrics']
+                logger.info(f"  New performance: {metrics['total_return']:.2f}% return, "
+                           f"{metrics['sharpe_ratio']:.2f} Sharpe")
+            else:
+                logger.error(f"❌ {strategy_type} auto-optimization failed: "
+                           f"{optimization_result.get('error', 'Unknown error')}")
+        else:
+            logger.info(f"⏸️ {strategy_type} optimization skipped: {optimization_result['reason']}")
+    
+    # Determine optimal strategy allocation based on recent performance
+    logger.info("\n=== STRATEGY ALLOCATION ANALYSIS ===")
+    
+    strategy_scores = {}
+    for strategy_type in strategy_types:
+        latest_params = dynamic_optimizer.get_latest_parameters(strategy_type)
+        if latest_params:
+            # Calculate composite score
+            score = (
+                latest_params.performance_score * 0.4 +
+                (latest_params.total_return / 20.0) * 0.3 +  # Normalize return
+                (latest_params.sharpe_ratio / 2.0) * 0.2 +   # Normalize Sharpe
+                (max(0, 50 - latest_params.max_drawdown) / 50.0) * 0.1  # Normalize drawdown
+            )
+            strategy_scores[strategy_type] = score
+            logger.info(f"{strategy_type.upper()} composite score: {score:.4f}")
+        else:
+            strategy_scores[strategy_type] = 0.0
+            logger.warning(f"{strategy_type.upper()} has no parameters - score: 0.0")
+    
+    # Select primary strategy
+    if strategy_scores:
+        primary_strategy = max(strategy_scores, key=strategy_scores.get)
+        logger.info(f"🏆 Primary strategy selected: {primary_strategy.upper()}")
+        logger.info(f"Score: {strategy_scores[primary_strategy]:.4f}")
+    else:
+        primary_strategy = 'forex'  # Default fallback
+        logger.warning("No strategy scores available, defaulting to forex")
+    
+    # Run live trading simulation with the selected strategy
+    logger.info(f"\n=== STARTING LIVE TRADING SIMULATION ({primary_strategy.upper()}) ===")
+    
+    # Get optimized parameters for the primary strategy
+    latest_params = dynamic_optimizer.get_latest_parameters(primary_strategy)
+    if latest_params:
+        optimized_params = latest_params.parameters
+        logger.info("Using optimized parameters for live trading")
+    else:
+        logger.warning("No optimized parameters available, using config defaults")
+        optimized_params = {}
+    
+    # Initialize appropriate broker connector based on strategy
+    broker_connector = None
+    if primary_strategy == 'forex':
+        from execution.broker_connect import OANDABrokerConnector
+        broker_connector = OANDABrokerConnector(config=config)
+    elif primary_strategy == 'crypto':
+        # For crypto, we'll use a simulation since we don't have live crypto broker
+        logger.info("Crypto strategy selected - running in simulation mode")
+        
+    # Live trading loop with enhanced monitoring
+    try:
+        if broker_connector:
+            broker_connector.connect()
+            
+        from execution.order_manager import OrderManager
+        from risk.risk_manager import RiskManager
+        from data.data_feed import OANDADataFeed
+        from data.preprocessing import DataPreprocessor
+        
+        if broker_connector:
+            order_manager = OrderManager(broker_connector, config=config)
+        risk_manager = RiskManager(config=config)
+        
+        # Initialize data feeds
+        oanda_feed = OANDADataFeed(config) if primary_strategy == 'forex' else None
+        kraken_feed = KrakenDataFeed(config) if primary_strategy == 'crypto' else None
+        
+        # Get symbol configuration
+        primary_symbols = [s for s in symbols_config if s['type'] == primary_strategy]
+        if not primary_symbols:
+            logger.error(f"No {primary_strategy} symbols configured")
+            return
+            
+        primary_symbol = primary_symbols[0]
+        symbol_name = primary_symbol['name']
+        timeframe = primary_symbol['timeframe']
+        
+        logger.info(f"Trading {symbol_name} on {timeframe} timeframe")
+        
+        # Enhanced live trading loop
+        iteration = 0
+        max_iterations = 30  # Extended for demonstration
+        parameter_check_interval = 5  # Check parameters every 5 iterations
+        
+        while iteration < max_iterations:
+            try:
+                iteration += 1
+                logger.info(f"\n--- Enhanced Live Trading Iteration {iteration}/{max_iterations} ---")
+                
+                # Periodic parameter optimization check
+                if iteration % parameter_check_interval == 0:
+                    logger.info("🔄 Periodic parameter optimization check...")
+                    
+                    # Check if parameters need updating
+                    needs_optimization, age_minutes = dynamic_optimizer.check_parameter_age(primary_strategy)
+                    
+                    if needs_optimization:
+                        logger.info(f"Parameters are {age_minutes:.1f} minutes old - triggering optimization")
+                        opt_result = dynamic_optimizer.auto_optimize_if_needed(primary_strategy)
+                        
+                        if opt_result['optimization_run'] and opt_result['success']:
+                            logger.info("✅ Parameters updated during live trading!")
+                            # Update optimized_params for subsequent iterations
+                            latest_params = dynamic_optimizer.get_latest_parameters(primary_strategy)
+                            if latest_params:
+                                optimized_params = latest_params.parameters
+                    else:
+                        logger.info(f"Parameters are fresh ({age_minutes:.1f} minutes old)")
+                
+                # Get current market data
+                current_price = None
+                
+                if primary_strategy == 'forex' and broker_connector:
+                    current_price = broker_connector.get_current_price(symbol_name)
+                elif primary_strategy == 'crypto' and kraken_feed:
+                    current_price = kraken_feed.get_current_price('SOLUSD')
+                
+                if current_price:
+                    logger.info(f"Current {symbol_name} price: ${current_price:.4f}")
+                    
+                    # Update multi-asset analyzer with current conditions
+                    market_conditions = {
+                        'price': current_price,
+                        'volatility': 0.02,  # Placeholder - would calculate from recent data
+                        'trend_strength': 0.7,  # Placeholder
+                        'volume': 1.0  # Placeholder
+                    }
+                    
+                    multi_asset_analyzer.update_market_conditions(primary_strategy, market_conditions)
+                    
+                    # Generate trading signals (simplified for demonstration)
+                    logger.info(f"[{primary_strategy.upper()} SIGNAL] Monitoring {symbol_name} at ${current_price:.4f}")
+                    logger.info(f"Using optimized parameters: {len(optimized_params)} parameters loaded")
+                    
+                    # In a real implementation, this would:
+                    # 1. Fetch recent historical data
+                    # 2. Apply the optimized strategy parameters
+                    # 3. Generate actual buy/sell signals
+                    # 4. Execute trades through the order manager
+                    # 5. Monitor positions and apply risk management
+                    
+                    # For demonstration, we'll just log the activity
+                    if broker_connector:
+                        balance_info = broker_connector.get_balance()
+                        if balance_info:
+                            current_balance = balance_info.get('total', 0.0)
+                            logger.info(f"[BALANCE] Current account balance: ${current_balance:,.2f}")
+                
+                else:
+                    logger.warning(f"Could not get current price for {symbol_name}")
+                
+                # Strategy performance monitoring
+                if iteration % 10 == 0:  # Every 10 iterations
+                    logger.info("📊 Performance monitoring update...")
+                    
+                    # Get current parameter performance
+                    summary = dynamic_optimizer.get_parameter_performance_summary(primary_strategy)
+                    if summary['has_parameters']:
+                        logger.info(f"Current strategy performance:")
+                        logger.info(f"  Score: {summary['performance_score']:.4f}")
+                        logger.info(f"  Return: {summary['total_return']:.2f}%")
+                        logger.info(f"  Sharpe: {summary['sharpe_ratio']:.2f}")
+                
+                # Wait before next iteration
+                if iteration < max_iterations:
+                    logger.info("⏳ Waiting 30 seconds before next iteration...")
+                    time.sleep(30)
+                    
+            except Exception as e:
+                logger.error(f"Error in enhanced live trading iteration {iteration}: {e}")
+                time.sleep(30)
+                continue
+        
+        logger.info("=== ENHANCED MULTI-ASSET LIVE TRADING COMPLETED ===")
+        logger.info("In a real implementation, this would run continuously with:")
+        logger.info("- Automatic parameter optimization based on age and performance")
+        logger.info("- Dynamic strategy switching based on market conditions")
+        logger.info("- Real-time risk management and position monitoring")
+        logger.info("- Comprehensive performance tracking and reporting")
+        
+    except Exception as e:
+        logger.error(f"Error in enhanced multi-asset live trading: {e}")
+    finally:
+        if broker_connector:
+            broker_connector.disconnect()
+            logger.info("Disconnected from broker")
+
+# Legacy functions (kept for backward compatibility but not used in enhanced mode)
 def run_multi_asset_live_trading(config):
-    """Run live trading with multi-asset support and intelligent asset selection"""
+    """Legacy multi-asset live trading function - use run_enhanced_multi_asset_live_trading instead"""
+    logger.warning("Using legacy multi-asset live trading function. Consider upgrading to enhanced version.")
+    
     import time
     import pandas as pd
     from datetime import datetime, timedelta
@@ -619,7 +940,7 @@ def run_multi_asset_live_trading(config):
     from utils.multi_asset_analyzer import MultiAssetAnalyzer
     from data.kraken_feed import KrakenDataFeed
     
-    logger.info("=== INITIALIZING MULTI-ASSET LIVE TRADING ===")
+    logger.info("=== INITIALIZING MULTI-ASSET LIVE TRADING (LEGACY) ===")
     
     # Initialize multi-asset analyzer
     multi_asset_analyzer = MultiAssetAnalyzer(config_path='config/config.yaml')
