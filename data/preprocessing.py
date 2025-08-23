@@ -133,20 +133,48 @@ class DataPreprocessor:
             pd.DataFrame: Preprocessed data ready for strategy.
         """
         self.logger.info("Starting full data preprocessing pipeline.")
+        
+        # Check minimum data requirements
+        if len(df) < 50:
+            self.logger.error(f"Insufficient data for preprocessing: {len(df)} rows (minimum 50 required)")
+            return pd.DataFrame()
+        
         df = self.clean_data(df)
+        
+        # Ensure we still have enough data after cleaning
+        if len(df) < 30:
+            self.logger.error(f"Insufficient data after cleaning: {len(df)} rows")
+            return pd.DataFrame()
+        
         df = self.add_technical_indicators(df)
         
         # Drop rows with NaN values introduced by rolling windows after all indicators are added
         initial_rows = len(df)
         df.dropna(inplace=True)
+        
+        # Check if we have enough data left after dropping NaN values
+        if len(df) < 20:
+            self.logger.error(f"Insufficient data after dropping NaN values: {len(df)} rows (minimum 20 required)")
+            return pd.DataFrame()
+        
         if len(df) < initial_rows:
             self.logger.info(f"Dropped {initial_rows - len(df)} rows due to NaN values after indicator calculation.")
 
+        # Ensure required columns exist
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            self.logger.error(f"Missing required columns after preprocessing: {missing_columns}")
+            return pd.DataFrame()
+
         # Define features to normalize (excluding 'open', 'high', 'low', 'close', 'volume' if they are raw prices)
         features_to_normalize = [col for col in df.columns if col not in ['open', 'high', 'low', 'close', 'volume']]
-        df = self.normalize_features(df, features=features_to_normalize)
         
-        self.logger.info("Full data preprocessing pipeline complete.")
+        # Only normalize if we have features to normalize
+        if features_to_normalize:
+            df = self.normalize_features(df, features=features_to_normalize)
+        
+        self.logger.info(f"Full data preprocessing pipeline complete. Final shape: {df.shape}")
         return df
 
 if __name__ == "__main__":

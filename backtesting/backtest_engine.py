@@ -132,23 +132,64 @@ class BacktestEngine:
                 self.logger.error(f"No data retrieved for {symbol}.")
                 return None
 
+            # Check minimum data requirements
+            if len(raw_data_df) < 50:
+                self.logger.error(f"Insufficient data for {symbol}: {len(raw_data_df)} rows (minimum 50 required)")
+                return None
+
             # Preprocess the data
             processed_data_df = self.data_preprocessor.preprocess(raw_data_df.copy())
+            
+            # Check if preprocessing left enough data
+            if processed_data_df.empty or len(processed_data_df) < 30:
+                self.logger.error(f"Insufficient data after preprocessing for {symbol}: {len(processed_data_df)} rows")
+                return None
+            
+            # Ensure the DataFrame has the required columns for backtrader
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in processed_data_df.columns]
+            if missing_columns:
+                self.logger.error(f"Missing required columns for {symbol}: {missing_columns}")
+                return None
             
             # Ensure the DataFrame has the columns expected by backtrader
             if processed_data_df.index.name != 'datetime':
                 processed_data_df.index.name = 'datetime'
             
-            # Add data to cerebro
-            data = bt.feeds.PandasData(
-                dataname=processed_data_df,
-                fromdate=self.start_date,
-                todate=self.end_date
-            )
-            self.cerebro.adddata(data)
+            # Validate data integrity
+            if processed_data_df[required_columns].isnull().any().any():
+                self.logger.warning(f"Data contains NaN values for {symbol}, filling with forward fill")
+                processed_data_df[required_columns] = processed_data_df[required_columns].fillna(method='ffill').fillna(method='bfill')
             
-            self.logger.info(f"Data for {symbol} loaded and preprocessed. Shape: {processed_data_df.shape}")
-            return processed_data_df
+            # Ensure positive values for OHLCV data
+            for col in ['open', 'high', 'low', 'close']:
+                if (processed_data_df[col] <= 0).any():
+                    self.logger.error(f"Invalid price data (non-positive values) for {symbol} in column {col}")
+                    return None
+            
+            # Add data to cerebro with error handling
+            try:
+                data = bt.feeds.PandasData(
+                    dataname=processed_data_df,
+                    fromdate=self.start_date,
+                    todate=self.end_date,
+                    # Explicitly map columns to avoid index issues
+                    datetime=None,  # Use index
+                    open=0,
+                    high=1,
+                    low=2,
+                    close=3,
+                    volume=4,
+                    openinterest=-1  # Not used
+                )
+                self.cerebro.adddata(data)
+                
+                self.logger.info(f"Data for {symbol} loaded and preprocessed. Shape: {processed_data_df.shape}")
+                return processed_data_df
+                
+            except Exception as e:
+                self.logger.error(f"Error adding data to cerebro for {symbol}: {e}")
+                return None
             
         except Exception as e:
             self.logger.error(f"Error loading data for {symbol}: {e}")

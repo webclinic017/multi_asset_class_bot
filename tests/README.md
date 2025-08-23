@@ -18,6 +18,13 @@ This directory contains all test files for the Enhanced Trading Bot system.
 - **`test_profitable_strategy.py`** - Tests for profitable trading strategies
 - **`test_genetic_optimizer.py`** - Tests for genetic algorithm optimization
 
+### Backtest Engine Tests
+- **`test_backtest_fix.py`** - Tests for backtest engine robustness and error handling
+  - Validates array index out of range fixes
+  - Tests data preprocessing with insufficient data
+  - Verifies enhanced error handling and validation
+  - Confirms backtrader feed compatibility
+
 ### Sentiment Analysis Tests
 - **`test_sentiment.py`** - Core sentiment analysis functionality tests
 - **`test_sentiment_simple.py`** - Simple sentiment analysis integration tests
@@ -45,6 +52,9 @@ python tests/test_sentiment.py
 
 # Test genetic optimizer
 python tests/test_genetic_optimizer.py
+
+# Test backtest engine fixes
+python tests/test_backtest_fix.py
 ```
 
 ### Run Specific Test Categories
@@ -52,6 +62,11 @@ python tests/test_genetic_optimizer.py
 #### Core System Tests
 ```bash
 python tests/test_enhanced_system.py
+```
+
+#### Backtest Engine Tests
+```bash
+python tests/test_backtest_fix.py
 ```
 
 #### Sentiment Analysis Tests

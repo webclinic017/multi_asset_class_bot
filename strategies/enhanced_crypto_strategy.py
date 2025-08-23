@@ -131,11 +131,15 @@ class EnhancedCryptoStrategy(bt.Strategy):
         """Initialize enhanced crypto strategy"""
         self.logger = logging.getLogger(__name__)
         
-        # Basic price data
-        self.dataclose = self.datas[0].close
-        self.datahigh = self.datas[0].high
-        self.datalow = self.datas[0].low
-        self.datavolume = self.datas[0].volume
+        # Basic price data with safety checks
+        try:
+            self.dataclose = self.datas[0].close
+            self.datahigh = self.datas[0].high
+            self.datalow = self.datas[0].low
+            self.datavolume = self.datas[0].volume
+        except (IndexError, AttributeError) as e:
+            self.logger.error(f"Error accessing data feeds: {e}")
+            raise
         
         # Order and position management
         self.order = None
@@ -298,12 +302,20 @@ class EnhancedCryptoStrategy(bt.Strategy):
             return 'normal', 0.5
             
         try:
-            # Calculate recent volatility
+            # Calculate recent volatility with bounds checking
             recent_returns = []
-            for i in range(1, min(self.p.garch_lookback, len(self.data))):
-                if self.dataclose[-i-1] > 0:
-                    ret = (self.dataclose[-i] - self.dataclose[-i-1]) / self.dataclose[-i-1]
-                    recent_returns.append(ret)
+            data_length = len(self.data)
+            lookback = min(self.p.garch_lookback, data_length - 1)
+            
+            for i in range(1, lookback):
+                try:
+                    if (i < len(self.dataclose) and
+                        i + 1 < len(self.dataclose) and
+                        self.dataclose[-i-1] > 0):
+                        ret = (self.dataclose[-i] - self.dataclose[-i-1]) / self.dataclose[-i-1]
+                        recent_returns.append(ret)
+                except (IndexError, ZeroDivisionError):
+                    continue
                     
             if len(recent_returns) < 10:
                 return 'normal', 0.5
@@ -339,14 +351,23 @@ class EnhancedCryptoStrategy(bt.Strategy):
         Detect trend regime using multiple timeframe analysis
         """
         try:
-            # Short-term trend (EMA crossover)
-            short_trend = 1 if self.ema_fast[0] > self.ema_slow[0] else -1
+            # Short-term trend (EMA crossover) with bounds checking
+            short_trend = 0
+            if (len(self.ema_fast) > 0 and len(self.ema_slow) > 0):
+                short_trend = 1 if self.ema_fast[0] > self.ema_slow[0] else -1
             
-            # Medium-term trend (price vs KAMA)
-            medium_trend = 1 if self.dataclose[0] > self.kama[0] else -1
+            # Medium-term trend (price vs KAMA) with bounds checking
+            medium_trend = 0
+            if (len(self.dataclose) > 0 and len(self.kama) > 0):
+                medium_trend = 1 if self.dataclose[0] > self.kama[0] else -1
             
-            # Long-term trend (ADX and Aroon)
-            trend_strength = self.adx[0] / 100 if len(self.adx) > 0 else 0.5
+            # Long-term trend (ADX and Aroon) with bounds checking
+            trend_strength = 0.5
+            if len(self.adx) > 0:
+                try:
+                    trend_strength = self.adx[0] / 100
+                except (IndexError, TypeError):
+                    trend_strength = 0.5
             
             # Combine signals
             trend_score = (short_trend + medium_trend) / 2
@@ -658,10 +679,18 @@ class EnhancedCryptoStrategy(bt.Strategy):
         """Main strategy logic for crypto trading with sentiment analysis"""
         if self.order:
             return
+        
+        # Safety check for minimum data
+        if len(self.data) < 30:
+            return
             
-        # Update regimes
-        self.volatility_regime, vol_confidence = self.detect_volatility_regime()
-        self.trend_regime, trend_confidence = self.detect_trend_regime()
+        # Update regimes with error handling
+        try:
+            self.volatility_regime, vol_confidence = self.detect_volatility_regime()
+            self.trend_regime, trend_confidence = self.detect_trend_regime()
+        except Exception as e:
+            self.logger.error(f"Error updating regimes: {e}")
+            return
         
         # Get sentiment signal for veto check
         sentiment = self.get_sentiment_signal()
