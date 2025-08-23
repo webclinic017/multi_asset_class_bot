@@ -21,6 +21,17 @@ import queue
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder for NumPy data types"""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyEncoder, self).default(obj)
+
 logger = logging.getLogger(__name__)
 
 class OptimizationStatus(Enum):
@@ -118,7 +129,7 @@ class EnhancedDynamicOptimizer:
                 data.append(item)
                 
             with open(self.parameter_store_path, 'w') as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f, indent=2, cls=NumpyEncoder)
                 
             logger.debug(f"Saved {len(self.parameter_store)} parameter sets to store")
             
@@ -144,7 +155,7 @@ class EnhancedDynamicOptimizer:
         """Save optimization history to disk"""
         try:
             with open(self.optimization_log_path, 'w') as f:
-                json.dump(self.optimization_history, f, indent=2)
+                json.dump(self.optimization_history, f, indent=2, cls=NumpyEncoder)
                 
         except Exception as e:
             logger.error(f"Error saving optimization history: {e}")
