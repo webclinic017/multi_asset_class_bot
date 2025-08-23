@@ -680,8 +680,8 @@ class EnhancedCryptoStrategy(bt.Strategy):
         if self.order:
             return
         
-        # Safety check for minimum data
-        if len(self.data) < 30:
+        # Safety check for minimum data (increased for backtrader indicators)
+        if len(self.data) < 60:
             return
             
         # Update regimes with error handling

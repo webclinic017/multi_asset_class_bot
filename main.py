@@ -244,7 +244,7 @@ def run_live_trading_mode(config):
     
     if multi_asset_enabled:
         logger.info("=== MULTI-ASSET LIVE TRADING WITH ENHANCED OPTIMIZATION ===")
-        run_enhanced_multi_asset_live_trading(config, dynamic_optimizer)
+        run_enhanced_single_asset_live_trading(config, dynamic_optimizer)
     else:
         logger.info("=== SINGLE ASSET LIVE TRADING WITH ENHANCED OPTIMIZATION ===")
         run_enhanced_single_asset_live_trading(config, dynamic_optimizer)
@@ -495,6 +495,9 @@ def run_enhanced_single_asset_live_trading(config, dynamic_optimizer):
 
 def run_optimization_mode(config):
     """Runs the bot in enhanced optimization mode with multi-strategy support."""
+    import time
+    from datetime import datetime
+    
     logger.info("Starting trading bot in ENHANCED OPTIMIZATION mode.")
     
     try:

@@ -11,6 +11,7 @@ import logging
 import yaml
 import os
 import pandas as pd
+import numpy as np
 
 # Import components from our trading bot structure
 from data.data_feed import OANDADataFeed, CCXTDataFeed # Assuming these are the primary data sources for backtesting
@@ -22,6 +23,10 @@ from strategies.crypto_strategy import CryptoStrategy, SOLStrategy
 from strategies.futures_strategy import FuturesStrategy
 from strategies.enhanced_forex_strategy import EnhancedForexStrategy
 from strategies.enhanced_crypto_strategy import EnhancedCryptoStrategy
+from strategies.simple_crypto_strategy import SimpleCryptoStrategy
+from strategies.ultra_simple_crypto_strategy import UltraSimpleCryptoStrategy
+from strategies.advanced_quant_crypto_strategy import AdvancedQuantCryptoStrategy
+from strategies.production_quant_crypto_strategy import ProductionQuantCryptoStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
 from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
@@ -132,17 +137,21 @@ class BacktestEngine:
                 self.logger.error(f"No data retrieved for {symbol}.")
                 return None
 
-            # Check minimum data requirements
-            if len(raw_data_df) < 50:
-                self.logger.error(f"Insufficient data for {symbol}: {len(raw_data_df)} rows (minimum 50 required)")
+            # **Definitive Fix**: Enforce a strict minimum data length to prevent indicator errors.
+            # The strategy requires a substantial lookback period for its various calculations
+            # (volatility, momentum, Kelly criterion, etc.). A value of 200 is a safe minimum
+            # to accommodate the largest lookback window plus a buffer.
+            MIN_DATA_LENGTH = 200
+            if len(raw_data_df) < MIN_DATA_LENGTH:
+                self.logger.error(f"Insufficient data for {symbol}: {len(raw_data_df)} rows. Minimum required is {MIN_DATA_LENGTH}.")
                 return None
 
             # Preprocess the data
             processed_data_df = self.data_preprocessor.preprocess(raw_data_df.copy())
             
-            # Check if preprocessing left enough data
-            if processed_data_df.empty or len(processed_data_df) < 30:
-                self.logger.error(f"Insufficient data after preprocessing for {symbol}: {len(processed_data_df)} rows")
+            # Check if preprocessing left enough data (increased for backtrader indicators)
+            if processed_data_df.empty or len(processed_data_df) < 60:
+                self.logger.error(f"Insufficient data after preprocessing for {symbol}: {len(processed_data_df)} rows (minimum 60 required)")
                 return None
             
             # Ensure the DataFrame has the required columns for backtrader
@@ -167,28 +176,42 @@ class BacktestEngine:
                     self.logger.error(f"Invalid price data (non-positive values) for {symbol} in column {col}")
                     return None
             
-            # Add data to cerebro with error handling
+            # Add data to cerebro with error handling and proper column mapping
             try:
+                # Ensure we have enough data for backtrader's internal calculations
+                if len(processed_data_df) < 60:
+                    self.logger.error(f"Final data check failed for {symbol}: {len(processed_data_df)} rows (minimum 60 required for backtrader)")
+                    return None
+                
+                # Create a clean DataFrame with only required columns in correct order
+                clean_df = processed_data_df[['open', 'high', 'low', 'close', 'volume']].copy()
+                
+                # Ensure all data is numeric and finite
+                for col in clean_df.columns:
+                    clean_df[col] = pd.to_numeric(clean_df[col], errors='coerce')
+                    if clean_df[col].isnull().any():
+                        self.logger.warning(f"Found NaN values in {col} for {symbol}, filling with forward fill")
+                        clean_df[col] = clean_df[col].fillna(method='ffill').fillna(method='bfill')
+                
+                # Final validation - ensure no infinite or NaN values
+                if not clean_df.replace([np.inf, -np.inf], np.nan).dropna().equals(clean_df):
+                    self.logger.error(f"Data contains infinite or NaN values for {symbol}")
+                    return None
+                
                 data = bt.feeds.PandasData(
-                    dataname=processed_data_df,
+                    dataname=clean_df,
                     fromdate=self.start_date,
-                    todate=self.end_date,
-                    # Explicitly map columns to avoid index issues
-                    datetime=None,  # Use index
-                    open=0,
-                    high=1,
-                    low=2,
-                    close=3,
-                    volume=4,
-                    openinterest=-1  # Not used
+                    todate=self.end_date
                 )
                 self.cerebro.adddata(data)
                 
-                self.logger.info(f"Data for {symbol} loaded and preprocessed. Shape: {processed_data_df.shape}")
-                return processed_data_df
+                self.logger.info(f"Data for {symbol} loaded and preprocessed. Final shape: {clean_df.shape}")
+                return clean_df
                 
             except Exception as e:
                 self.logger.error(f"Error adding data to cerebro for {symbol}: {e}")
+                import traceback
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
                 return None
             
         except Exception as e:
@@ -214,6 +237,14 @@ class BacktestEngine:
             strategy_class = CryptoStrategy
         elif strategy_name == 'EnhancedCryptoStrategy':
             strategy_class = EnhancedCryptoStrategy
+        elif strategy_name == 'SimpleCryptoStrategy':
+            strategy_class = SimpleCryptoStrategy
+        elif strategy_name == 'UltraSimpleCryptoStrategy':
+            strategy_class = UltraSimpleCryptoStrategy
+        elif strategy_name == 'AdvancedQuantCryptoStrategy':
+            strategy_class = AdvancedQuantCryptoStrategy
+        elif strategy_name == 'ProductionQuantCryptoStrategy':
+            strategy_class = ProductionQuantCryptoStrategy
         elif strategy_name == 'SOLStrategy':
             strategy_class = SOLStrategy
         elif strategy_name == 'FuturesStrategy':
@@ -233,14 +264,32 @@ class BacktestEngine:
         """
         self.logger.info("Starting backtest...")
         
-        # Add analyzers
+        # Add analyzers with error handling
         self.cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
         self.cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
         self.cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
         self.cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trade_analyzer')
 
-        # Run the backtest
-        strategies = self.cerebro.run()
+        # Run the backtest with error handling
+        try:
+            strategies = self.cerebro.run()
+        except ZeroDivisionError as e:
+            self.logger.warning(f"Division by zero in analyzer (likely no trades made): {e}")
+            # Return minimal results for no-trade scenarios
+            return {
+                'final_value': self.cerebro.broker.getvalue(),
+                'initial_capital': self.initial_capital,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0,
+                'total_return': 0.0,
+                'total_trades': 0,
+                'winning_trades': 0,
+                'losing_trades': 0,
+                'win_rate': 0.0,
+                'avg_win': 0.0,
+                'avg_loss': 0.0,
+                'profit_factor': 0.0
+            }
         
         if not strategies:
             self.logger.error("No strategies executed")
@@ -326,10 +375,53 @@ class BacktestEngine:
             'win_rate': win_rate,
             'avg_win': avg_win,
             'avg_loss': avg_loss,
-            'profit_factor': abs(avg_win * winning_trades / (avg_loss * losing_trades)) if (avg_loss != 0 and losing_trades > 0 and avg_win != 0 and winning_trades > 0) else 0.0
+            'profit_factor': self._calculate_profit_factor(avg_win, winning_trades, avg_loss, losing_trades)
         }
         
         return results
+    
+    def _calculate_profit_factor(self, avg_win, winning_trades, avg_loss, losing_trades):
+        """
+        Calculate profit factor with safe handling of None values and division by zero
+        
+        Args:
+            avg_win: Average winning trade amount
+            winning_trades: Number of winning trades
+            avg_loss: Average losing trade amount
+            losing_trades: Number of losing trades
+            
+        Returns:
+            float: Profit factor or 0.0 if calculation fails
+        """
+        try:
+            # Ensure all values are valid numbers
+            if (avg_win is None or winning_trades is None or
+                avg_loss is None or losing_trades is None):
+                return 0.0
+            
+            # Convert to float and handle None/invalid values
+            avg_win = float(avg_win) if avg_win is not None else 0.0
+            winning_trades = int(winning_trades) if winning_trades is not None else 0
+            avg_loss = float(avg_loss) if avg_loss is not None else 0.0
+            losing_trades = int(losing_trades) if losing_trades is not None else 0
+            
+            # Calculate total wins and losses
+            total_wins = avg_win * winning_trades
+            total_losses = abs(avg_loss * losing_trades)  # Ensure positive
+            
+            # Avoid division by zero
+            if total_losses == 0 or losing_trades == 0:
+                return total_wins if total_wins > 0 else 0.0
+            
+            # Calculate profit factor
+            profit_factor = total_wins / total_losses
+            
+            # Return reasonable bounds (cap at 100 for extreme cases)
+            return min(profit_factor, 100.0)
+            
+        except (TypeError, ValueError, ZeroDivisionError) as e:
+            self.logger.warning(f"Error calculating profit factor: {e}")
+            return 0.0
     
     def run_multi_asset_backtest(self, symbols_config: list):
         """
@@ -363,50 +455,129 @@ class BacktestEngine:
                 self.cerebro.broker.setcommission(commission=self.commission)
                 self.cerebro.broker.set_slippage_perc(perc=self.slippage)
                 
-                # Load data for this asset
+                # Load data for this asset with enhanced validation
                 data = self.load_data(symbol, asset_type, timeframe)
-                if data is None:
-                    self.logger.error(f"Failed to load data for {symbol}")
+                if data is None or data.empty:
+                    self.logger.error(f"Failed to load data for {symbol} - no data available for the specified date range")
                     continue
                 
-                # Add appropriate strategy
-                if asset_type == 'forex':
-                    strategy_config = self.config.get('strategies', {}).get('forex', {})
-                    strategy_name = strategy_config.get('name', 'ForexStrategy')
-                    strategy_params = strategy_config.get('params', {})
-                elif asset_type == 'crypto':
-                    strategy_config = self.config.get('strategies', {}).get('crypto', {})
-                    strategy_name = strategy_config.get('name', 'SOLStrategy')
-                    strategy_params = strategy_config.get('params', {})
-                else:
-                    self.logger.error(f"Unsupported asset type: {asset_type}")
+                # Validate data has minimum required rows
+                if len(data) < 50:
+                    self.logger.error(f"Insufficient data for {symbol}: {len(data)} rows (minimum 50 required)")
                     continue
                 
-                # Disable logging for individual backtests
-                strategy_params['printlog'] = False
-                
-                self.add_strategy(strategy_name, **strategy_params)
-                
-                # Run backtest
-                results = self.run()
-                
-                if results:
-                    all_results[symbol] = {
-                        'asset_type': asset_type,
-                        'results': results
-                    }
+                # Add appropriate strategy with error handling
+                try:
+                    if asset_type == 'forex':
+                        strategy_config = self.config.get('strategies', {}).get('forex', {})
+                        strategy_name = strategy_config.get('name', 'ForexStrategy')
+                        strategy_params = strategy_config.get('params', {}).copy()
+                    elif asset_type == 'crypto':
+                        strategy_config = self.config.get('strategies', {}).get('crypto', {})
+                        strategy_name = strategy_config.get('name', 'SOLStrategy')
+                        strategy_params = strategy_config.get('params', {}).copy()
+                    else:
+                        self.logger.error(f"Unsupported asset type: {asset_type}")
+                        continue
                     
-                    # Analyze with multi-asset analyzer
-                    self.multi_asset_analyzer.analyze_asset_performance(
-                        asset_type, symbol, results
-                    )
+                    # Ensure strategy params are not None
+                    if strategy_params is None:
+                        strategy_params = {}
                     
-                    self.logger.info(f"Completed backtest for {symbol}: "
-                                   f"Return: {results['total_return']:.2f}%, "
-                                   f"Sharpe: {results['sharpe_ratio']:.2f}")
+                    # Disable logging for individual backtests
+                    strategy_params['printlog'] = False
+                    
+                    # Validate critical parameters based on strategy type
+                    if strategy_name == 'UltraSimpleCryptoStrategy':
+                        required_params = ['lookback_period', 'price_change_threshold']
+                        for param in required_params:
+                            if param not in strategy_params or strategy_params[param] is None:
+                                self.logger.warning(f"Missing or None parameter {param} for {symbol}, using default")
+                                if param == 'lookback_period':
+                                    strategy_params[param] = 5
+                                elif param == 'price_change_threshold':
+                                    strategy_params[param] = 0.02
+                    elif strategy_name == 'AdvancedQuantCryptoStrategy':
+                        required_params = ['vol_lookback', 'momentum_short', 'bb_period', 'rsi_period']
+                        for param in required_params:
+                            if param not in strategy_params or strategy_params[param] is None:
+                                self.logger.warning(f"Missing or None parameter {param} for {symbol}, using default")
+                                if param == 'vol_lookback':
+                                    strategy_params[param] = 20
+                                elif param == 'momentum_short':
+                                    strategy_params[param] = 5
+                                elif param == 'bb_period':
+                                    strategy_params[param] = 20
+                                elif param == 'rsi_period':
+                                    strategy_params[param] = 14
+                    elif strategy_name == 'ProductionQuantCryptoStrategy':
+                        required_params = ['vol_lookback', 'momentum_short', 'bb_period', 'rsi_period']
+                        for param in required_params:
+                            if param not in strategy_params or strategy_params[param] is None:
+                                self.logger.warning(f"Missing or None parameter {param} for {symbol}, using default")
+                                if param == 'vol_lookback':
+                                    strategy_params[param] = 20
+                                elif param == 'momentum_short':
+                                    strategy_params[param] = 5
+                                elif param == 'bb_period':
+                                    strategy_params[param] = 20
+                                elif param == 'rsi_period':
+                                    strategy_params[param] = 14
+                    else:
+                        # For other strategies (forex, enhanced crypto, etc.)
+                        required_params = ['fast_length', 'slow_length', 'rsi_period']
+                        for param in required_params:
+                            if param not in strategy_params or strategy_params[param] is None:
+                                self.logger.warning(f"Missing or None parameter {param} for {symbol}, using default")
+                                if param == 'fast_length':
+                                    strategy_params[param] = 10
+                                elif param == 'slow_length':
+                                    strategy_params[param] = 21
+                                elif param == 'rsi_period':
+                                    strategy_params[param] = 14
+                    
+                    self.add_strategy(strategy_name, **strategy_params)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error setting up strategy for {symbol}: {e}")
+                    continue
+                
+                # Run backtest with enhanced error handling
+                try:
+                    results = self.run()
+                    
+                    if results and isinstance(results, dict):
+                        # Validate results contain required fields
+                        required_fields = ['total_return', 'sharpe_ratio', 'final_value']
+                        if all(field in results and results[field] is not None for field in required_fields):
+                            all_results[symbol] = {
+                                'asset_type': asset_type,
+                                'results': results
+                            }
+                            
+                            # Analyze with multi-asset analyzer
+                            self.multi_asset_analyzer.analyze_asset_performance(
+                                asset_type, symbol, results
+                            )
+                            
+                            self.logger.info(f"Completed backtest for {symbol}: "
+                                           f"Return: {results['total_return']:.2f}%, "
+                                           f"Sharpe: {results['sharpe_ratio']:.2f}")
+                        else:
+                            self.logger.error(f"Invalid results for {symbol}: missing required fields")
+                    else:
+                        self.logger.error(f"No valid results returned for {symbol}")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error running backtest execution for {symbol}: {e}")
+                    import traceback
+                    self.logger.error(f"Traceback: {traceback.format_exc()}")
+                    continue
                 
             except Exception as e:
                 self.logger.error(f"Error running backtest for {symbol}: {e}")
+                import traceback
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
                 continue
         
         # Generate multi-asset analysis

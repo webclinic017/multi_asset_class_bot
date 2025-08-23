@@ -134,16 +134,16 @@ class DataPreprocessor:
         """
         self.logger.info("Starting full data preprocessing pipeline.")
         
-        # Check minimum data requirements
-        if len(df) < 50:
-            self.logger.error(f"Insufficient data for preprocessing: {len(df)} rows (minimum 50 required)")
+        # Check minimum data requirements (increased for backtrader compatibility)
+        if len(df) < 100:
+            self.logger.error(f"Insufficient data for preprocessing: {len(df)} rows (minimum 100 required)")
             return pd.DataFrame()
         
         df = self.clean_data(df)
         
         # Ensure we still have enough data after cleaning
-        if len(df) < 30:
-            self.logger.error(f"Insufficient data after cleaning: {len(df)} rows")
+        if len(df) < 80:
+            self.logger.error(f"Insufficient data after cleaning: {len(df)} rows (minimum 80 required)")
             return pd.DataFrame()
         
         df = self.add_technical_indicators(df)
@@ -152,9 +152,9 @@ class DataPreprocessor:
         initial_rows = len(df)
         df.dropna(inplace=True)
         
-        # Check if we have enough data left after dropping NaN values
-        if len(df) < 20:
-            self.logger.error(f"Insufficient data after dropping NaN values: {len(df)} rows (minimum 20 required)")
+        # Check if we have enough data left after dropping NaN values (increased for backtrader)
+        if len(df) < 60:
+            self.logger.error(f"Insufficient data after dropping NaN values: {len(df)} rows (minimum 60 required)")
             return pd.DataFrame()
         
         if len(df) < initial_rows:
