@@ -6,7 +6,7 @@ Test script for sentiment analysis and news integration
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sentiment.news_analyzer import NewsAnalyzer
 import pandas as pd

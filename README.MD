@@ -108,7 +108,16 @@ python main.py --mode backtest
 #### **Testing and Validation**
 ```bash
 # Run comprehensive test suite
-python test_enhanced_system.py
+python tests/test_enhanced_system.py
+
+# Test crypto sentiment integration
+python tests/test_crypto_sentiment.py
+
+# Test sentiment analysis
+python tests/test_sentiment.py
+
+# Test genetic optimizer
+python tests/test_genetic_optimizer.py
 
 # Test individual components
 python -m utils.enhanced_dynamic_optimizer --action summary --strategy forex
@@ -240,8 +249,8 @@ The multi-asset analyzer uses a weighted scoring system:
 ```
 multi_asset_bot/
 ├── strategies/
-│   ├── enhanced_forex_strategy.py      # Advanced forex strategy
-│   ├── enhanced_crypto_strategy.py     # Advanced crypto strategy
+│   ├── enhanced_forex_strategy.py      # Advanced forex strategy with sentiment
+│   ├── enhanced_crypto_strategy.py     # Advanced crypto strategy with sentiment
 │   ├── forex_strategy.py              # Legacy forex strategy
 │   └── crypto_strategy.py             # Legacy crypto strategy
 ├── optimization/
@@ -250,7 +259,8 @@ multi_asset_bot/
 ├── utils/
 │   ├── enhanced_dynamic_optimizer.py   # Advanced parameter management
 │   ├── dynamic_optimizer.py           # Legacy parameter management
-│   └── multi_asset_analyzer.py        # Multi-asset analysis
+│   ├── multi_asset_analyzer.py        # Multi-asset analysis
+│   └── sentiment_analyzer.py          # Sentiment analysis integration
 ├── data/
 │   ├── data_feed.py                   # OANDA data feed
 │   ├── kraken_feed.py                 # Kraken data feed
@@ -262,6 +272,16 @@ multi_asset_bot/
 │   └── risk_manager.py                # Risk management
 ├── backtesting/
 │   └── backtest_engine.py             # Backtesting engine
+├── tests/                             # Organized test directory
+│   ├── test_enhanced_system.py        # Comprehensive system tests
+│   ├── test_crypto_sentiment.py       # Crypto sentiment integration tests
+│   ├── test_enhanced_forex_strategy.py # Forex strategy tests
+│   ├── test_sentiment.py              # Core sentiment analysis tests
+│   ├── test_sentiment_backtest.py     # Sentiment backtesting tests
+│   ├── test_sentiment_simple.py       # Simple sentiment tests
+│   ├── test_genetic_optimizer.py      # Genetic optimizer tests
+│   ├── test_profitable_strategy.py    # Profitable strategy tests
+│   └── README.md                      # Test documentation
 ├── config/
 │   └── config.yaml                    # Main configuration
 ├── output/                            # Auto-created for results
@@ -270,8 +290,7 @@ multi_asset_bot/
 │   └── *.csv                         # Optimization results
 ├── enhanced_fast_optimize.py          # Enhanced optimization script
 ├── main.py                           # Main application entry point
-├── test_enhanced_system.py           # Comprehensive test suite
-└── README.MD                         # This documentation
+└── README.md                         # This documentation
 ```
 
 ## 🔄 **Automatic Optimization Workflow**
@@ -309,8 +328,8 @@ enhanced_crypto_optimization_YYYYMMDD_HHMMSS.csv
 
 ### **Comprehensive Test Suite**
 ```bash
-# Run all tests
-python test_enhanced_system.py
+# Run all tests from the tests directory
+python tests/test_enhanced_system.py
 
 # Test categories:
 - Enhanced Dynamic Optimizer functionality
@@ -318,8 +337,15 @@ python test_enhanced_system.py
 - Multi-objective fitness calculation
 - CSV export and storage
 - Strategy class imports
+- Sentiment analysis integration
 - End-to-end workflow testing
 - Performance benchmarks
+
+# Run specific test categories
+python tests/test_sentiment.py              # Core sentiment analysis
+python tests/test_crypto_sentiment.py       # Crypto sentiment integration
+python tests/test_enhanced_forex_strategy.py # Forex strategy tests
+python tests/test_genetic_optimizer.py      # Optimization tests
 ```
 
 ### **Validation Results**
@@ -451,7 +477,7 @@ python main.py --mode live        # Live trading with auto-optimization
 python main.py --mode backtest    # Multi-asset backtesting
 
 # Testing and validation
-python test_enhanced_system.py    # Run all tests
+python tests/test_enhanced_system.py    # Run all tests
 
 # Parameter management
 python -m utils.enhanced_dynamic_optimizer --action summary --strategy forex

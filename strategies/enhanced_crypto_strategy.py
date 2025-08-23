@@ -13,6 +13,13 @@ from sklearn.preprocessing import StandardScaler
 from typing import Dict, Any, Optional, Tuple, List
 import talib
 
+# Import sentiment analysis
+try:
+    from sentiment.news_analyzer import news_analyzer
+    SENTIMENT_AVAILABLE = True
+except ImportError:
+    SENTIMENT_AVAILABLE = False
+
 class EnhancedCryptoStrategy(bt.Strategy):
     """
     Advanced quantitative crypto trading strategy with:
@@ -22,8 +29,9 @@ class EnhancedCryptoStrategy(bt.Strategy):
     - Dynamic position sizing with Kelly Criterion
     - Crypto-specific risk management
     - Market microstructure analysis
-    - Sentiment integration
+    - News sentiment analysis integration
     - Machine learning features
+    - Sentiment-based trade filtering and exits
     """
     
     params = (
@@ -83,6 +91,16 @@ class EnhancedCryptoStrategy(bt.Strategy):
         ('whale_detection', True),
         ('social_sentiment_weight', 0.2),
         ('fear_greed_threshold', 25),  # Extreme fear/greed levels
+        
+        # Sentiment Analysis Parameters
+        ('use_sentiment_filter', True),
+        ('sentiment_weight', 0.3),         # Weight of sentiment in decision
+        ('sentiment_threshold', 0.25),     # Minimum sentiment strength
+        ('news_lookback_hours', 8),        # Hours to look back for crypto news
+        ('sentiment_boost_multiplier', 1.4), # Boost for aligned sentiment
+        ('sentiment_veto_threshold', -0.7), # Strong negative sentiment veto
+        ('min_sentiment_confidence', 0.25), # Minimum confidence required
+        ('crypto_sentiment_decay', 0.9),   # Faster decay for crypto news
         
         # Multi-timeframe Analysis
         ('use_higher_tf', True),
@@ -153,7 +171,17 @@ class EnhancedCryptoStrategy(bt.Strategy):
         self.profit_factor = 0.0
         self.win_rate = 0.0
         
-        self.logger.info("Enhanced Crypto Strategy initialized with advanced quantitative features")
+        # Sentiment tracking
+        self.last_sentiment_check = None
+        self.current_sentiment = None
+        self.sentiment_cache_duration = 180  # 3 minutes cache for crypto (faster than forex)
+        self.sentiment_score = 0.0
+        self.sentiment_momentum = 0.0
+        
+        if SENTIMENT_AVAILABLE and self.p.use_sentiment_filter:
+            self.logger.info("Enhanced Crypto Strategy initialized with sentiment analysis and advanced quantitative features")
+        else:
+            self.logger.info("Enhanced Crypto Strategy initialized with advanced quantitative features")
 
     def _init_core_indicators(self):
         """Initialize core technical indicators optimized for crypto"""
@@ -372,6 +400,48 @@ class EnhancedCryptoStrategy(bt.Strategy):
             self.logger.error(f"Error calculating Kelly position size: {e}")
             return 0.01
 
+    def get_sentiment_signal(self):
+        """Get current sentiment signal with caching optimized for crypto"""
+        if not SENTIMENT_AVAILABLE or not self.p.use_sentiment_filter:
+            return {
+                'signal_direction': 0.0,
+                'signal_strength': 0.0,
+                'confidence': 0.0,
+                'recommendation': 'NEUTRAL'
+            }
+            
+        try:
+            current_time = datetime.now()
+            
+            # Check if we need to update sentiment (faster refresh for crypto)
+            if (self.last_sentiment_check is None or
+                (current_time - self.last_sentiment_check).total_seconds() > self.sentiment_cache_duration):
+                
+                # Get fresh sentiment data
+                self.current_sentiment = news_analyzer.get_trading_signal(self.p.news_lookback_hours)
+                self.last_sentiment_check = current_time
+                
+                # Update sentiment tracking
+                if self.current_sentiment:
+                    new_score = self.current_sentiment.get('signal_direction', 0.0)
+                    self.sentiment_momentum = new_score - self.sentiment_score
+                    self.sentiment_score = new_score
+                
+                self.log(f'CRYPTO SENTIMENT UPDATE - Direction: {self.current_sentiment["signal_direction"]:.3f}, '
+                        f'Strength: {self.current_sentiment["signal_strength"]:.3f}, '
+                        f'Momentum: {self.sentiment_momentum:.3f}')
+                
+            return self.current_sentiment
+            
+        except Exception as e:
+            self.logger.error(f"Error getting crypto sentiment signal: {e}")
+            return {
+                'signal_direction': 0.0,
+                'signal_strength': 0.0,
+                'confidence': 0.0,
+                'recommendation': 'NEUTRAL'
+            }
+
     def generate_crypto_signals(self) -> Dict[str, Any]:
         """
         Generate comprehensive crypto trading signals
@@ -482,6 +552,27 @@ class EnhancedCryptoStrategy(bt.Strategy):
                     
             signals['components']['volatility'] = volatility_score
             
+            # Sentiment component
+            sentiment_score = 0.0
+            sentiment = self.get_sentiment_signal()
+            
+            if (self.p.use_sentiment_filter and
+                sentiment['signal_strength'] >= self.p.sentiment_threshold and
+                sentiment['confidence'] >= self.p.min_sentiment_confidence):
+                
+                # Crypto sentiment is more volatile, so we apply decay
+                sentiment_direction = sentiment['signal_direction'] * self.p.crypto_sentiment_decay
+                sentiment_strength = sentiment['signal_strength']
+                
+                # Sentiment momentum consideration
+                if abs(self.sentiment_momentum) > 0.1:
+                    momentum_boost = min(abs(self.sentiment_momentum) * 2, 0.5)
+                    sentiment_strength *= (1 + momentum_boost)
+                
+                sentiment_score = sentiment_direction * sentiment_strength
+                
+            signals['components']['sentiment'] = sentiment_score
+            
             # Regime-based weighting
             vol_regime, vol_confidence = self.detect_volatility_regime()
             trend_regime, trend_confidence = self.detect_trend_regime()
@@ -497,31 +588,52 @@ class EnhancedCryptoStrategy(bt.Strategy):
             else:
                 weight_adjustment = 1.0
                 
-            # Calculate final scores
+            # Calculate final scores with sentiment integration
+            sentiment_component = signals['components']['sentiment']
+            
             if trend_regime == 'bullish':
                 buy_score = (
-                    signals['components']['momentum'] * 0.4 +
-                    signals['components']['trend'] * 0.4 +
+                    signals['components']['momentum'] * 0.35 +
+                    signals['components']['trend'] * 0.35 +
                     max(0, signals['components']['reversion']) * 0.1 +
-                    max(0, signals['components']['volume']) * 0.1
+                    max(0, signals['components']['volume']) * 0.1 +
+                    max(0, sentiment_component) * self.p.sentiment_weight
                 ) * weight_adjustment
                 
-                sell_score = max(0, -signals['components']['reversion']) * 0.3 * weight_adjustment
+                sell_score = (max(0, -signals['components']['reversion']) * 0.2 +
+                             max(0, -sentiment_component) * self.p.sentiment_weight * 0.5) * weight_adjustment
                 
             elif trend_regime == 'bearish':
                 sell_score = (
-                    (1 - signals['components']['momentum']) * 0.4 +
-                    (1 - signals['components']['trend']) * 0.4 +
+                    (1 - signals['components']['momentum']) * 0.35 +
+                    (1 - signals['components']['trend']) * 0.35 +
                     max(0, -signals['components']['reversion']) * 0.1 +
-                    max(0, signals['components']['volume']) * 0.1
+                    max(0, signals['components']['volume']) * 0.1 +
+                    max(0, -sentiment_component) * self.p.sentiment_weight
                 ) * weight_adjustment
                 
-                buy_score = max(0, signals['components']['reversion']) * 0.3 * weight_adjustment
+                buy_score = (max(0, signals['components']['reversion']) * 0.2 +
+                            max(0, sentiment_component) * self.p.sentiment_weight * 0.5) * weight_adjustment
                 
             else:  # neutral or ranging
-                # Mean reversion strategy
-                buy_score = max(0, signals['components']['reversion']) * 0.6 * weight_adjustment
-                sell_score = max(0, -signals['components']['reversion']) * 0.6 * weight_adjustment
+                # Mean reversion strategy with sentiment overlay
+                base_buy = max(0, signals['components']['reversion']) * 0.5
+                base_sell = max(0, -signals['components']['reversion']) * 0.5
+                
+                buy_score = (base_buy + max(0, sentiment_component) * self.p.sentiment_weight) * weight_adjustment
+                sell_score = (base_sell + max(0, -sentiment_component) * self.p.sentiment_weight) * weight_adjustment
+            
+            # Apply sentiment boost for strong alignment
+            if (self.p.use_sentiment_filter and
+                abs(sentiment_component) > 0.5 and
+                sentiment['signal_strength'] > 0.6):
+                
+                if sentiment_component > 0 and buy_score > sell_score:
+                    buy_score *= self.p.sentiment_boost_multiplier
+                    self.log(f'CRYPTO SENTIMENT BOOST (BUY) - Score: {buy_score:.3f}')
+                elif sentiment_component < 0 and sell_score > buy_score:
+                    sell_score *= self.p.sentiment_boost_multiplier
+                    self.log(f'CRYPTO SENTIMENT BOOST (SELL) - Score: {sell_score:.3f}')
                 
             signals['buy_score'] = min(buy_score, 1.0)
             signals['sell_score'] = min(sell_score, 1.0)
@@ -543,13 +655,23 @@ class EnhancedCryptoStrategy(bt.Strategy):
             return signals
 
     def next(self):
-        """Main strategy logic for crypto trading"""
+        """Main strategy logic for crypto trading with sentiment analysis"""
         if self.order:
             return
             
         # Update regimes
         self.volatility_regime, vol_confidence = self.detect_volatility_regime()
         self.trend_regime, trend_confidence = self.detect_trend_regime()
+        
+        # Get sentiment signal for veto check
+        sentiment = self.get_sentiment_signal()
+        
+        # Check for sentiment veto (strong negative news can override technical signals)
+        if (self.p.use_sentiment_filter and
+            sentiment['signal_strength'] > 0.6 and
+            sentiment['signal_direction'] < self.p.sentiment_veto_threshold):
+            self.log(f'CRYPTO SENTIMENT VETO - Strong negative sentiment: {sentiment["signal_direction"]:.3f}')
+            return
         
         # Generate signals
         signals = self.generate_crypto_signals()
@@ -592,14 +714,15 @@ class EnhancedCryptoStrategy(bt.Strategy):
                     
                 position_size = min(position_size, self.p.max_position_size)
                 
+                sentiment_info = f"Sentiment: {sentiment['recommendation']} ({sentiment['signal_direction']:.3f})" if self.p.use_sentiment_filter else "No Sentiment"
                 self.log(f'CRYPTO BUY - Score: {signals["buy_score"]:.3f}, '
-                        f'Vol Regime: {self.volatility_regime}, Size: {position_size:.3f}')
+                        f'Vol Regime: {self.volatility_regime}, Size: {position_size:.3f}, {sentiment_info}')
                 
                 self.order = self.buy(size=position_size)
                 self.entry_bar = len(self)
                 
             # Sell signal
-            elif (signals['sell_score'] > min_signal_strength and 
+            elif (signals['sell_score'] > min_signal_strength and
                   signals['confidence'] > min_confidence and
                   self.volatility_regime != 'extreme'):
                 
@@ -619,8 +742,9 @@ class EnhancedCryptoStrategy(bt.Strategy):
                     
                 position_size = min(position_size, self.p.max_position_size)
                 
+                sentiment_info = f"Sentiment: {sentiment['recommendation']} ({sentiment['signal_direction']:.3f})" if self.p.use_sentiment_filter else "No Sentiment"
                 self.log(f'CRYPTO SELL - Score: {signals["sell_score"]:.3f}, '
-                        f'Vol Regime: {self.volatility_regime}, Size: {position_size:.3f}')
+                        f'Vol Regime: {self.volatility_regime}, Size: {position_size:.3f}, {sentiment_info}')
                 
                 self.order = self.sell(size=position_size)
                 self.entry_bar = len(self)
@@ -629,8 +753,11 @@ class EnhancedCryptoStrategy(bt.Strategy):
             self._manage_crypto_position(current_vol, signals)
 
     def _manage_crypto_position(self, volatility: float, signals: Dict[str, Any]):
-        """Advanced crypto position management"""
+        """Advanced crypto position management with sentiment analysis"""
         current_price = self.dataclose[0]
+        
+        # Get current sentiment for exit decisions
+        sentiment = self.get_sentiment_signal()
         
         # Dynamic stop loss based on volatility
         vol_multiplier = max(2.0, min(5.0, volatility * 100))  # 2x to 5x volatility
@@ -643,8 +770,16 @@ class EnhancedCryptoStrategy(bt.Strategy):
             stop_price = self.buyprice * (1 - dynamic_stop)
             target_price = self.buyprice * (1 + dynamic_target)
             
+            # Sentiment-based early exit for long positions
+            if (self.p.use_sentiment_filter and
+                sentiment['signal_strength'] > 0.6 and
+                sentiment['signal_direction'] < -0.5):
+                self.log(f'CRYPTO SENTIMENT EXIT (LONG) - Negative sentiment: {sentiment["signal_direction"]:.3f}')
+                self.close()
+                return
+            
             # Regime-based early exit
-            if (self.volatility_regime == 'extreme' or 
+            if (self.volatility_regime == 'extreme' or
                 (self.trend_regime == 'bearish' and signals['confidence'] > 0.7)):
                 
                 # Take any profit in extreme conditions
@@ -681,8 +816,16 @@ class EnhancedCryptoStrategy(bt.Strategy):
             stop_price = self.buyprice * (1 + dynamic_stop)
             target_price = self.buyprice * (1 - dynamic_target)
             
+            # Sentiment-based early exit for short positions
+            if (self.p.use_sentiment_filter and
+                sentiment['signal_strength'] > 0.6 and
+                sentiment['signal_direction'] > 0.5):
+                self.log(f'CRYPTO SENTIMENT EXIT (SHORT) - Positive sentiment: {sentiment["signal_direction"]:.3f}')
+                self.close()
+                return
+            
             # Regime-based early exit
-            if (self.volatility_regime == 'extreme' or 
+            if (self.volatility_regime == 'extreme' or
                 (self.trend_regime == 'bullish' and signals['confidence'] > 0.7)):
                 
                 if current_price < self.buyprice * 0.99:
@@ -805,7 +948,7 @@ class EnhancedCryptoStrategy(bt.Strategy):
             self.log('POOR PERFORMANCE - Significant optimization required')
 
 if __name__ == "__main__":
-    print("Enhanced Crypto Strategy with Advanced Quantitative Features loaded successfully")
+    print("Enhanced Crypto Strategy with Advanced Quantitative Features and Sentiment Analysis loaded successfully")
     print("Key features:")
     print("- Volatility regime detection with GARCH-like analysis")
     print("- Multi-timeframe trend analysis")
@@ -815,3 +958,7 @@ if __name__ == "__main__":
     print("- Machine learning features")
     print("- Advanced mean reversion techniques")
     print("- Partial profit taking and scaling")
+    print("- News sentiment analysis integration")
+    print("- Sentiment-based trade filtering and exits")
+    print("- Sentiment momentum tracking")
+    print("- Crypto-optimized sentiment parameters")
