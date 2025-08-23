@@ -20,6 +20,8 @@ from strategies.forex_strategy import ForexStrategy
 from strategies.profitable_forex_strategy import ProfitableForexStrategy
 from strategies.crypto_strategy import CryptoStrategy, SOLStrategy
 from strategies.futures_strategy import FuturesStrategy
+from strategies.enhanced_forex_strategy import EnhancedForexStrategy
+from strategies.enhanced_crypto_strategy import EnhancedCryptoStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
 from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
@@ -165,8 +167,12 @@ class BacktestEngine:
             strategy_class = ForexStrategy
         elif strategy_name == 'ProfitableForexStrategy':
             strategy_class = ProfitableForexStrategy
+        elif strategy_name == 'EnhancedForexStrategy':
+            strategy_class = EnhancedForexStrategy
         elif strategy_name == 'CryptoStrategy':
             strategy_class = CryptoStrategy
+        elif strategy_name == 'EnhancedCryptoStrategy':
+            strategy_class = EnhancedCryptoStrategy
         elif strategy_name == 'SOLStrategy':
             strategy_class = SOLStrategy
         elif strategy_name == 'FuturesStrategy':
