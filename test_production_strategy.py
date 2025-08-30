@@ -30,7 +30,7 @@ def setup_logging():
 def load_config():
     """Load configuration from config.yaml"""
     try:
-        with open('config/config.yaml', 'r') as file:
+        with open('multi_asset_bot/sampleconfigdir/config.yaml', 'r') as file:
             config = yaml.safe_load(file)
         return config
     except Exception as e:
@@ -128,7 +128,7 @@ def test_production_strategy():
                 results = engine.run()
                 
                 if results and isinstance(results, dict):
-                    logger.info(f"✅ SUCCESS: {symbol} backtest completed")
+                    logger.info(f"SUCCESS: {symbol} backtest completed")
                     logger.info(f"   Final Value: ${results['final_value']:.2f}")
                     logger.info(f"   Total Return: {results['total_return']:.2f}%")
                     logger.info(f"   Sharpe Ratio: {results['sharpe_ratio']:.2f}")
@@ -136,10 +136,10 @@ def test_production_strategy():
                     logger.info(f"   Total Trades: {results['total_trades']}")
                     success_count += 1
                 else:
-                    logger.error(f"❌ FAILED: {symbol} - No valid results returned")
+                    logger.error(f"FAILED: {symbol} - No valid results returned")
                 
             except Exception as e:
-                logger.error(f"❌ FAILED: {symbol} - Error: {e}")
+                logger.error(f"FAILED: {symbol} - Error: {e}")
                 import traceback
                 logger.error(f"Traceback: {traceback.format_exc()}")
         
@@ -149,13 +149,13 @@ def test_production_strategy():
         logger.info(f"Success rate: {(success_count/total_tests)*100:.1f}%")
         
         if success_count == total_tests:
-            logger.info("🎉 ALL TESTS PASSED - ProductionQuantCryptoStrategy is working correctly!")
+            logger.info("ALL TESTS PASSED - ProductionQuantCryptoStrategy is working correctly!")
             return True
         elif success_count > 0:
-            logger.warning(f"⚠️  PARTIAL SUCCESS - {success_count} out of {total_tests} tests passed")
+            logger.warning(f"PARTIAL SUCCESS - {success_count} out of {total_tests} tests passed")
             return True
         else:
-            logger.error("❌ ALL TESTS FAILED - Strategy needs further debugging")
+            logger.error("ALL TESTS FAILED - Strategy needs further debugging")
             return False
             
     except Exception as e:

@@ -37,80 +37,95 @@ class EnhancedForexStrategy(bt.Strategy):
     """
     
     params = (
-        # Core Moving Average Parameters (Dynamic)
-        ('fast_length', 12),
-        ('slow_length', 26),
-        ('signal_length', 9),
+        # Optimized Core Moving Average Parameters
+        ('fast_length', 8),   # Faster for quicker signals
+        ('slow_length', 21),  # Fibonacci number for better market resonance
+        ('signal_length', 5), # Faster signal line
         
-        # Advanced RSI Parameters
-        ('rsi_period', 14),
-        ('rsi_oversold', 25),
-        ('rsi_overbought', 75),
-        ('rsi_divergence_lookback', 20),
+        # Enhanced RSI Parameters
+        ('rsi_period', 9),    # Faster RSI for more responsive signals
+        ('rsi_oversold', 20), # More aggressive oversold level
+        ('rsi_overbought', 80), # More aggressive overbought level
+        ('rsi_divergence_lookback', 15), # Shorter lookback for faster divergence detection
         
-        # MACD Parameters
-        ('macd_fast', 12),
-        ('macd_slow', 26),
-        ('macd_signal', 9),
+        # Optimized MACD Parameters
+        ('macd_fast', 8),     # Faster MACD
+        ('macd_slow', 21),    # Fibonacci-based slow line
+        ('macd_signal', 5),   # Faster signal line
         
-        # Bollinger Bands
-        ('bb_period', 20),
-        ('bb_std', 2.0),
-        ('bb_squeeze_threshold', 0.1),
+        # Enhanced Bollinger Bands
+        ('bb_period', 16),    # Shorter period for more responsive bands
+        ('bb_std', 1.8),      # Tighter bands for more signals
+        ('bb_squeeze_threshold', 0.08), # More sensitive squeeze detection
         
-        # Volatility Parameters
-        ('atr_period', 14),
-        ('volatility_lookback', 50),
-        ('volatility_threshold', 0.02),
+        # Optimized Volatility Parameters
+        ('atr_period', 10),   # Faster ATR
+        ('volatility_lookback', 35), # Shorter lookback
+        ('volatility_threshold', 0.015), # More sensitive threshold
         
-        # Advanced Risk Management
-        ('base_stop_loss', 0.01),      # 1% base stop loss
-        ('base_take_profit', 0.025),   # 2.5% base take profit
+        # Enhanced Risk Management for Higher Returns
+        ('base_stop_loss', 0.008),     # Tighter base stop loss
+        ('base_take_profit', 0.035),   # Higher take profit target
         ('dynamic_sizing', True),      # Enable dynamic position sizing
-        ('max_risk_per_trade', 0.02),  # 2% max risk per trade
+        ('max_risk_per_trade', 0.025), # Slightly higher risk per trade
         ('volatility_adjustment', True), # Adjust for volatility
+        ('stop_loss_percent', 0.008),  # Tighter stop loss
+        ('take_profit_percent', 0.04), # Higher take profit
+        ('trailing_stop_percent', 0.004), # Tighter trailing stop
+        ('position_size_percent', 0.04), # Larger position size
+        ('max_position_size', 0.08),   # Higher maximum position size
+        ('min_volatility', 0.00008),   # Lower minimum volatility
+        ('max_volatility', 0.012),     # Higher maximum volatility
+        ('trend_strength_threshold', 0.4), # Lower threshold for more trades
         
-        # Regime Detection
-        ('regime_lookback', 100),
-        ('trend_threshold', 0.6),
-        ('mean_reversion_threshold', 0.4),
+        # Enhanced Regime Detection
+        ('regime_lookback', 75),       # Shorter lookback for faster adaptation
+        ('trend_threshold', 0.55),     # Lower threshold for trend detection
+        ('mean_reversion_threshold', 0.35), # Lower threshold for mean reversion
         
-        # Supply/Demand Enhanced
-        ('pivot_period', 7),
-        ('zone_lookback', 75),
-        ('min_zone_strength', 3.0),
-        ('zone_buffer', 0.0003),
-        ('max_zones', 15),
+        # Optimized Supply/Demand
+        ('pivot_period', 5),           # Faster pivot detection
+        ('zone_lookback', 50),         # Shorter zone lookback
+        ('min_zone_strength', 2.5),    # Lower minimum strength
+        ('zone_buffer', 0.0002),       # Tighter zone buffer
+        ('max_zones', 20),             # More zones for better coverage
         
-        # Volume Analysis
-        ('volume_period', 30),
-        ('volume_levels', 25),
-        ('volume_confirmation', True),
+        # Enhanced Volume Analysis
+        ('volume_period', 20),         # Shorter volume period
+        ('volume_levels', 30),         # More volume levels
+        ('volume_confirmation', True), # Keep volume confirmation
         
-        # Multi-timeframe
+        # Multi-timeframe Optimization
         ('use_higher_tf', True),
-        ('higher_tf_multiplier', 4),
+        ('higher_tf_multiplier', 3),   # Closer timeframe relationship
         
-        # Machine Learning Features
+        # Enhanced Machine Learning Features
         ('use_ml_features', True),
-        ('feature_lookback', 50),
-        ('momentum_periods', [5, 10, 20, 50]),
+        ('feature_lookback', 35),      # Shorter feature lookback
+        ('momentum_periods', [3, 8, 13, 34]), # Fibonacci-based periods
         
-        # Advanced Filters
+        # Optimized Filters
         ('use_regime_filter', True),
         ('use_volatility_filter', True),
-        ('use_correlation_filter', True),
+        ('use_correlation_filter', False), # Disable for more trades
         ('use_momentum_filter', True),
         
-        # Performance Optimization
-        ('min_sharpe_threshold', 0.5),
-        ('max_drawdown_threshold', 0.15),
-        ('profit_factor_threshold', 1.2),
+        # Enhanced Performance Optimization
+        ('min_sharpe_threshold', 0.4), # Lower threshold for more opportunities
+        ('max_drawdown_threshold', 0.18), # Allow slightly higher drawdown
+        ('profit_factor_threshold', 1.15), # Lower threshold for more trades
         
-        # Sentiment Integration
-        ('sentiment_weight', 0.25),
-        ('sentiment_threshold', 0.3),
-        ('news_impact_decay', 0.95),
+        # Enhanced Sentiment Integration
+        ('sentiment_weight', 0.35),    # Higher sentiment weight
+        ('sentiment_threshold', 0.25), # Lower threshold for more signals
+        ('news_impact_decay', 0.92),   # Faster decay for more responsive sentiment
+        
+        # Advanced Features for Maximum Returns
+        ('momentum_acceleration', 1.4), # Momentum acceleration factor
+        ('trend_following_boost', 1.3), # Trend following boost
+        ('breakout_multiplier', 1.5),   # Breakout signal multiplier
+        ('mean_reversion_factor', 0.8), # Mean reversion strength
+        ('volatility_expansion_threshold', 1.2), # Volatility expansion detection
         
         # Logging
         ('printlog', False)
@@ -335,7 +350,7 @@ class EnhancedForexStrategy(bt.Strategy):
             return 0.01
 
     def generate_advanced_signals(self) -> Dict[str, Any]:
-        """Generate comprehensive trading signals using all indicators"""
+        """Generate enhanced trading signals with advanced quantitative methods for maximum returns"""
         signals = {
             'buy_score': 0.0,
             'sell_score': 0.0,
@@ -346,95 +361,136 @@ class EnhancedForexStrategy(bt.Strategy):
         }
         
         try:
-            # Trend signals
+            # Enhanced Trend signals with acceleration
             trend_score = 0.0
             if self.ema_fast[0] > self.ema_slow[0]:
-                trend_score += 1.0
+                trend_score += 1.2  # Stronger weight for trend following
             if self.tema[0] > self.tema[-1]:
-                trend_score += 0.5
+                trend_score += 0.8  # Higher weight for TEMA momentum
             if self.dataclose[0] > self.bb.lines.mid[0]:
-                trend_score += 0.5
-                
-            signals['components']['trend'] = trend_score / 2.0
+                trend_score += 0.6
             
-            # Momentum signals
+            # Add trend acceleration detection
+            if len(self.ema_fast) > 2:
+                fast_acceleration = (self.ema_fast[0] - self.ema_fast[-1]) - (self.ema_fast[-1] - self.ema_fast[-2])
+                if fast_acceleration > 0:
+                    trend_score *= self.p.trend_following_boost
+                    
+            signals['components']['trend'] = min(trend_score / 2.6, 1.0)
+            
+            # Enhanced Momentum signals with multiple timeframes
             momentum_score = 0.0
-            if self.rsi[0] > 50 and self.rsi[0] < self.p.rsi_overbought:
-                momentum_score += 1.0
+            
+            # RSI with enhanced levels
+            if self.rsi[0] > 45 and self.rsi[0] < self.p.rsi_overbought:
+                momentum_score += 1.2
+            elif self.rsi[0] < self.p.rsi_oversold:
+                momentum_score += 1.5  # Stronger oversold signal
+            
+            # MACD with histogram analysis
             if self.macd.macd[0] > self.macd.signal[0]:
                 momentum_score += 1.0
-            if self.stoch.percK[0] > self.stoch.percD[0]:
-                momentum_score += 0.5
-                
-            signals['components']['momentum'] = momentum_score / 2.5
+                # Add histogram momentum (check if histogram exists)
+                if hasattr(self.macd, 'histo') and len(self.macd.histo) > 1:
+                    if self.macd.histo[0] > self.macd.histo[-1]:
+                        momentum_score *= self.p.momentum_acceleration
             
-            # Mean reversion signals
+            # Stochastic with enhanced weighting
+            if self.stoch.percK[0] > self.stoch.percD[0] and self.stoch.percK[0] < 80:
+                momentum_score += 0.8
+                
+            signals['components']['momentum'] = min(momentum_score / 3.2, 1.0)
+            
+            # Enhanced Mean reversion with volatility expansion
             reversion_score = 0.0
             bb_position = (self.dataclose[0] - self.bb.lines.bot[0]) / \
                          (self.bb.lines.top[0] - self.bb.lines.bot[0])
             
-            if bb_position < 0.2:  # Near lower band
-                reversion_score += 1.0
-            elif bb_position > 0.8:  # Near upper band
-                reversion_score -= 1.0
-                
-            if self.williams_r[0] < -80:
-                reversion_score += 0.5
-            elif self.williams_r[0] > -20:
-                reversion_score -= 0.5
-                
-            signals['components']['reversion'] = reversion_score / 1.5
+            # Enhanced Bollinger Band analysis
+            if bb_position < 0.15:  # More aggressive lower band
+                reversion_score += 1.3
+            elif bb_position > 0.85:  # More aggressive upper band
+                reversion_score -= 1.3
+            elif bb_position < 0.3:
+                reversion_score += 0.7
+            elif bb_position > 0.7:
+                reversion_score -= 0.7
             
-            # Volume confirmation
+            # Williams %R with enhanced sensitivity
+            if self.williams_r[0] < -85:
+                reversion_score += 0.8
+            elif self.williams_r[0] > -15:
+                reversion_score -= 0.8
+            
+            # Apply mean reversion factor
+            reversion_score *= self.p.mean_reversion_factor
+            signals['components']['reversion'] = max(-1.0, min(reversion_score / 2.1, 1.0))
+            
+            # Enhanced Volume confirmation with breakout detection
             volume_score = 0.0
             if self.p.volume_confirmation and len(self.volume_ratio) > 0:
-                if self.volume_ratio[0] > 1.2:
-                    volume_score = 1.0
-                elif self.volume_ratio[0] < 0.8:
-                    volume_score = -0.5
+                if self.volume_ratio[0] > 1.5:  # Strong volume breakout
+                    volume_score = 1.2 * self.p.breakout_multiplier
+                elif self.volume_ratio[0] > 1.2:
+                    volume_score = 0.8
+                elif self.volume_ratio[0] < 0.7:
+                    volume_score = -0.6
                     
-            signals['components']['volume'] = volume_score
+            signals['components']['volume'] = max(-1.0, min(volume_score, 1.0))
             
-            # Regime-based signal weighting
+            # Volatility expansion signal
+            volatility_score = 0.0
+            if hasattr(self, 'atr') and len(self.atr) > 5:
+                current_atr = self.atr[0]
+                avg_atr = np.mean([self.atr[-i] for i in range(1, 6)])
+                if current_atr > avg_atr * self.p.volatility_expansion_threshold:
+                    volatility_score = 0.5  # Volatility expansion signal
+                    
+            signals['components']['volatility_expansion'] = volatility_score
+            
+            # Enhanced regime-based signal weighting
             regime_weights = {
-                'bullish_trend': {'trend': 1.5, 'momentum': 1.2, 'reversion': 0.5},
-                'bearish_trend': {'trend': 1.5, 'momentum': 1.2, 'reversion': 0.5},
-                'mean_reverting': {'trend': 0.5, 'momentum': 0.8, 'reversion': 1.8},
-                'high_volatility': {'trend': 0.8, 'momentum': 0.6, 'reversion': 1.0},
-                'neutral': {'trend': 1.0, 'momentum': 1.0, 'reversion': 1.0}
+                'bullish_trend': {'trend': 1.8, 'momentum': 1.4, 'reversion': 0.4, 'volume': 1.2},
+                'bearish_trend': {'trend': 1.8, 'momentum': 1.4, 'reversion': 0.4, 'volume': 1.2},
+                'mean_reverting': {'trend': 0.4, 'momentum': 0.9, 'reversion': 2.0, 'volume': 0.8},
+                'high_volatility': {'trend': 1.0, 'momentum': 0.7, 'reversion': 1.3, 'volume': 1.5},
+                'neutral': {'trend': 1.2, 'momentum': 1.1, 'reversion': 1.0, 'volume': 1.0}
             }
             
             weights = regime_weights.get(self.current_regime, regime_weights['neutral'])
             
-            # Calculate weighted scores
+            # Calculate enhanced weighted scores
             buy_score = (
                 signals['components']['trend'] * weights['trend'] +
                 signals['components']['momentum'] * weights['momentum'] +
                 max(0, signals['components']['reversion']) * weights['reversion'] +
-                max(0, signals['components']['volume']) * 0.5
-            ) / (weights['trend'] + weights['momentum'] + weights['reversion'] + 0.5)
+                max(0, signals['components']['volume']) * weights['volume'] +
+                signals['components']['volatility_expansion'] * 0.5
+            ) / (weights['trend'] + weights['momentum'] + weights['reversion'] + weights['volume'] + 0.5)
             
             sell_score = (
                 (1 - signals['components']['trend']) * weights['trend'] +
                 (1 - signals['components']['momentum']) * weights['momentum'] +
                 max(0, -signals['components']['reversion']) * weights['reversion'] +
-                max(0, -signals['components']['volume']) * 0.5
-            ) / (weights['trend'] + weights['momentum'] + weights['reversion'] + 0.5)
+                max(0, -signals['components']['volume']) * weights['volume'] +
+                signals['components']['volatility_expansion'] * 0.3
+            ) / (weights['trend'] + weights['momentum'] + weights['reversion'] + weights['volume'] + 0.3)
             
             signals['buy_score'] = buy_score
             signals['sell_score'] = sell_score
             signals['signal_strength'] = max(buy_score, sell_score)
             
-            # Apply filters
+            # Enhanced filters with more lenient thresholds
             if self.p.use_volatility_filter:
                 current_vol = self.atr[0] / self.dataclose[0] if self.dataclose[0] > 0 else 0
-                if current_vol > self.p.volatility_threshold:
+                # More lenient volatility filter for more trading opportunities
+                if current_vol > self.p.volatility_threshold * 1.2:
                     signals['volatility_filter'] = False
                     
             return signals
             
         except Exception as e:
-            self.logger.error(f"Error generating signals: {e}")
+            self.logger.error(f"Error generating enhanced signals: {e}")
             return signals
 
     def next(self):
@@ -454,8 +510,8 @@ class EnhancedForexStrategy(bt.Strategy):
         
         if not self.position:  # No position
             # Entry logic
-            if (signals['buy_score'] > 0.65 and 
-                signals['volatility_filter'] and 
+            if (signals['buy_score'] > 0.5 and
+                signals['volatility_filter'] and
                 signals['regime_filter']):
                 
                 # Calculate position size
@@ -473,8 +529,8 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.order = self.buy(size=position_size)
                 self.entry_bar = len(self)
                 
-            elif (signals['sell_score'] > 0.65 and 
-                  signals['volatility_filter'] and 
+            elif (signals['sell_score'] > 0.5 and
+                  signals['volatility_filter'] and
                   signals['regime_filter']):
                 
                 # Calculate position size
@@ -492,70 +548,112 @@ class EnhancedForexStrategy(bt.Strategy):
             self._manage_position_advanced(current_vol, signals)
 
     def _manage_position_advanced(self, volatility: float, signals: Dict[str, Any]):
-        """Advanced position management with dynamic stops and targets"""
+        """Enhanced position management with advanced profit optimization"""
         current_price = self.dataclose[0]
         
         if self.position.size > 0:  # Long position
-            # Dynamic stop loss
-            stop_distance = max(self.p.base_stop_loss, volatility * 2)
-            stop_price = self.buyprice * (1 - stop_distance)
+            # Enhanced dynamic stop loss with trailing
+            base_stop_distance = max(self.p.base_stop_loss, volatility * 1.8)
+            stop_price = self.buyprice * (1 - base_stop_distance)
             
-            # Dynamic take profit
-            target_distance = stop_distance * 2.5
+            # Enhanced dynamic take profit with multiple targets
+            target_distance = base_stop_distance * 3.0  # Better risk/reward ratio
             target_price = self.buyprice * (1 + target_distance)
             
-            # Regime-based exit adjustments
-            if self.current_regime == 'bearish_trend' and self.regime_confidence > 0.7:
-                # Early exit in strong bearish regime
-                if current_price > self.buyprice * 1.005:  # Small profit
+            # Implement trailing stop logic
+            if not hasattr(self, 'highest_price_long'):
+                self.highest_price_long = current_price
+            else:
+                self.highest_price_long = max(self.highest_price_long, current_price)
+            
+            # Calculate trailing stop
+            trailing_distance = base_stop_distance * 0.6  # Tighter trailing
+            trailing_stop_price = self.highest_price_long * (1 - trailing_distance)
+            
+            # Profit-based position scaling
+            current_profit_pct = (current_price - self.buyprice) / self.buyprice
+            
+            # Enhanced regime-based exit adjustments
+            if self.current_regime == 'bearish_trend' and self.regime_confidence > 0.6:
+                # More aggressive early exit
+                if current_profit_pct > 0.003:  # Even smaller profit threshold
                     self.log('REGIME EXIT (LONG) - Bearish trend detected')
                     self.close()
+                    self.highest_price_long = None
                     return
-                    
-            # Signal-based exit
-            if signals['sell_score'] > 0.7:
+            
+            # Enhanced signal-based exit with lower threshold
+            if signals['sell_score'] > 0.6:  # Lower threshold for more exits
                 self.log('SIGNAL EXIT (LONG) - Strong sell signal')
                 self.close()
+                self.highest_price_long = None
                 return
-                
-            # Standard exits
+            
+            # Enhanced exits with trailing stop
             if current_price <= stop_price:
                 self.log(f'STOP LOSS (LONG) - Price: {current_price:.5f}')
                 self.close()
+                self.highest_price_long = None
             elif current_price >= target_price:
                 self.log(f'TAKE PROFIT (LONG) - Price: {current_price:.5f}')
                 self.close()
+                self.highest_price_long = None
+            elif current_profit_pct > 0.01 and current_price <= trailing_stop_price:
+                self.log(f'TRAILING STOP (LONG) - Price: {current_price:.5f}')
+                self.close()
+                self.highest_price_long = None
                 
         elif self.position.size < 0:  # Short position
-            # Dynamic stop loss
-            stop_distance = max(self.p.base_stop_loss, volatility * 2)
-            stop_price = self.buyprice * (1 + stop_distance)
+            # Enhanced dynamic stop loss with trailing
+            base_stop_distance = max(self.p.base_stop_loss, volatility * 1.8)
+            stop_price = self.buyprice * (1 + base_stop_distance)
             
-            # Dynamic take profit
-            target_distance = stop_distance * 2.5
+            # Enhanced dynamic take profit
+            target_distance = base_stop_distance * 3.0
             target_price = self.buyprice * (1 - target_distance)
             
-            # Regime-based exit adjustments
-            if self.current_regime == 'bullish_trend' and self.regime_confidence > 0.7:
-                # Early exit in strong bullish regime
-                if current_price < self.buyprice * 0.995:  # Small profit
+            # Implement trailing stop logic for short
+            if not hasattr(self, 'lowest_price_short'):
+                self.lowest_price_short = current_price
+            else:
+                self.lowest_price_short = min(self.lowest_price_short, current_price)
+            
+            # Calculate trailing stop for short
+            trailing_distance = base_stop_distance * 0.6
+            trailing_stop_price = self.lowest_price_short * (1 + trailing_distance)
+            
+            # Profit calculation for short
+            current_profit_pct = (self.buyprice - current_price) / self.buyprice
+            
+            # Enhanced regime-based exit adjustments
+            if self.current_regime == 'bullish_trend' and self.regime_confidence > 0.6:
+                # More aggressive early exit
+                if current_profit_pct > 0.003:
                     self.log('REGIME EXIT (SHORT) - Bullish trend detected')
                     self.close()
+                    self.lowest_price_short = None
                     return
                     
-            # Signal-based exit
-            if signals['buy_score'] > 0.7:
+            # Enhanced signal-based exit
+            if signals['buy_score'] > 0.6:
                 self.log('SIGNAL EXIT (SHORT) - Strong buy signal')
                 self.close()
+                self.lowest_price_short = None
                 return
                 
-            # Standard exits
+            # Enhanced exits with trailing stop
             if current_price >= stop_price:
                 self.log(f'STOP LOSS (SHORT) - Price: {current_price:.5f}')
                 self.close()
+                self.lowest_price_short = None
             elif current_price <= target_price:
                 self.log(f'TAKE PROFIT (SHORT) - Price: {current_price:.5f}')
                 self.close()
+                self.lowest_price_short = None
+            elif current_profit_pct > 0.01 and current_price >= trailing_stop_price:
+                self.log(f'TRAILING STOP (SHORT) - Price: {current_price:.5f}')
+                self.close()
+                self.lowest_price_short = None
 
     def log(self, txt, dt=None):
         """Enhanced logging with performance metrics"""

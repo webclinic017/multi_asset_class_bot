@@ -1,0 +1,262 @@
+# Production Optimized Configuration for Maximum Returns
+# Optimized for ProductionQuantCryptoStrategy and EnhancedForexStrategy
+
+logging:
+  level: INFO
+  file: logs/trading_bot.log
+
+data:
+  symbols:
+    - name: BTC/USDT
+      type: crypto
+      timeframe: 1h
+    - name: EUR_USD
+      type: forex
+      timeframe: H1
+    - name: ETH/USDT
+      type: crypto
+      timeframe: 1h
+  oanda:
+    account_id: 
+    access_token: 
+    practice: true
+  kraken:
+    api_key: 
+    api_secret:
+  ccxt:
+    api_key: ${CCXT_API_KEY}
+    secret: ${CCXT_SECRET}
+    password: ${CCXT_PASSWORD}
+  preprocessing:
+    add_technical_indicators: true
+    normalize_features: true
+
+# Multi-Strategy Configuration
+strategies:
+  crypto:
+    name: ProductionQuantCryptoStrategy
+    params:
+      # Optimized Volatility Regime Detection
+      vol_lookback: 15
+      vol_threshold_low: 0.12
+      vol_threshold_high: 0.28
+      
+      # Optimized Multi-timeframe Momentum
+      momentum_short: 3
+      momentum_medium: 12
+      momentum_long: 34
+      momentum_threshold: 0.015
+      
+      # Enhanced Mean Reversion
+      bb_period: 18
+      bb_std: 1.8
+      rsi_period: 11
+      rsi_oversold: 20
+      rsi_overbought: 80
+      
+      # Optimized Kelly Criterion Position Sizing
+      kelly_lookback: 75
+      max_kelly_fraction: 0.35
+      min_position_size: 0.015
+      max_position_size: 0.30
+      
+      # Enhanced Risk Management
+      max_drawdown: 0.18
+      var_confidence: 0.04
+      correlation_threshold: 0.65
+      max_positions: 4
+      
+      # Optimized Market Microstructure
+      volume_ma_period: 15
+      price_impact_threshold: 0.0008
+      bid_ask_spread_max: 0.006
+      
+      # Enhanced Sentiment Analysis
+      sentiment_weight: 0.4
+      sentiment_threshold: 0.08
+      news_lookback_hours: 18
+      
+      # Advanced Features
+      trend_strength_multiplier: 1.5
+      volatility_breakout_threshold: 0.25
+      momentum_acceleration_factor: 1.3
+      mean_reversion_strength: 0.7
+      
+      printlog: false
+      
+  forex:
+    name: EnhancedForexStrategy
+    params:
+      # Optimized Core Moving Average Parameters
+      fast_length: 8
+      slow_length: 21
+      signal_length: 5
+      
+      # Enhanced RSI Parameters
+      rsi_period: 9
+      rsi_oversold: 20
+      rsi_overbought: 80
+      rsi_divergence_lookback: 15
+      
+      # Optimized MACD Parameters
+      macd_fast: 8
+      macd_slow: 21
+      macd_signal: 5
+      
+      # Enhanced Bollinger Bands
+      bb_period: 16
+      bb_std: 1.8
+      bb_squeeze_threshold: 0.08
+      
+      # Optimized Volatility Parameters
+      atr_period: 10
+      volatility_lookback: 35
+      volatility_threshold: 0.015
+      
+      # Enhanced Risk Management for Higher Returns
+      base_stop_loss: 0.008
+      base_take_profit: 0.035
+      dynamic_sizing: true
+      max_risk_per_trade: 0.025
+      volatility_adjustment: true
+      stop_loss_percent: 0.008
+      take_profit_percent: 0.04
+      trailing_stop_percent: 0.004
+      position_size_percent: 0.04
+      max_position_size: 0.08
+      min_volatility: 0.00008
+      max_volatility: 0.012
+      trend_strength_threshold: 0.4
+      
+      # Enhanced Regime Detection
+      regime_lookback: 75
+      trend_threshold: 0.55
+      mean_reversion_threshold: 0.35
+      
+      # Optimized Supply/Demand
+      pivot_period: 5
+      zone_lookback: 50
+      min_zone_strength: 2.5
+      zone_buffer: 0.0002
+      max_zones: 20
+      
+      # Enhanced Volume Analysis
+      volume_period: 20
+      volume_levels: 30
+      volume_confirmation: true
+      
+      # Multi-timeframe Optimization
+      use_higher_tf: true
+      higher_tf_multiplier: 3
+      
+      # Enhanced Machine Learning Features
+      use_ml_features: true
+      feature_lookback: 35
+      momentum_periods: [3, 8, 13, 34]
+      
+      # Optimized Filters
+      use_regime_filter: true
+      use_volatility_filter: true
+      use_correlation_filter: false
+      use_momentum_filter: true
+      
+      # Enhanced Performance Optimization
+      min_sharpe_threshold: 0.4
+      max_drawdown_threshold: 0.18
+      profit_factor_threshold: 1.15
+      
+      # Enhanced Sentiment Integration
+      sentiment_weight: 0.35
+      sentiment_threshold: 0.25
+      news_impact_decay: 0.92
+      
+      # Advanced Features for Maximum Returns
+      momentum_acceleration: 1.4
+      trend_following_boost: 1.3
+      breakout_multiplier: 1.5
+      mean_reversion_factor: 0.8
+      volatility_expansion_threshold: 1.2
+      
+      printlog: false
+
+# Enhanced Risk Management
+risk:
+  risk_per_trade: 0.025  # Higher risk for higher returns
+  max_drawdown_limit: 0.18  # Allow slightly higher drawdown
+  max_concurrent_positions: 4  # More concurrent positions
+  position_sizing_method: kelly_criterion  # Use Kelly Criterion
+  fixed_fraction: 0.03  # Higher base allocation
+  
+  # Advanced Risk Controls
+  correlation_limit: 0.65  # Allow more correlated positions
+  volatility_scaling: true  # Scale positions based on volatility
+  regime_adjustment: true  # Adjust risk based on market regime
+
+# Optimized Backtesting Parameters
+backtesting:
+  initial_capital: 10000
+  commission: 0.0008  # Lower commission assumption
+  slippage: 0.0003    # Lower slippage assumption
+  start_date: "2023-01-01"
+  end_date: "2024-01-01"  # Full year for comprehensive testing
+  
+  # Advanced Backtesting Features
+  realistic_fills: true
+  market_impact: true
+  funding_costs: true
+
+# Enhanced Optimization Settings
+optimization:
+  method: enhanced_genetic_algorithm
+  population_size: 30  # Larger population for better exploration
+  generations: 50      # More generations for convergence
+  mutation_probability: 0.12  # Balanced mutation rate
+  crossover_probability: 0.8   # High crossover rate
+  elite_ratio: 0.1     # Keep top 10% performers
+  
+  # Multi-objective optimization
+  objectives:
+    - total_return: 0.4    # 40% weight on returns
+    - sharpe_ratio: 0.25   # 25% weight on risk-adjusted returns
+    - max_drawdown: 0.15   # 15% weight on drawdown control
+    - profit_factor: 0.1   # 10% weight on profit factor
+    - win_rate: 0.1        # 10% weight on win rate
+  
+  # Overfitting prevention
+  walk_forward_analysis: true
+  out_of_sample_ratio: 0.2  # 20% out-of-sample testing
+  monte_carlo_runs: 1000    # Monte Carlo validation
+
+# Multi-Asset Analysis
+multi_asset:
+  analysis_enabled: true
+  correlation_analysis: true
+  portfolio_optimization: true
+  rebalancing_frequency: weekly
+  
+  # Asset allocation constraints
+  max_crypto_allocation: 0.6   # Maximum 60% in crypto
+  max_forex_allocation: 0.6    # Maximum 60% in forex
+  min_diversification: 0.3     # Minimum 30% diversification
+
+# Performance Monitoring
+monitoring:
+  real_time_metrics: true
+  performance_alerts: true
+  drawdown_alerts: 0.15  # Alert at 15% drawdown
+  
+  # Key performance indicators
+  target_annual_return: 0.25   # Target 25% annual return
+  target_sharpe_ratio: 1.5     # Target Sharpe ratio of 1.5
+  max_acceptable_drawdown: 0.20 # Maximum acceptable drawdown
+
+# Production Settings
+production:
+  paper_trading: true    # Start with paper trading
+  position_limits: true  # Enforce position limits
+  risk_monitoring: true  # Real-time risk monitoring
+  
+  # Safety features
+  circuit_breakers: true
+  emergency_stop: true
+  daily_loss_limit: 0.05  # 5% daily loss limit

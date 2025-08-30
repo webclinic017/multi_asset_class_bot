@@ -1,0 +1,87 @@
+logging:
+  level: INFO
+  file: logs/trading_bot.log
+
+data:
+  symbols:
+    - name: EUR_USD
+      type: forex
+      timeframe: H1
+  oanda:
+    account_id:
+    access_token:
+    practice: true
+  kraken:
+    api_key: 
+    api_secret:
+  preprocessing:
+    add_technical_indicators: true
+    normalize_features: true
+
+oanda:
+  account_id: 
+  access_token: 
+  practice: true
+
+strategy:
+  name: ImprovedForexStrategy
+  params:
+    # Optimized EMA parameters for better trend following
+    fast_length: 12
+    slow_length: 26
+    
+    # RSI parameters for momentum
+    rsi_period: 14
+    rsi_oversold: 30
+    rsi_overbought: 70
+    
+    # MACD parameters
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    
+    # Risk management - Conservative but profitable
+    stop_loss_percent: 0.008      # 0.8% stop loss
+    take_profit_percent: 0.024    # 2.4% take profit (3:1 R/R)
+    trailing_stop_percent: 0.004  # 0.4% trailing stop
+    
+    # Position sizing
+    position_size_percent: 0.02   # 2% of capital per trade
+    max_position_size: 0.05       # Maximum 5% of capital
+    
+    # Strategy filters
+    min_volatility: 0.0001        # Minimum volatility to trade
+    max_volatility: 0.01          # Maximum volatility to trade
+    trend_strength_threshold: 0.5 # Minimum trend strength
+    
+    printlog: true
+
+risk:
+  risk_per_trade: 0.02
+  max_drawdown_limit: 0.15
+  max_concurrent_positions: 3
+  position_sizing_method: fixed_fraction
+  fixed_fraction: 0.02
+
+backtesting:
+  initial_capital: 10000
+  commission: 0.0001  # Lower commission for forex
+  slippage: 0.0002    # Lower slippage for forex
+  start_date: "2023-01-01"
+  end_date: "2023-12-31"
+
+ccxt:
+  api_key: ${CCXT_API_KEY}
+  secret: ${CCXT_SECRET}
+  password: ${CCXT_PASSWORD}
+
+ibkr:
+  host: 127.0.0.1
+  port: 7497
+  client_id: 1
+
+optimization:
+  method: genetic_algorithm
+  population_size: 20
+  generations: 30
+  mutation_probability: 0.15

@@ -264,19 +264,42 @@ class CCXTDataFeed(DataFeed):
         # Initialize CCXT exchanges
         self.exchanges = {}
         
-        # Add common exchanges
-        self.exchanges['binance'] = ccxt.binance({
-            'apiKey': self.config['ccxt']['api_key'],
-            'secret': self.config['ccxt']['secret'],
-            'password': self.config['ccxt'].get('password'), # Optional
-            'enableRateLimit': True,
-        })
-        self.exchanges['coinbasepro'] = ccxt.coinbasepro({ # Corrected to lowercase 'coinbasepro'
-            'apiKey': self.config['ccxt']['api_key'],
-            'secret': self.config['ccxt']['secret'],
-            'password': self.config['ccxt'].get('password'), # Optional
-            'enableRateLimit': True,
-        })
+        # Get CCXT config with safe defaults for backtesting
+        ccxt_config = self.config.get('ccxt', {})
+        api_key = ccxt_config.get('api_key', '')
+        secret = ccxt_config.get('secret', '')
+        password = ccxt_config.get('password', '')
+        
+        # For backtesting, we can use exchanges without credentials for public data
+        try:
+            # Add common exchanges
+            self.exchanges['binance'] = ccxt.binance({
+                'apiKey': api_key if api_key else '',
+                'secret': secret if secret else '',
+                'password': password if password else '',
+                'enableRateLimit': True,
+                'sandbox': False,
+            })
+            self.logger.info("Binance exchange initialized for CCXT data feed")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize Binance exchange: {e}")
+        
+        # Add Kraken exchange for crypto data (krakenx)
+        try:
+            self.exchanges['kraken'] = ccxt.kraken({
+                'apiKey': api_key if api_key else '',
+                'secret': secret if secret else '',
+                'password': password if password else '',
+                'enableRateLimit': True,
+                'sandbox': False,  # Use live Kraken API for data
+            })
+            self.logger.info("Kraken exchange initialized for CCXT data feed")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize Kraken exchange: {e}")
+        
+        # If no exchanges were initialized successfully, log warning but don't fail
+        if not self.exchanges:
+            self.logger.warning("No CCXT exchanges initialized successfully. Historical data fetching may fail.")
         
         self.logger.info("CCXTDataFeed initialized")
     
@@ -294,7 +317,7 @@ class CCXTDataFeed(DataFeed):
             pd.DataFrame: Historical price data
         """
         try:
-            exchange_name = 'binance' # Default to binance, can be extended to choose based on symbol
+            exchange_name = 'kraken' # Use Kraken for crypto data (krakenx)
             exchange = self.exchanges.get(exchange_name)
             
             if not exchange:

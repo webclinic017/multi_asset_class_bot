@@ -61,33 +61,68 @@ class SimpleCryptoStrategy(bt.Strategy):
         self.logger.info("Simple Crypto Strategy initialized with basic indicators")
 
     def next(self):
-        """Main strategy logic"""
+        """Main strategy logic with more aggressive signal generation"""
         if self.order:
             return
         
-        # Safety check for minimum data
-        if len(self.data) < max(self.p.slow_length, self.p.rsi_period) + 5:
+        # Much lower safety check for more aggressive trading
+        if len(self.data) < 25:  # Lower minimum requirement
             return
             
-        # Simple signal generation
+        # More aggressive signal generation
         current_price = self.dataclose[0]
         
         if not self.position:  # No position
-            # Buy signal: EMA crossover + RSI oversold
-            if (self.ema_fast[0] > self.ema_slow[0] and 
-                self.ema_fast[-1] <= self.ema_slow[-1] and
-                self.rsi[0] < 50):
+            # More aggressive buy signals
+            buy_signal = False
+            sell_signal = False
+            
+            # EMA crossover (primary signal)
+            if (self.ema_fast[0] > self.ema_slow[0] and
+                self.ema_fast[-1] <= self.ema_slow[-1]):
+                buy_signal = True
                 
+            # RSI momentum (more aggressive thresholds)
+            elif self.rsi[0] < 40:  # Less extreme oversold
+                buy_signal = True
+                
+            # Price momentum signal
+            elif len(self.data) > 5:
+                price_change = (current_price - self.dataclose[-5]) / self.dataclose[-5]
+                if price_change > 0.02:  # 2% price increase
+                    buy_signal = True
+            
+            # EMA crossover down (primary sell signal)
+            if (self.ema_fast[0] < self.ema_slow[0] and
+                self.ema_fast[-1] >= self.ema_slow[-1]):
+                sell_signal = True
+                
+            # RSI momentum (more aggressive thresholds)
+            elif self.rsi[0] > 60:  # Less extreme overbought
+                sell_signal = True
+                
+            # Price momentum signal (bearish)
+            elif len(self.data) > 5:
+                price_change = (current_price - self.dataclose[-5]) / self.dataclose[-5]
+                if price_change < -0.02:  # 2% price decrease
+                    sell_signal = True
+            
+            # Execute trades
+            if buy_signal:
                 self.log(f'BUY CREATE - Price: {current_price:.4f}, RSI: {self.rsi[0]:.2f}')
-                self.order = self.buy(size=self.p.position_size_percent)
-                
-            # Sell signal: EMA crossover down + RSI overbought
-            elif (self.ema_fast[0] < self.ema_slow[0] and 
-                  self.ema_fast[-1] >= self.ema_slow[-1] and
-                  self.rsi[0] > 50):
-                
+                # Calculate position size based on available cash
+                cash = self.broker.get_cash()
+                size = int(cash * self.p.position_size_percent / current_price)
+                if size > 0:
+                    self.order = self.buy(size=size)
+                    
+            elif sell_signal:
                 self.log(f'SELL CREATE - Price: {current_price:.4f}, RSI: {self.rsi[0]:.2f}')
-                self.order = self.sell(size=self.p.position_size_percent)
+                # Calculate position size based on available cash
+                cash = self.broker.get_cash()
+                size = int(cash * self.p.position_size_percent / current_price)
+                if size > 0:
+                    self.order = self.sell(size=size)
                 
         else:  # In position
             # Simple exit logic
@@ -114,10 +149,20 @@ class SimpleCryptoStrategy(bt.Strategy):
                     self.close()
 
     def log(self, txt, dt=None):
-        """Logging function"""
+        """Logging function with safe datetime handling"""
         if self.p.printlog:
-            dt = dt or self.datas[0].datetime.date(0)
-            self.logger.info(f'{dt.isoformat()} {txt}')
+            try:
+                if dt is None:
+                    # Safe datetime access with bounds checking
+                    if len(self.datas[0]) > 0 and hasattr(self.datas[0], 'datetime'):
+                        dt = self.datas[0].datetime.date(0)
+                    else:
+                        dt = datetime.now().date()
+                self.logger.info(f'{dt.isoformat()} {txt}')
+            except (IndexError, AttributeError):
+                # Fallback to current datetime if backtrader datetime fails
+                dt = datetime.now().date()
+                self.logger.info(f'{dt.isoformat()} {txt}')
 
     def notify_order(self, order):
         """Order notification"""

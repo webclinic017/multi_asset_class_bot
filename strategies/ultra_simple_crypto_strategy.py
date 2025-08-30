@@ -113,10 +113,20 @@ class UltraSimpleCryptoStrategy(bt.Strategy):
                     self.close()
 
     def log(self, txt, dt=None):
-        """Logging function"""
+        """Logging function with safe datetime handling"""
         if self.p.printlog:
-            dt = dt or self.datas[0].datetime.date(0)
-            self.logger.info(f'{dt.isoformat()} {txt}')
+            try:
+                if dt is None:
+                    # Safe datetime access with bounds checking
+                    if len(self.datas[0]) > 0 and hasattr(self.datas[0], 'datetime'):
+                        dt = self.datas[0].datetime.date(0)
+                    else:
+                        dt = datetime.now().date()
+                self.logger.info(f'{dt.isoformat()} {txt}')
+            except (IndexError, AttributeError):
+                # Fallback to current datetime if backtrader datetime fails
+                dt = datetime.now().date()
+                self.logger.info(f'{dt.isoformat()} {txt}')
 
     def notify_order(self, order):
         """Order notification"""

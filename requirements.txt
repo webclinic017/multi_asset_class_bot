@@ -7,7 +7,7 @@ ccxt
 oandapyV20
 ibapi # For Interactive Brokers API
 python-dotenv # For loading environment variables from .env file
-cupy
+
 
 # Logging
 # No specific logging library needed beyond standard Python logging, but if a custom one was used, it would go here.
@@ -71,7 +71,17 @@ pygad
 yfinance
 statsmodels
 ta
-TA-Lib
+# TA-Lib - Technical Analysis Library
+# Note: TA-Lib requires the underlying C library to be installed first
+# Windows: Download from https://www.lfd.uci.edu/~gohlke/pythonlibs/#ta-lib
+# Linux/Mac: Install via conda or compile from source
+# conda install -c conda-forge ta-lib
+# pip install TA-Lib
+TA-Lib>=0.4.24
+
+# VS Code Plotly Support
+nbformat>=5.0.0
+ipywidgets>=8.0.0
 tomli
 typing_extensions
 tzdata

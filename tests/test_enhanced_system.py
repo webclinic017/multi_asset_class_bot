@@ -41,7 +41,7 @@ class TestEnhancedTradingSystem(unittest.TestCase):
         os.makedirs(cls.test_output_dir, exist_ok=True)
         
         # Test configuration
-        cls.test_config_path = 'config/config.yaml'
+        cls.test_config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml'))
         
         cls.logger.info("Test environment setup complete")
     
@@ -462,7 +462,7 @@ class TestSystemIntegration(unittest.TestCase):
         cls.logger = logging.getLogger(__name__)
         cls.test_output_dir = 'integration_test_output'
         os.makedirs(cls.test_output_dir, exist_ok=True)
-        cls.test_config_path = 'config/config.yaml'
+        cls.test_config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml'))
     
     def test_end_to_end_optimization_workflow(self):
         """Test complete optimization workflow"""
@@ -535,7 +535,7 @@ def run_performance_benchmark():
         start_time = time.time()
         
         optimizer = EnhancedDynamicOptimizer(
-            config_path='config/config.yaml',
+            config_path=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml')),
             output_dir='benchmark_output'
         )
         

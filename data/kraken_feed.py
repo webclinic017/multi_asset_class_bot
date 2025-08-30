@@ -56,6 +56,8 @@ class KrakenDataFeed:
         }
         
         self.logger.info("KrakenDataFeed initialized for SOL/USD trading")
+        self.last_request_time = 0
+        self.rate_limit_seconds = 1.5  # Increased rate limit to be safer
     
     def _get_kraken_signature(self, urlpath, data):
         """Generate Kraken API signature for authenticated requests"""
@@ -84,11 +86,17 @@ class KrakenDataFeed:
         url = self.api_url + uri_path
         
         try:
+            # Enforce rate limit
+            elapsed_time = time.time() - self.last_request_time
+            if elapsed_time < self.rate_limit_seconds:
+                time.sleep(self.rate_limit_seconds - elapsed_time)
+            
             if data:
                 response = requests.post(url, headers=headers, data=data, timeout=30)
             else:
                 response = requests.get(url, headers=headers, timeout=30)
             
+            self.last_request_time = time.time()
             response.raise_for_status()
             return response.json()
             
@@ -174,183 +182,135 @@ class KrakenDataFeed:
             self.logger.error(f"Error getting current price for {symbol}: {e}")
             return None
     
-    def get_ohlc_data(self, symbol='SOLUSD', timeframe='1h', since=None):
+    def get_trades_data(self, symbol='SOLUSD', since=None):
         """
-        Get OHLC data from Kraken
+        Get trades data from Kraken's public Trades endpoint.
         
         Args:
-            symbol (str): Trading pair symbol
-            timeframe (str): Timeframe (1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 2w)
-            since (int): Unix timestamp to get data from
+            symbol (str): Trading pair symbol.
+            since (int): Return trade data since given timestamp (exclusive).
             
         Returns:
-            pd.DataFrame: OHLC data
+            pd.DataFrame: Trades data.
         """
         try:
-            # Map symbol and timeframe to Kraken format
             kraken_symbol = self.symbol_mapping.get(symbol, symbol)
-            kraken_interval = self.timeframe_mapping.get(timeframe, 60)
             
-            params = f'pair={kraken_symbol}&interval={kraken_interval}'
+            params = f'pair={kraken_symbol}'
             if since:
                 params += f'&since={since}'
-            
-            response = self._kraken_request(f'/0/public/OHLC?{params}')
+
+            response = self._kraken_request(f'/0/public/Trades?{params}')
             if response.get('error'):
                 raise Exception(f"Kraken API error: {response['error']}")
-            
+
             result = response['result']
             if not result:
-                raise Exception(f"No OHLC data for {kraken_symbol}")
-            
-            # Get OHLC data (first key should be our pair)
+                raise Exception(f"No trades data for {kraken_symbol}")
+
             pair_key = list(result.keys())[0]
             if pair_key == 'last':
-                pair_key = list(result.keys())[1] if len(result.keys()) > 1 else None
-            
-            if not pair_key or pair_key == 'last':
-                raise Exception(f"No OHLC data found for {kraken_symbol}")
-            
-            ohlc_data = result[pair_key]
-            
-            # Convert to DataFrame
+                return pd.DataFrame(), None
+
+            trades_data = result[pair_key]
+            last_id = result['last']
+
             df_data = []
-            for candle in ohlc_data:
+            for trade in trades_data:
                 df_data.append({
-                    'timestamp': pd.to_datetime(int(candle[0]), unit='s', utc=True),
-                    'open': float(candle[1]),
-                    'high': float(candle[2]),
-                    'low': float(candle[3]),
-                    'close': float(candle[4]),
-                    'vwap': float(candle[5]),
-                    'volume': float(candle[6]),
-                    'count': int(candle[7])
+                    'timestamp': pd.to_datetime(float(trade[2]), unit='s', utc=True),
+                    'price': float(trade[0]),
+                    'volume': float(trade[1]),
+                    'side': trade[3],
+                    'order_type': trade[4],
+                    'misc': trade[5]
                 })
-            
+
             df = pd.DataFrame(df_data)
             if not df.empty:
                 df.set_index('timestamp', inplace=True)
                 df = df.sort_index()
-                
-            self.logger.info(f"Retrieved {len(df)} OHLC candles for {kraken_symbol} ({timeframe})")
-            return df
-            
+
+            self.logger.info(f"Retrieved {len(df)} trades for {kraken_symbol}")
+            return df, last_id
+
         except Exception as e:
-            self.logger.error(f"Error getting OHLC data for {symbol}: {e}")
+            self.logger.error(f"Error getting trades data for {symbol}: {e}")
+            return pd.DataFrame(), None
+
+    def get_all_trades(self, symbol, start_date):
+        """
+        Get all historical trade data from a specific start date using pagination.
+        """
+        all_trades = []
+        last_id = None
+        
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=pytz.UTC)
+        # Convert start_date to nanoseconds for the 'since' parameter
+        since_nano = int(start_dt.timestamp() * 1e9)
+
+        while True:
+            # The 'since' parameter in the Trades endpoint is a nanosecond timestamp.
+            df, last_id = self.get_trades_data(symbol, since=since_nano)
+            if df.empty or last_id is None:
+                break
+
+            all_trades.append(df)
+            since_nano = last_id # Update for the next iteration
+            
+            # Respect rate limits
+            # Rate limiting is now handled in _kraken_request
+
+        if not all_trades:
             return pd.DataFrame()
+
+        combined_df = pd.concat(all_trades)
+        combined_df = combined_df[~combined_df.index.duplicated(keep='first')]
+
+        # Final filter to remove any trades before the start date
+        combined_df = combined_df[combined_df.index >= start_dt]
+        return combined_df.sort_index()
     
+    def get_ohlc_from_trades(self, trades_df, timeframe):
+        """
+        Convert trade data to OHLC format.
+        """
+        if trades_df.empty:
+            return pd.DataFrame()
+
+        resample_period = f"{self.timeframe_mapping[timeframe]}min"
+        
+        ohlc = trades_df['price'].resample(resample_period).ohlc()
+        ohlc['volume'] = trades_df['volume'].resample(resample_period).sum()
+        
+        # Ensure all expected columns are present
+        ohlc.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close'}, inplace=True)
+        
+        return ohlc
+
     def get_crypto_data(self, symbol, timeframe, start_date, end_date):
         """
-        Retrieve crypto data from Kraken (compatible with existing interface)
-        
-        Args:
-            symbol (str): Trading pair (e.g., 'SOL/USD')
-            timeframe (str): Timeframe (e.g., '1m', '5m', '1h')
-            start_date (str): Start date in 'YYYY-MM-DD' format
-            end_date (str): End date in 'YYYY-MM-DD' format
-            
-        Returns:
-            pd.DataFrame: Historical price data
+        Retrieve crypto data from Kraken using the Trades endpoint.
         """
         try:
-            # Convert dates to Unix timestamps
+            trades_df = self.get_all_trades(symbol, start_date)
+            
+            if trades_df.empty:
+                self.logger.warning(f"No trade data retrieved for {symbol}")
+                return pd.DataFrame()
+
+            self.logger.info(f"Earliest trade data for {symbol}: {trades_df.index[0]}")
+            
+            ohlc_df = self.get_ohlc_from_trades(trades_df, timeframe)
+            
+            # Filter by date range
             start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=pytz.UTC)
             end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(tzinfo=pytz.UTC)
-            
-            since = int(start_dt.timestamp())
-            end_timestamp = int(end_dt.timestamp())
-            
-            all_data = []
-            current_since = since
-            
-            # Kraken returns max 720 candles per request
-            max_candles = 720
-            
-            # Calculate interval in seconds
-            interval_minutes = self.timeframe_mapping.get(timeframe, 60)
-            interval_seconds = interval_minutes * 60
-            
-            while current_since < end_timestamp:
-                self.logger.info(f"Fetching data from {datetime.fromtimestamp(current_since, tz=pytz.UTC)}")
-                
-                df = self.get_ohlc_data(symbol, timeframe, current_since)
-                
-                if df.empty:
-                    self.logger.warning(f"No more data available from {datetime.fromtimestamp(current_since, tz=pytz.UTC)}")
-                    break
-                
-                # Log the actual data range we received
-                if not df.empty:
-                    self.logger.info(f"Received data from {df.index[0]} to {df.index[-1]}")
-                
-                # Filter data within our date range
-                df_filtered = df[df.index <= end_dt]
-                
-                if not df_filtered.empty:
-                    all_data.append(df_filtered)
-                    
-                    # Update since to last timestamp + interval
-                    last_timestamp = df.index[-1]  # Use original df for continuation
-                    current_since = int(last_timestamp.timestamp()) + interval_seconds
-                    
-                    # If we've reached the end date, break
-                    if last_timestamp >= end_dt:
-                        break
-                else:
-                    # If no data in range but we got data, it might be newer than our end date
-                    if not df.empty:
-                        first_timestamp = df.index[0]
-                        if first_timestamp > end_dt:
-                            self.logger.info(f"Data starts after end date ({first_timestamp} > {end_dt}), stopping")
-                            break
-                        # Continue with next batch
-                        last_timestamp = df.index[-1]
-                        current_since = int(last_timestamp.timestamp()) + interval_seconds
-                    else:
-                        break
-                
-                # Rate limiting - Kraken allows 1 call per second for public API
-                time.sleep(1.1)
-            
-            # Combine all data
-            if all_data:
-                combined_df = pd.concat(all_data)
-                combined_df = combined_df[~combined_df.index.duplicated(keep='first')]
-                combined_df = combined_df.sort_index()
-                
-                # If we have data but it's outside the requested range, use it anyway for demo purposes
-                if combined_df.empty:
-                    # Filter to exact date range
-                    combined_df = combined_df[(combined_df.index >= start_dt) & (combined_df.index <= end_dt)]
-                
-                if not combined_df.empty:
-                    self.logger.info(f"Retrieved {len(combined_df)} total candles for {symbol} (using available data)")
-                    return combined_df
-                else:
-                    # If no data in requested range, try to get any available data for demo
-                    self.logger.info(f"No data in requested range, attempting to get recent data for demo")
-                    demo_df = self.get_ohlc_data(symbol, timeframe)
-                    if not demo_df.empty:
-                        # Take a subset of recent data for demo
-                        demo_df = demo_df.tail(min(len(demo_df), 100))  # Use last 100 candles
-                        self.logger.info(f"Using {len(demo_df)} recent candles for demo purposes")
-                        return demo_df
-                    else:
-                        self.logger.warning(f"No data retrieved for {symbol}")
-                        return pd.DataFrame()
-            else:
-                # Try to get any available data for demo
-                self.logger.info(f"No data in requested range, attempting to get recent data for demo")
-                demo_df = self.get_ohlc_data(symbol, timeframe)
-                if not demo_df.empty:
-                    # Take a subset of recent data for demo
-                    demo_df = demo_df.tail(min(len(demo_df), 100))  # Use last 100 candles
-                    self.logger.info(f"Using {len(demo_df)} recent candles for demo purposes")
-                    return demo_df
-                else:
-                    self.logger.warning(f"No data retrieved for {symbol}")
-                    return pd.DataFrame()
-                
+            ohlc_df = ohlc_df[(ohlc_df.index >= start_dt) & (ohlc_df.index <= end_dt)]
+
+            self.logger.info(f"Resampled to {len(ohlc_df)} OHLC candles for {symbol}")
+            return ohlc_df
+
         except Exception as e:
             self.logger.error(f"Error retrieving Kraken data for {symbol}: {e}")
             raise
@@ -417,22 +377,11 @@ if __name__ == "__main__":
     print("\n=== Testing Current Price ===")
     price = kraken_feed.get_current_price('SOLUSD')
     
-    # Test getting OHLC data
-    print("\n=== Testing OHLC Data ===")
-    df = kraken_feed.get_ohlc_data('SOLUSD', '1h')
-    if not df.empty:
-        print(f"Retrieved {len(df)} candles")
-        print(df.head())
-        print(f"Latest price: ${df['close'].iloc[-1]:.4f}")
-    
-    # Test historical data retrieval
-    print("\n=== Testing Historical Data ===")
-    historical_df = kraken_feed.get_crypto_data(
-        symbol='SOL/USD',
-        timeframe='1h',
-        start_date='2024-01-01',
-        end_date='2024-01-02'
-    )
-    if not historical_df.empty:
-        print(f"Historical data: {len(historical_df)} candles")
-        print(historical_df.head())
+    # Test get_all_trades directly
+    print("\n=== Testing Trade Data Retrieval ===")
+    trades_df = kraken_feed.get_all_trades('SOLUSD', start_date='2024-01-01')
+    if not trades_df.empty:
+        print(f"Retrieved {len(trades_df)} trades")
+        print(f"Earliest trade: {trades_df.index.min()}")
+        print(f"Latest trade: {trades_df.index.max()}")
+        print(trades_df.head())

@@ -18,6 +18,7 @@ from data.data_feed import OANDADataFeed, CCXTDataFeed # Assuming these are the 
 from data.kraken_feed import KrakenDataFeed
 from data.preprocessing import DataPreprocessor
 from strategies.forex_strategy import ForexStrategy
+from strategies.improved_forex_strategy import ImprovedForexStrategy
 from strategies.profitable_forex_strategy import ProfitableForexStrategy
 from strategies.crypto_strategy import CryptoStrategy, SOLStrategy
 from strategies.futures_strategy import FuturesStrategy
@@ -67,6 +68,20 @@ class BacktestEngine:
             self.kraken_feed = KrakenDataFeed(self.config)
             self.logger.info("Kraken data feed initialized")
 
+        self.ccxt_feed = None
+        if 'ccxt' in self.config:
+            try:
+                self.logger.info("Attempting to initialize CCXT data feed...")
+                self.ccxt_feed = CCXTDataFeed(self.config)
+                self.logger.info("CCXT data feed initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize CCXT data feed: {e}")
+                import traceback
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+                self.ccxt_feed = None
+        else:
+            self.logger.warning("No 'ccxt' section found in config")
+
         # Get backtesting config with defaults
         backtest_config = self.config.get('backtesting', {})
         self.initial_capital = backtest_config.get('initial_capital', 10000)
@@ -114,16 +129,11 @@ class BacktestEngine:
                     self.end_date.strftime('%Y-%m-%d')
                 )
             elif asset_type == 'crypto':
-                if not self.kraken_feed:
-                    # Initialize Kraken feed if not already done
-                    try:
-                        self.kraken_feed = KrakenDataFeed(self.config)
-                        self.logger.info("Kraken data feed initialized for crypto backtesting")
-                    except Exception as e:
-                        self.logger.error(f"Failed to initialize Kraken feed: {e}")
-                        return None
-                
-                raw_data_df = self.kraken_feed.get_crypto_data(
+                if not self.ccxt_feed:
+                    self.logger.error("CCXT data feed not available")
+                    return None
+
+                raw_data_df = self.ccxt_feed.get_crypto_data(
                     symbol,
                     timeframe,
                     self.start_date.strftime('%Y-%m-%d'),
@@ -229,6 +239,8 @@ class BacktestEngine:
         # Import strategy class based on name
         if strategy_name == 'ForexStrategy':
             strategy_class = ForexStrategy
+        elif strategy_name == 'ImprovedForexStrategy':
+            strategy_class = ImprovedForexStrategy
         elif strategy_name == 'ProfitableForexStrategy':
             strategy_class = ProfitableForexStrategy
         elif strategy_name == 'EnhancedForexStrategy':

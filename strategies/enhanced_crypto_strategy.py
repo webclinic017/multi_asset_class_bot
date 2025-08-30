@@ -11,7 +11,33 @@ from datetime import datetime, timedelta
 from scipy import stats
 from sklearn.preprocessing import StandardScaler
 from typing import Dict, Any, Optional, Tuple, List
-import talib
+# TA-Lib import with robust error handling and fallback
+try:
+    import talib
+    TALIB_AVAILABLE = True
+    print("TA-Lib loaded successfully")
+except ImportError as e:
+    print(f"Warning: TA-Lib not available: {e}")
+    print("Using fallback implementations for technical indicators.")
+    TALIB_AVAILABLE = False
+    try:
+        from utils.talib_fallback import TalibFallback
+        talib = TalibFallback()
+        print("Fallback TA-Lib implementations loaded successfully")
+    except ImportError:
+        print("Error: Could not load fallback implementations")
+        # Create minimal dummy talib module
+        class DummyTalib:
+            @staticmethod
+            def RSI(*args, **kwargs):
+                return None
+            @staticmethod
+            def MACD(*args, **kwargs):
+                return None, None, None
+            @staticmethod
+            def BBANDS(*args, **kwargs):
+                return None, None, None
+        talib = DummyTalib()
 
 # Import sentiment analysis
 try:
@@ -119,9 +145,17 @@ class EnhancedCryptoStrategy(bt.Strategy):
         
         # Position Management
         ('position_size_method', 'kelly'),  # kelly, fixed, volatility
-        ('max_position_size', 0.20),       # 20% max position
+        ('max_position_size', 0.25),       # 25% max position
         ('pyramid_enabled', False),         # Pyramiding
         ('scale_out_enabled', True),       # Partial profit taking
+        ('take_profit_percent', 0.10),
+        ('stop_loss_percent', 0.05),
+        ('take_profit_percent', 0.10),
+        ('stop_loss_percent', 0.05),
+        ('take_profit_percent', 0.10),
+        ('stop_loss_percent', 0.05),
+        ('take_profit_percent', 0.10),
+        ('stop_loss_percent', 0.05),
         
         # Logging
         ('printlog', False)
@@ -722,8 +756,8 @@ class EnhancedCryptoStrategy(bt.Strategy):
                 min_confidence = 0.4
                 
             # Buy signal
-            if (signals['buy_score'] > min_signal_strength and 
-                signals['confidence'] > min_confidence and
+            if (signals['buy_score'] > min_signal_strength * 0.75 and  # Lowered threshold
+                signals['confidence'] > min_confidence * 0.8 and
                 self.volatility_regime != 'extreme'):
                 
                 # Calculate position size
@@ -751,8 +785,8 @@ class EnhancedCryptoStrategy(bt.Strategy):
                 self.entry_bar = len(self)
                 
             # Sell signal
-            elif (signals['sell_score'] > min_signal_strength and
-                  signals['confidence'] > min_confidence and
+            elif (signals['sell_score'] > min_signal_strength * 0.75 and
+                  signals['confidence'] > min_confidence * 0.8 and
                   self.volatility_regime != 'extreme'):
                 
                 # Calculate position size (same logic as buy)
