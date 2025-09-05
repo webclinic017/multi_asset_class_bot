@@ -250,6 +250,37 @@ async def get_strategy(strategy_id: int):
         logger.error(f"Error getting strategy {strategy_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/api/strategies/{strategy_id}", response_model=StrategyResponse)
+async def update_strategy(strategy_id: int, strategy: StrategyCreate):
+    """Update an existing strategy"""
+    try:
+        # Check if strategy exists
+        existing_strategy = db_manager.get_strategy(strategy_id)
+        if not existing_strategy:
+            raise HTTPException(status_code=404, detail="Strategy not found")
+        
+        # Update strategy in database
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE strategies
+                SET name = ?, description = ?, strategy_type = ?, asset_class = ?,
+                    timeframe = ?, parameters = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (strategy.name, strategy.description, strategy.strategy_type,
+                  strategy.asset_class, strategy.timeframe, json.dumps(strategy.parameters), strategy_id))
+            conn.commit()
+        
+        # Return updated strategy
+        updated_strategy = db_manager.get_strategy(strategy_id)
+        return StrategyResponse(**updated_strategy)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating strategy {strategy_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Trading session endpoints
 @app.post("/api/sessions", response_model=TradingSessionResponse)
 async def create_trading_session(session: TradingSessionCreate):

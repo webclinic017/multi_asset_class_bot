@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import axios from 'axios';
 
@@ -228,107 +229,40 @@ const StatusText = styled.span`
 `;
 
 const Strategies = () => {
+  const navigate = useNavigate();
   const [strategies, setStrategies] = useState([]);
-  const [selectedStrategy, setSelectedStrategy] = useState(null);
-  const [editingParameters, setEditingParameters] = useState({});
-  const [isEditing, setIsEditing] = useState(false);
+  const [activeSessions, setActiveSessions] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetchStrategies();
+    fetchActiveSessions();
   }, []);
 
   const fetchStrategies = async () => {
     try {
       const response = await axios.get('/api/strategies');
       setStrategies(response.data);
-      if (response.data.length > 0 && !selectedStrategy) {
-        setSelectedStrategy(response.data[0]);
-        setEditingParameters(response.data[0].parameters);
-      }
     } catch (error) {
       console.error('Error fetching strategies:', error);
     }
   };
 
-  const handleStrategySelect = (strategy) => {
-    setSelectedStrategy(strategy);
-    setEditingParameters(strategy.parameters);
-    setIsEditing(false);
-  };
-
-  const handleParameterChange = (key, value) => {
-    setEditingParameters(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-
-  const handleSaveParameters = async () => {
-    if (!selectedStrategy) return;
-
-    setLoading(true);
+  const fetchActiveSessions = async () => {
     try {
-      // In a real implementation, you would have an API endpoint to update strategy parameters
-      // For now, we'll just update the local state
-      const updatedStrategy = {
-        ...selectedStrategy,
-        parameters: editingParameters
-      };
-      
-      setStrategies(prev => 
-        prev.map(s => s.id === selectedStrategy.id ? updatedStrategy : s)
-      );
-      setSelectedStrategy(updatedStrategy);
-      setIsEditing(false);
-      
-      alert('Strategy parameters updated successfully!');
+      const response = await axios.get('/api/sessions/active');
+      setActiveSessions(response.data);
     } catch (error) {
-      console.error('Error updating strategy:', error);
-      alert('Error updating strategy parameters');
-    } finally {
-      setLoading(false);
+      console.error('Error fetching active sessions:', error);
     }
   };
 
-  const handleResetParameters = () => {
-    if (selectedStrategy) {
-      setEditingParameters(selectedStrategy.parameters);
-    }
+  const isStrategyActive = (strategyId) => {
+    return activeSessions.some(session => session.strategy_id === strategyId);
   };
 
-  const renderParameterInput = (key, value) => {
-    const numericValue = typeof value === 'number' ? value : parseFloat(value) || 0;
-    
-    if (typeof value === 'number' || !isNaN(numericValue)) {
-      return (
-        <ParameterInput
-          type="number"
-          value={editingParameters[key] || value}
-          onChange={(e) => handleParameterChange(key, parseFloat(e.target.value) || 0)}
-          step={value < 1 ? "0.001" : "1"}
-          disabled={!isEditing}
-        />
-      );
-    } else if (typeof value === 'boolean') {
-      return (
-        <ParameterInput
-          type="checkbox"
-          checked={editingParameters[key] !== undefined ? editingParameters[key] : value}
-          onChange={(e) => handleParameterChange(key, e.target.checked)}
-          disabled={!isEditing}
-        />
-      );
-    } else {
-      return (
-        <ParameterInput
-          type="text"
-          value={editingParameters[key] || value}
-          onChange={(e) => handleParameterChange(key, e.target.value)}
-          disabled={!isEditing}
-        />
-      );
-    }
+  const handleStrategyClick = (strategy) => {
+    navigate(`/strategies/${strategy.id}/config`);
   };
 
   return (
@@ -341,8 +275,7 @@ const Strategies = () => {
         {strategies.map(strategy => (
           <StrategyCard
             key={strategy.id}
-            className={selectedStrategy?.id === strategy.id ? 'selected' : ''}
-            onClick={() => handleStrategySelect(strategy)}
+            onClick={() => handleStrategyClick(strategy)}
           >
             <StrategyHeader>
               <StrategyName>{strategy.name}</StrategyName>
@@ -367,55 +300,13 @@ const Strategies = () => {
             </StrategyMeta>
             
             <StatusIndicator>
-              <StatusDot active={strategy.is_active} />
-              <StatusText>{strategy.is_active ? 'Active' : 'Inactive'}</StatusText>
+              <StatusDot active={isStrategyActive(strategy.id)} />
+              <StatusText>{isStrategyActive(strategy.id) ? 'Active' : 'Inactive'}</StatusText>
             </StatusIndicator>
           </StrategyCard>
         ))}
       </StrategiesGrid>
 
-      {selectedStrategy && (
-        <Card>
-          <CardTitle>Strategy Parameters - {selectedStrategy.name}</CardTitle>
-          
-          <ParametersSection>
-            <ParametersGrid>
-              {Object.entries(selectedStrategy.parameters).map(([key, value]) => (
-                <ParameterGroup key={key}>
-                  <ParameterLabel>{key.replace(/_/g, ' ')}</ParameterLabel>
-                  {isEditing ? (
-                    renderParameterInput(key, value)
-                  ) : (
-                    <ParameterValue>
-                      {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value.toString()}
-                    </ParameterValue>
-                  )}
-                </ParameterGroup>
-              ))}
-            </ParametersGrid>
-            
-            <ButtonGroup>
-              {isEditing ? (
-                <>
-                  <Button onClick={handleSaveParameters} disabled={loading}>
-                    {loading ? 'Saving...' : 'Save Changes'}
-                  </Button>
-                  <SecondaryButton onClick={handleResetParameters}>
-                    Reset
-                  </SecondaryButton>
-                  <SecondaryButton onClick={() => setIsEditing(false)}>
-                    Cancel
-                  </SecondaryButton>
-                </>
-              ) : (
-                <Button onClick={() => setIsEditing(true)}>
-                  Edit Parameters
-                </Button>
-              )}
-            </ButtonGroup>
-          </ParametersSection>
-        </Card>
-      )}
     </StrategiesContainer>
   );
 };
