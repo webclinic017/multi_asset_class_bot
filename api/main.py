@@ -392,12 +392,14 @@ async def get_portfolio_snapshots(
 async def run_backtest(backtest_request: BacktestRequest, background_tasks: BackgroundTasks):
     """Run a backtest"""
     try:
-        # Create a new session for the backtest
+        # Create a new session for the backtest with correct start time
+        start_date_dt = datetime.fromisoformat(backtest_request.start_date)
         session_id = db_manager.create_trading_session(
             "backtest",
             backtest_request.strategy_id,
             backtest_request.symbol,
-            backtest_request.initial_capital
+            backtest_request.initial_capital,
+            start_time=start_date_dt
         )
         
         # Add backtest to background tasks
@@ -466,10 +468,11 @@ async def run_backtest_task(session_id: int, backtest_request: BacktestRequest):
             max_drawdown = backtest_results['max_drawdown']
             sharpe_ratio = backtest_results['sharpe_ratio']
             
-            # Update session with GPU backtest results
+            # Update session with GPU backtest results using correct end time
+            end_date_dt = datetime.fromisoformat(backtest_request.end_date)
             db_manager.update_trading_session(
                 session_id,
-                end_time=datetime.utcnow(),
+                end_time=end_date_dt,
                 final_capital=final_capital,
                 total_return=total_return,
                 total_trades=total_trades,
@@ -607,13 +610,14 @@ async def _run_simulated_backtest(session_id: int, backtest_request: BacktestReq
             pnl_pips=pnl
         )
     
-    # Update session with final results
+    # Update session with final results using correct end time
     final_capital = backtest_request.initial_capital + sum([np.random.normal(5, 20) for _ in range(num_trades)])
     total_return = (final_capital - backtest_request.initial_capital) / backtest_request.initial_capital
+    end_date_dt = datetime.fromisoformat(backtest_request.end_date)
     
     db_manager.update_trading_session(
         session_id,
-        end_time=datetime.utcnow(),
+        end_time=end_date_dt,
         final_capital=final_capital,
         total_return=total_return,
         status="completed"

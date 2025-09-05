@@ -110,14 +110,17 @@ class DatabaseManager:
     
     # Trading Session Management
     def create_trading_session(self, session_type: str, strategy_id: int, symbol: str,
-                              initial_capital: float) -> int:
+                              initial_capital: float, start_time: datetime = None) -> int:
         """Create a new trading session"""
+        if start_time is None:
+            start_time = datetime.utcnow()
+            
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO trading_sessions (session_type, strategy_id, symbol, start_time, initial_capital)
                 VALUES (?, ?, ?, ?, ?)
-            """, (session_type, strategy_id, symbol, datetime.utcnow(), initial_capital))
+            """, (session_type, strategy_id, symbol, start_time, initial_capital))
             conn.commit()
             return cursor.lastrowid
     
