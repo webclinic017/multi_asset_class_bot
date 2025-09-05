@@ -351,7 +351,7 @@ class GPUBacktestEngine:
                 'device_used': self.device,
                 'bars_processed': self.total_bars_processed,
                 'processing_time': time.time() - self.start_time,
-                'bars_per_second': self.total_bars_processed / (time.time() - self.start_time),
+                'bars_per_second': self.total_bars_processed / max(time.time() - self.start_time, 0.001),
                 'gpu_memory_usage': self.gpu_memory_usage if self.use_gpu else None
             }
             
