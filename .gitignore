@@ -14,3 +14,5 @@ eshk/
 **/*.db
 **/*.html
 test_logs/
+forex_hist_csv/
+historical_data/
