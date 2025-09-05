@@ -260,9 +260,38 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_session_id ON system_logs(session_id)
 
 -- Insert default strategies
 INSERT OR IGNORE INTO strategies (name, description, strategy_type, asset_class, timeframe, parameters) VALUES
+-- EUR/USD Strategies
 ('Scalping EUR_USD 1M', 'High-frequency scalping strategy for EUR_USD on 1-minute timeframe', 'scalping', 'forex', '1m', '{"fast_ema": 5, "slow_ema": 13, "rsi_period": 7, "stop_loss_pips": 3, "take_profit_pips": 6}'),
 ('Scalping EUR_USD 5M', 'High-frequency scalping strategy for EUR_USD on 5-minute timeframe', 'scalping', 'forex', '5m', '{"fast_ema": 5, "slow_ema": 13, "rsi_period": 7, "stop_loss_pips": 5, "take_profit_pips": 10}'),
-('Enhanced Forex Strategy', 'Advanced quantitative forex strategy with multi-timeframe analysis', 'trend', 'forex', '1h', '{"fast_length": 8, "slow_length": 21, "rsi_period": 9, "dynamic_sizing": true}');
+('Enhanced EUR_USD Strategy', 'Advanced quantitative forex strategy for EUR_USD with multi-timeframe analysis', 'trend', 'forex', '1h', '{"fast_length": 8, "slow_length": 21, "rsi_period": 9, "dynamic_sizing": true}'),
+
+-- GBP/USD Strategies
+('Scalping GBP_USD 1M', 'High-frequency scalping strategy for GBP_USD on 1-minute timeframe', 'scalping', 'forex', '1m', '{"fast_ema": 6, "slow_ema": 14, "rsi_period": 8, "stop_loss_pips": 4, "take_profit_pips": 8}'),
+('Scalping GBP_USD 5M', 'High-frequency scalping strategy for GBP_USD on 5-minute timeframe', 'scalping', 'forex', '5m', '{"fast_ema": 6, "slow_ema": 14, "rsi_period": 8, "stop_loss_pips": 6, "take_profit_pips": 12}'),
+('Enhanced GBP_USD Strategy', 'Advanced quantitative forex strategy for GBP_USD with volatility adjustment', 'trend', 'forex', '1h', '{"fast_length": 9, "slow_length": 22, "rsi_period": 10, "dynamic_sizing": true}'),
+
+-- USD/JPY Strategies
+('Scalping USD_JPY 1M', 'High-frequency scalping strategy for USD_JPY on 1-minute timeframe', 'scalping', 'forex', '1m', '{"fast_ema": 4, "slow_ema": 12, "rsi_period": 6, "stop_loss_pips": 2, "take_profit_pips": 5}'),
+('Scalping USD_JPY 5M', 'High-frequency scalping strategy for USD_JPY on 5-minute timeframe', 'scalping', 'forex', '5m', '{"fast_ema": 4, "slow_ema": 12, "rsi_period": 6, "stop_loss_pips": 4, "take_profit_pips": 8}'),
+('Enhanced USD_JPY Strategy', 'Advanced quantitative forex strategy for USD_JPY with Asian session optimization', 'trend', 'forex', '1h', '{"fast_length": 7, "slow_length": 20, "rsi_period": 8, "dynamic_sizing": true}'),
+
+-- AUD/USD Strategies
+('Scalping AUD_USD 1M', 'High-frequency scalping strategy for AUD_USD on 1-minute timeframe', 'scalping', 'forex', '1m', '{"fast_ema": 5, "slow_ema": 13, "rsi_period": 7, "stop_loss_pips": 3, "take_profit_pips": 7}'),
+('Scalping AUD_USD 5M', 'High-frequency scalping strategy for AUD_USD on 5-minute timeframe', 'scalping', 'forex', '5m', '{"fast_ema": 5, "slow_ema": 13, "rsi_period": 7, "stop_loss_pips": 5, "take_profit_pips": 11}'),
+('Enhanced AUD_USD Strategy', 'Advanced quantitative forex strategy for AUD_USD with commodity correlation', 'trend', 'forex', '1h', '{"fast_length": 8, "slow_length": 21, "rsi_period": 9, "dynamic_sizing": true}'),
+
+-- Crypto Strategies
+('Scalping BTC_USD 1M', 'High-frequency scalping strategy for BTC_USD on 1-minute timeframe', 'scalping', 'crypto', '1m', '{"fast_ema": 3, "slow_ema": 10, "rsi_period": 5, "stop_loss_percent": 0.02, "take_profit_percent": 0.04}'),
+('Scalping BTC_USD 5M', 'High-frequency scalping strategy for BTC_USD on 5-minute timeframe', 'scalping', 'crypto', '5m', '{"fast_ema": 3, "slow_ema": 10, "rsi_period": 5, "stop_loss_percent": 0.03, "take_profit_percent": 0.06}'),
+('Enhanced BTC_USD Strategy', 'Advanced quantitative crypto strategy for BTC_USD with volatility clustering', 'trend', 'crypto', '1h', '{"fast_length": 6, "slow_length": 18, "rsi_period": 7, "dynamic_sizing": true}'),
+
+('Scalping ETH_USD 1M', 'High-frequency scalping strategy for ETH_USD on 1-minute timeframe', 'scalping', 'crypto', '1m', '{"fast_ema": 4, "slow_ema": 11, "rsi_period": 6, "stop_loss_percent": 0.025, "take_profit_percent": 0.05}'),
+('Scalping ETH_USD 5M', 'High-frequency scalping strategy for ETH_USD on 5-minute timeframe', 'scalping', 'crypto', '5m', '{"fast_ema": 4, "slow_ema": 11, "rsi_period": 6, "stop_loss_percent": 0.035, "take_profit_percent": 0.07}'),
+('Enhanced ETH_USD Strategy', 'Advanced quantitative crypto strategy for ETH_USD with DeFi correlation', 'trend', 'crypto', '1h', '{"fast_length": 7, "slow_length": 19, "rsi_period": 8, "dynamic_sizing": true}'),
+
+('Scalping SOL_USD 1M', 'High-frequency scalping strategy for SOL_USD on 1-minute timeframe', 'scalping', 'crypto', '1m', '{"fast_ema": 3, "slow_ema": 9, "rsi_period": 5, "stop_loss_percent": 0.03, "take_profit_percent": 0.06}'),
+('Scalping SOL_USD 5M', 'High-frequency scalping strategy for SOL_USD on 5-minute timeframe', 'scalping', 'crypto', '5m', '{"fast_ema": 3, "slow_ema": 9, "rsi_period": 5, "stop_loss_percent": 0.04, "take_profit_percent": 0.08}'),
+('Enhanced SOL_USD Strategy', 'Advanced quantitative crypto strategy for SOL_USD with ecosystem analysis', 'trend', 'crypto', '1h', '{"fast_length": 6, "slow_length": 17, "rsi_period": 7, "dynamic_sizing": true}');
 
 -- Insert default user settings
 INSERT OR IGNORE INTO user_settings (setting_key, setting_value, setting_type, description) VALUES

@@ -230,6 +230,29 @@ const Backtesting = () => {
       ...prev,
       [name]: name === 'initial_capital' ? parseFloat(value) : value
     }));
+    
+    // Reset strategy selection when symbol changes
+    if (name === 'symbol') {
+      setFormData(prev => ({
+        ...prev,
+        strategy_id: ''
+      }));
+    }
+  };
+
+  const getCompatibleStrategies = () => {
+    const selectedSymbol = formData.symbol;
+    
+    return strategies.filter(strategy => {
+      const strategyName = strategy.name.toLowerCase();
+      const selectedSymbolFormatted = selectedSymbol.replace('_', '/').toLowerCase();
+      const selectedSymbolUnderscore = selectedSymbol.toLowerCase();
+      
+      // Check if strategy name contains the selected symbol
+      return strategyName.includes(selectedSymbolFormatted) ||
+             strategyName.includes(selectedSymbolUnderscore) ||
+             strategyName.includes(selectedSymbol.toLowerCase());
+    });
   };
 
   const handleRunBacktest = async () => {
@@ -284,9 +307,9 @@ const Backtesting = () => {
               onChange={handleInputChange}
             >
               <option value="">Select Strategy</option>
-              {strategies.map(strategy => (
+              {getCompatibleStrategies().map(strategy => (
                 <option key={strategy.id} value={strategy.id}>
-                  {strategy.name} ({strategy.timeframe})
+                  {strategy.name} ({strategy.timeframe}) - {strategy.asset_class.toUpperCase()}
                 </option>
               ))}
             </Select>
@@ -303,6 +326,9 @@ const Backtesting = () => {
               <option value="GBP_USD">GBP/USD</option>
               <option value="USD_JPY">USD/JPY</option>
               <option value="AUD_USD">AUD/USD</option>
+              <option value="BTC_USD">BTC/USD</option>
+              <option value="ETH_USD">ETH/USD</option>
+              <option value="SOL_USD">SOL/USD</option>
             </Select>
           </FormGroup>
           
