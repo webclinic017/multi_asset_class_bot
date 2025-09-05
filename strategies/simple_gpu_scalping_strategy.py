@@ -138,14 +138,31 @@ class SimpleGPUScalpingStrategy(bt.Strategy):
     """
     
     params = (
+        # Core parameters (compatible with database strategies)
         ('fast_ema', 5),
         ('slow_ema', 13),
+        ('fast_length', 5),        # Alias for fast_ema (database compatibility)
+        ('slow_length', 13),       # Alias for slow_ema (database compatibility)
         ('rsi_period', 7),
         ('rsi_oversold', 30),
         ('rsi_overbought', 70),
         ('stop_loss_pips', 3),
         ('take_profit_pips', 6),
         ('position_size_percent', 0.02),
+        
+        # Additional common parameters for database compatibility
+        ('macd_fast', 5),
+        ('macd_slow', 13),
+        ('macd_signal', 3),
+        ('bb_period', 10),
+        ('bb_std', 1.5),
+        ('atr_period', 7),
+        ('max_risk_per_trade', 0.01),
+        ('signal_ema', 3),
+        ('signal_length', 5),
+        ('dynamic_sizing', True),
+        
+        # GPU parameters
         ('use_gpu', True),
         ('lookback_period', 50),
         ('printlog', True)

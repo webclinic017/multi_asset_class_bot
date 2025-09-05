@@ -14,6 +14,16 @@ import os
 import numpy as np
 import sys
 
+# GPU acceleration imports
+try:
+    import torch
+    GPU_AVAILABLE = torch.cuda.is_available()
+    if GPU_AVAILABLE:
+        print(f"GPU Available for Forex Strategy: {torch.cuda.get_device_name(0)}")
+except ImportError:
+    GPU_AVAILABLE = False
+    torch = None
+
 # Import custom indicators
 from indicators.custom_indicators import PivotHighLow, SupplyDemandZones, VolumeProfile
 
@@ -79,6 +89,11 @@ class ForexStrategy(bt.Strategy):
         ('use_macd_filter', True),     # Enable/disable MACD confirmation
         ('min_risk_reward', 2.0),      # Minimum risk/reward ratio
         
+        # GPU Acceleration
+        ('use_gpu', True),             # Enable GPU acceleration
+        ('gpu_batch_size', 32),        # GPU batch processing size
+        ('gpu_lookback', 100),         # GPU data buffer size
+        
         # Logging
         ('printlog', False)
     )
@@ -99,6 +114,16 @@ class ForexStrategy(bt.Strategy):
         self.buyprice = None
         self.buycomm = None
         self.entry_bar = None
+        
+        # GPU Setup
+        self.use_gpu = self.p.use_gpu and GPU_AVAILABLE and torch is not None
+        self.device = 'cuda' if self.use_gpu else 'cpu'
+        
+        # GPU data buffers for accelerated calculations
+        self.gpu_price_buffer = []
+        self.gpu_high_buffer = []
+        self.gpu_low_buffer = []
+        self.gpu_volume_buffer = []
 
         # Traditional Technical Indicators
         self.sma_fast = bt.indicators.SMA(self.datas[0], period=self.p.fast_length)
@@ -142,10 +167,15 @@ class ForexStrategy(bt.Strategy):
         self.sentiment_cache_duration = 300  # 5 minutes cache
         
         self.logger = logging.getLogger(__name__)
+        
+        gpu_status = "with GPU acceleration" if self.use_gpu else "CPU mode"
         if SENTIMENT_AVAILABLE and self.p.use_sentiment_filter:
-            self.logger.info("Enhanced ForexStrategy with Supply/Demand and Sentiment Analysis initialized")
+            self.logger.info(f"Enhanced ForexStrategy with Supply/Demand and Sentiment Analysis initialized {gpu_status}")
         else:
-            self.logger.info("Enhanced ForexStrategy with Supply/Demand initialized (Sentiment disabled)")
+            self.logger.info(f"Enhanced ForexStrategy with Supply/Demand initialized {gpu_status} (Sentiment disabled)")
+        
+        if self.use_gpu:
+            self.logger.info(f"GPU Device: {torch.cuda.get_device_name(0)}")
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:

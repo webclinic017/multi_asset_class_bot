@@ -1,6 +1,7 @@
 """
 Scalping Forex Strategy for EUR_USD
 Optimized for 1M and 5M timeframes with high-frequency trading capabilities
+Now with GPU acceleration support using PyTorch
 """
 
 import backtrader as bt
@@ -10,6 +11,16 @@ import pandas as pd
 from typing import Dict, Any, Optional, Tuple
 from scipy import stats
 from sklearn.preprocessing import StandardScaler
+
+# GPU acceleration imports
+try:
+    import torch
+    GPU_AVAILABLE = torch.cuda.is_available()
+    if GPU_AVAILABLE:
+        print(f"GPU Available for Scalping Strategy: {torch.cuda.get_device_name(0)}")
+except ImportError:
+    GPU_AVAILABLE = False
+    torch = None
 
 class ScalpingForexStrategy(bt.Strategy):
     """
@@ -85,12 +96,17 @@ class ScalpingForexStrategy(bt.Strategy):
         ('daily_profit_target', 0.02),   # 2% daily profit target
         ('daily_loss_limit', 0.01),     # 1% daily loss limit
         
+        # GPU Acceleration
+        ('use_gpu', True),             # Enable GPU acceleration
+        ('gpu_batch_size', 32),        # GPU batch processing size
+        ('gpu_lookback', 100),         # GPU data buffer size
+        
         # Logging
         ('printlog', True)
     )
 
     def __init__(self):
-        """Initialize scalping strategy with ultra-fast indicators"""
+        """Initialize scalping strategy with ultra-fast indicators and GPU acceleration"""
         self.logger = logging.getLogger(__name__)
         
         # Basic price data
@@ -113,6 +129,16 @@ class ScalpingForexStrategy(bt.Strategy):
         self.trades_this_hour = 0
         self.last_hour = None
         
+        # GPU Setup
+        self.use_gpu = self.p.use_gpu and GPU_AVAILABLE and torch is not None
+        self.device = 'cuda' if self.use_gpu else 'cpu'
+        
+        # GPU data buffers for accelerated calculations
+        self.gpu_price_buffer = []
+        self.gpu_high_buffer = []
+        self.gpu_low_buffer = []
+        self.gpu_volume_buffer = []
+        
         # Initialize scalping indicators
         self._init_scalping_indicators()
         
@@ -126,7 +152,10 @@ class ScalpingForexStrategy(bt.Strategy):
         self.signal_history = []
         self.last_signal_time = None
         
-        self.logger.info("Scalping Forex Strategy initialized for EUR_USD")
+        gpu_status = "with GPU acceleration" if self.use_gpu else "CPU mode"
+        self.logger.info(f"Scalping Forex Strategy initialized for EUR_USD {gpu_status}")
+        if self.use_gpu:
+            self.logger.info(f"GPU Device: {torch.cuda.get_device_name(0)}")
 
     def _init_scalping_indicators(self):
         """Initialize ultra-fast indicators for scalping"""
@@ -169,6 +198,161 @@ class ScalpingForexStrategy(bt.Strategy):
         # Support/Resistance levels
         self.highest = bt.indicators.Highest(self.datahigh, period=20)
         self.lowest = bt.indicators.Lowest(self.datalow, period=20)
+
+    def update_gpu_buffers(self):
+        """Update GPU data buffers for accelerated calculations"""
+        if not self.use_gpu:
+            return
+            
+        try:
+            current_close = float(self.dataclose[0])
+            current_high = float(self.datahigh[0])
+            current_low = float(self.datalow[0])
+            current_volume = float(self.datavolume[0]) if self.datavolume[0] else 1.0
+            
+            self.gpu_price_buffer.append(current_close)
+            self.gpu_high_buffer.append(current_high)
+            self.gpu_low_buffer.append(current_low)
+            self.gpu_volume_buffer.append(current_volume)
+            
+            # Keep buffer size manageable
+            max_buffer = self.p.gpu_lookback
+            if len(self.gpu_price_buffer) > max_buffer:
+                self.gpu_price_buffer = self.gpu_price_buffer[-max_buffer:]
+                self.gpu_high_buffer = self.gpu_high_buffer[-max_buffer:]
+                self.gpu_low_buffer = self.gpu_low_buffer[-max_buffer:]
+                self.gpu_volume_buffer = self.gpu_volume_buffer[-max_buffer:]
+                
+        except Exception as e:
+            self.logger.warning(f"Error updating GPU buffers: {e}")
+
+    def gpu_ema_calculation(self, prices, period):
+        """GPU-accelerated EMA calculation"""
+        if not self.use_gpu or len(prices) < period:
+            # CPU fallback
+            alpha = 2.0 / (period + 1)
+            ema = np.zeros_like(prices)
+            ema[0] = prices[0]
+            for i in range(1, len(prices)):
+                ema[i] = alpha * prices[i] + (1 - alpha) * ema[i-1]
+            return ema
+        
+        try:
+            # GPU calculation
+            prices_tensor = torch.tensor(prices, dtype=torch.float32, device=self.device)
+            alpha = 2.0 / (period + 1)
+            
+            ema = torch.zeros_like(prices_tensor)
+            ema[0] = prices_tensor[0]
+            
+            for i in range(1, len(prices_tensor)):
+                ema[i] = alpha * prices_tensor[i] + (1 - alpha) * ema[i-1]
+            
+            return ema.cpu().numpy()
+            
+        except Exception as e:
+            self.logger.warning(f"GPU EMA calculation failed, using CPU: {e}")
+            # CPU fallback
+            alpha = 2.0 / (period + 1)
+            ema = np.zeros_like(prices)
+            ema[0] = prices[0]
+            for i in range(1, len(prices)):
+                ema[i] = alpha * prices[i] + (1 - alpha) * ema[i-1]
+            return ema
+
+    def gpu_rsi_calculation(self, prices, period=14):
+        """GPU-accelerated RSI calculation"""
+        if not self.use_gpu or len(prices) < period + 1:
+            # CPU fallback
+            deltas = np.diff(prices)
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            
+            avg_gains = np.zeros(len(gains))
+            avg_losses = np.zeros(len(losses))
+            
+            for i in range(period-1, len(gains)):
+                avg_gains[i] = np.mean(gains[max(0, i-period+1):i+1])
+                avg_losses[i] = np.mean(losses[max(0, i-period+1):i+1])
+            
+            rs = avg_gains / (avg_losses + 1e-10)
+            rsi = 100 - (100 / (1 + rs))
+            
+            rsi_padded = np.full(len(prices), 50.0)
+            rsi_padded[1:] = rsi
+            return rsi_padded
+        
+        try:
+            # GPU calculation
+            prices_tensor = torch.tensor(prices, dtype=torch.float32, device=self.device)
+            deltas = prices_tensor[1:] - prices_tensor[:-1]
+            
+            gains = torch.where(deltas > 0, deltas, torch.zeros_like(deltas))
+            losses = torch.where(deltas < 0, -deltas, torch.zeros_like(deltas))
+            
+            avg_gains = torch.zeros(len(gains))
+            avg_losses = torch.zeros(len(losses))
+            
+            for i in range(period-1, len(gains)):
+                avg_gains[i] = gains[max(0, i-period+1):i+1].mean()
+                avg_losses[i] = losses[max(0, i-period+1):i+1].mean()
+            
+            rs = avg_gains / (avg_losses + 1e-10)
+            rsi = 100 - (100 / (1 + rs))
+            
+            rsi_padded = torch.full((len(prices),), 50.0, device=self.device)
+            rsi_padded[1:] = rsi
+            
+            return rsi_padded.cpu().numpy()
+            
+        except Exception as e:
+            self.logger.warning(f"GPU RSI calculation failed, using CPU: {e}")
+            # CPU fallback
+            deltas = np.diff(prices)
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+            
+            avg_gains = np.zeros(len(gains))
+            avg_losses = np.zeros(len(losses))
+            
+            for i in range(period-1, len(gains)):
+                avg_gains[i] = np.mean(gains[max(0, i-period+1):i+1])
+                avg_losses[i] = np.mean(losses[max(0, i-period+1):i+1])
+            
+            rs = avg_gains / (avg_losses + 1e-10)
+            rsi = 100 - (100 / (1 + rs))
+            
+            rsi_padded = np.full(len(prices), 50.0)
+            rsi_padded[1:] = rsi
+            return rsi_padded
+
+    def get_gpu_enhanced_signals(self) -> Dict[str, Any]:
+        """Get enhanced signals using GPU-accelerated calculations"""
+        if not self.use_gpu or len(self.gpu_price_buffer) < max(self.p.slow_ema, self.p.rsi_period):
+            return {}
+        
+        try:
+            # Convert buffers to numpy arrays
+            prices = np.array(self.gpu_price_buffer, dtype=np.float32)
+            
+            # Calculate GPU-accelerated indicators
+            gpu_ema_fast = self.gpu_ema_calculation(prices, self.p.fast_ema)
+            gpu_ema_slow = self.gpu_ema_calculation(prices, self.p.slow_ema)
+            gpu_rsi = self.gpu_rsi_calculation(prices, self.p.rsi_period)
+            
+            # Return current values
+            return {
+                'gpu_ema_fast': gpu_ema_fast[-1],
+                'gpu_ema_slow': gpu_ema_slow[-1],
+                'gpu_rsi': gpu_rsi[-1],
+                'gpu_ema_crossover': gpu_ema_fast[-1] > gpu_ema_slow[-1],
+                'gpu_rsi_oversold': gpu_rsi[-1] < self.p.rsi_oversold,
+                'gpu_rsi_overbought': gpu_rsi[-1] > self.p.rsi_overbought
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"GPU enhanced signals failed: {e}")
+            return {}
 
     def is_trading_session(self) -> bool:
         """Check if current time is within trading session"""
@@ -429,18 +613,36 @@ class ScalpingForexStrategy(bt.Strategy):
             return 0.01
 
     def next(self):
-        """Main scalping logic"""
+        """Main scalping logic with GPU acceleration"""
         if self.order:
             return
+        
+        # Update GPU buffers
+        self.update_gpu_buffers()
         
         # Check risk filters
         if not self.check_risk_filters():
             return
         
-        # Generate signals
+        # Generate signals (enhanced with GPU if available)
         signals = self.generate_scalping_signals()
         
+        # Get GPU-enhanced signals for additional confirmation
+        gpu_signals = self.get_gpu_enhanced_signals()
+        
         current_price = self.dataclose[0]
+        
+        # Enhance signals with GPU calculations
+        if gpu_signals and self.use_gpu:
+            # Boost signal strength if GPU confirms
+            if signals['entry_type'] == 'BUY' and gpu_signals.get('gpu_ema_crossover') and gpu_signals.get('gpu_rsi_oversold'):
+                signals['signal_strength'] *= 1.2  # 20% boost
+                signals['confidence'] = min(signals['confidence'] * 1.1, 0.95)
+                self.log(f'GPU ENHANCED BUY SIGNAL - GPU RSI: {gpu_signals.get("gpu_rsi", 0):.1f}')
+            elif signals['entry_type'] == 'SELL' and not gpu_signals.get('gpu_ema_crossover') and gpu_signals.get('gpu_rsi_overbought'):
+                signals['signal_strength'] *= 1.2  # 20% boost
+                signals['confidence'] = min(signals['confidence'] * 1.1, 0.95)
+                self.log(f'GPU ENHANCED SELL SIGNAL - GPU RSI: {gpu_signals.get("gpu_rsi", 0):.1f}')
         
         if not self.position:  # No position
             if signals['entry_type'] == 'BUY':

@@ -1,6 +1,7 @@
 """
 Crypto Trading Strategy for SOL/USD
 Enhanced technical analysis strategy optimized for cryptocurrency markets
+Now with GPU acceleration support using PyTorch
 """
 
 import backtrader as bt
@@ -8,6 +9,16 @@ import pandas as pd
 import numpy as np
 import logging
 from datetime import datetime, timedelta
+
+# GPU acceleration imports
+try:
+    import torch
+    GPU_AVAILABLE = torch.cuda.is_available()
+    if GPU_AVAILABLE:
+        print(f"GPU Available for Crypto Strategy: {torch.cuda.get_device_name(0)}")
+except ImportError:
+    GPU_AVAILABLE = False
+    torch = None
 
 class CryptoStrategy(bt.Strategy):
     """
@@ -55,20 +66,34 @@ class CryptoStrategy(bt.Strategy):
         ('volatility_threshold', 0.05), # 5% volatility threshold
         ('trend_strength_min', 0.6),    # Minimum trend strength
         
+        # GPU Acceleration
+        ('use_gpu', True),             # Enable GPU acceleration
+        ('gpu_batch_size', 32),        # GPU batch processing size
+        ('gpu_lookback', 150),         # GPU data buffer size for crypto
+        
         # Logging
         ('printlog', False),
     )
     
     def __init__(self):
-        """Initialize strategy indicators and variables"""
+        """Initialize strategy indicators and variables with GPU acceleration"""
         self.logger = logging.getLogger(__name__)
-        self.logger.info("Initializing CryptoStrategy for SOL/USD")
         
         # Price data
         self.dataclose = self.datas[0].close
         self.datahigh = self.datas[0].high
         self.datalow = self.datas[0].low
         self.datavolume = self.datas[0].volume
+        
+        # GPU Setup
+        self.use_gpu = self.params.use_gpu and GPU_AVAILABLE and torch is not None
+        self.device = 'cuda' if self.use_gpu else 'cpu'
+        
+        # GPU data buffers for accelerated calculations
+        self.gpu_price_buffer = []
+        self.gpu_high_buffer = []
+        self.gpu_low_buffer = []
+        self.gpu_volume_buffer = []
         
         # Moving Averages
         self.fast_ma = bt.indicators.EMA(period=self.params.fast_length)
@@ -110,7 +135,10 @@ class CryptoStrategy(bt.Strategy):
         # Performance tracking
         self.start_cash = self.broker.get_cash()
         
-        self.logger.info("CryptoStrategy indicators initialized")
+        gpu_status = "with GPU acceleration" if self.use_gpu else "CPU mode"
+        self.logger.info(f"CryptoStrategy for SOL/USD initialized {gpu_status}")
+        if self.use_gpu:
+            self.logger.info(f"GPU Device: {torch.cuda.get_device_name(0)}")
     
     def log(self, txt, dt=None):
         """Logging function"""

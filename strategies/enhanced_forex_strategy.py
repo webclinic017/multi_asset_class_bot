@@ -1,6 +1,7 @@
 """
 Enhanced Forex Strategy with Advanced Quantitative Techniques
 Optimized for maximum returns using sophisticated risk-adjusted optimization
+Now with GPU acceleration support using PyTorch
 """
 
 import backtrader as bt
@@ -13,6 +14,16 @@ import sys
 from scipy import stats
 from sklearn.preprocessing import StandardScaler
 from typing import Dict, Any, Optional, Tuple
+
+# GPU acceleration imports
+try:
+    import torch
+    GPU_AVAILABLE = torch.cuda.is_available()
+    if GPU_AVAILABLE:
+        print(f"GPU Available for Enhanced Forex Strategy: {torch.cuda.get_device_name(0)}")
+except ImportError:
+    GPU_AVAILABLE = False
+    torch = None
 
 # Import custom indicators
 from indicators.custom_indicators import PivotHighLow, SupplyDemandZones, VolumeProfile
@@ -127,12 +138,17 @@ class EnhancedForexStrategy(bt.Strategy):
         ('mean_reversion_factor', 0.8), # Mean reversion strength
         ('volatility_expansion_threshold', 1.2), # Volatility expansion detection
         
+        # GPU Acceleration
+        ('use_gpu', True),             # Enable GPU acceleration
+        ('gpu_batch_size', 64),        # Larger batch for complex strategy
+        ('gpu_lookback', 200),         # Larger buffer for advanced analysis
+        
         # Logging
         ('printlog', False)
     )
 
     def __init__(self):
-        """Initialize enhanced strategy with advanced indicators"""
+        """Initialize enhanced strategy with advanced indicators and GPU acceleration"""
         self.logger = logging.getLogger(__name__)
         
         # Basic price data
@@ -153,6 +169,16 @@ class EnhancedForexStrategy(bt.Strategy):
         self.total_pnl = 0.0
         self.max_drawdown = 0.0
         self.peak_value = self.broker.get_cash()
+        
+        # GPU Setup
+        self.use_gpu = self.p.use_gpu and GPU_AVAILABLE and torch is not None
+        self.device = 'cuda' if self.use_gpu else 'cpu'
+        
+        # GPU data buffers for accelerated calculations
+        self.gpu_price_buffer = []
+        self.gpu_high_buffer = []
+        self.gpu_low_buffer = []
+        self.gpu_volume_buffer = []
         
         # Initialize core indicators
         self._init_core_indicators()
@@ -176,7 +202,10 @@ class EnhancedForexStrategy(bt.Strategy):
         self.sentiment_score = 0.0
         self.sentiment_momentum = 0.0
         
-        self.logger.info("Enhanced Forex Strategy initialized with advanced quantitative features")
+        gpu_status = "with GPU acceleration" if self.use_gpu else "CPU mode"
+        self.logger.info(f"Enhanced Forex Strategy initialized with advanced quantitative features {gpu_status}")
+        if self.use_gpu:
+            self.logger.info(f"GPU Device: {torch.cuda.get_device_name(0)}")
 
     def _init_core_indicators(self):
         """Initialize core technical indicators"""

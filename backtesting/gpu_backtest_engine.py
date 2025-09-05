@@ -35,6 +35,9 @@ except ImportError as e:
 
 from strategies.simple_gpu_scalping_strategy import SimpleGPUScalpingStrategy
 from strategies.scalping_forex_strategy import ScalpingForexStrategy
+from strategies.enhanced_forex_strategy import EnhancedForexStrategy
+from strategies.crypto_strategy import CryptoStrategy
+from strategies.forex_strategy import ForexStrategy
 from database.database_manager import DatabaseManager
 
 class GPUBacktestEngine:
@@ -190,13 +193,15 @@ class GPUBacktestEngine:
             self.logger.error(f"Error creating Backtrader data: {e}")
             raise
     
-    def run_gpu_backtest(self, 
+    def run_gpu_backtest(self,
                         strategy_params: Dict[str, Any],
                         symbol: str,
                         start_date: str,
                         end_date: str,
                         initial_capital: float = 10000.0,
-                        timeframe: str = '1m') -> Dict[str, Any]:
+                        timeframe: str = '1m',
+                        strategy_name: str = None,
+                        strategy_type: str = None) -> Dict[str, Any]:
         """
         Run GPU-accelerated backtest
         
@@ -232,13 +237,12 @@ class GPUBacktestEngine:
             # Set commission (typical forex spread)
             cerebro.broker.setcommission(commission=0.0001)  # 1 pip spread
             
-            # Add strategy (GPU-accelerated if available)
-            if self.use_gpu:
-                self.logger.info("Using GPU-accelerated strategy")
-                cerebro.addstrategy(SimpleGPUScalpingStrategy, **strategy_params)
-            else:
-                self.logger.info("Using CPU strategy (GPU not available)")
-                cerebro.addstrategy(ScalpingForexStrategy, **strategy_params)
+            # Select strategy based on strategy type or name
+            strategy_class = self._select_strategy_class(strategy_name, strategy_type)
+            strategy_class_name = strategy_class.__name__
+            
+            self.logger.info(f"Using strategy: {strategy_class_name} ({'GPU-accelerated' if self.use_gpu else 'CPU mode'})")
+            cerebro.addstrategy(strategy_class, **strategy_params)
             
             # Add data
             data_feed = self.create_backtrader_data(gpu_data)
@@ -388,6 +392,77 @@ class GPUBacktestEngine:
         except Exception as e:
             self.logger.error(f"Error generating sample data: {e}")
             raise
+    
+    def _select_strategy_class(self, strategy_name: str = None, strategy_type: str = None):
+        """
+        Select the appropriate strategy class based on name or type
+        
+        Args:
+            strategy_name: Name of the strategy from database
+            strategy_type: Type of strategy (scalping, trend, etc.)
+            
+        Returns:
+            Strategy class to use for backtesting
+        """
+        try:
+            # Strategy mapping based on name patterns
+            if strategy_name:
+                strategy_name_lower = strategy_name.lower()
+                
+                if 'scalping' in strategy_name_lower:
+                    if self.use_gpu:
+                        self.logger.info(f"Selected GPU-enhanced ScalpingForexStrategy for: {strategy_name}")
+                        return ScalpingForexStrategy
+                    else:
+                        return ScalpingForexStrategy
+                        
+                elif 'enhanced' in strategy_name_lower:
+                    if self.use_gpu:
+                        self.logger.info(f"Selected GPU-enhanced EnhancedForexStrategy for: {strategy_name}")
+                        return EnhancedForexStrategy
+                    else:
+                        return EnhancedForexStrategy
+                        
+                elif 'crypto' in strategy_name_lower or 'sol' in strategy_name_lower or 'btc' in strategy_name_lower:
+                    if self.use_gpu:
+                        self.logger.info(f"Selected GPU-enhanced CryptoStrategy for: {strategy_name}")
+                        return CryptoStrategy
+                    else:
+                        return CryptoStrategy
+                        
+                elif 'forex' in strategy_name_lower:
+                    if self.use_gpu:
+                        self.logger.info(f"Selected GPU-enhanced ForexStrategy for: {strategy_name}")
+                        return ForexStrategy
+                    else:
+                        return ForexStrategy
+            
+            # Strategy mapping based on type
+            if strategy_type:
+                strategy_type_lower = strategy_type.lower()
+                
+                if strategy_type_lower == 'scalping':
+                    self.logger.info(f"Selected ScalpingForexStrategy for type: {strategy_type}")
+                    return ScalpingForexStrategy
+                elif strategy_type_lower == 'trend':
+                    self.logger.info(f"Selected EnhancedForexStrategy for type: {strategy_type}")
+                    return EnhancedForexStrategy
+                elif strategy_type_lower == 'crypto':
+                    self.logger.info(f"Selected CryptoStrategy for type: {strategy_type}")
+                    return CryptoStrategy
+            
+            # Default fallback
+            if self.use_gpu:
+                self.logger.info("Using default SimpleGPUScalpingStrategy (GPU mode)")
+                return SimpleGPUScalpingStrategy
+            else:
+                self.logger.info("Using default ScalpingForexStrategy (CPU mode)")
+                return ScalpingForexStrategy
+                
+        except Exception as e:
+            self.logger.error(f"Error selecting strategy class: {e}")
+            # Safe fallback
+            return ScalpingForexStrategy
     
     def benchmark_performance(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
         """

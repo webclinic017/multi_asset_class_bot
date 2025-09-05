@@ -446,14 +446,16 @@ async def run_backtest_task(session_id: int, backtest_request: BacktestRequest):
             strategy_params = strategy.get('parameters', {})
             strategy_params['printlog'] = False  # Reduce logging for background task
             
-            # Run GPU backtest
+            # Run GPU backtest with strategy information
             backtest_results = gpu_engine.run_gpu_backtest(
                 strategy_params=strategy_params,
                 symbol=backtest_request.symbol,
                 start_date=backtest_request.start_date,
                 end_date=backtest_request.end_date,
                 initial_capital=backtest_request.initial_capital,
-                timeframe=backtest_request.timeframe
+                timeframe=backtest_request.timeframe,
+                strategy_name=strategy.get('name', 'Unknown Strategy'),
+                strategy_type=strategy.get('strategy_type', 'scalping')
             )
             
             # Store results in database
