@@ -3,6 +3,7 @@ import styled, { createGlobalStyle } from 'styled-components';
 export const darkTheme = {
   colors: {
     primary: '#00D4AA',
+    primaryHover: '#00B894',
     secondary: '#FF6B35',
     background: '#0D1421',
     cardBackground: '#1A2332',

@@ -25,6 +25,12 @@ This is a sophisticated, quantitative multi-asset trading system optimized for m
 - **Intelligent Mode Switching**: Seamlessly switches between live, backtest, and optimize modes
 - **Multi-Strategy Support**: Simultaneous optimization of forex and crypto strategies
 
+### 📈 **Running in windows cmd**
+- Activate python venv and install pip -r requirements.txt
+- netstat -ano | findstr :8000
+- taskkill /PID <PID> /F
+- run_webserver.bat --mode backtest
+
 ## 🏗️ **System Architecture**
 
 ### Core Components
