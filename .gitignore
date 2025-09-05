@@ -12,3 +12,4 @@ eshk/
 **/frontend/*.json
 **/*.bat
 **/*.db
+**/*.html
