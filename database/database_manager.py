@@ -281,11 +281,25 @@ class DatabaseManager:
         """Store market data"""
         with self.get_connection() as conn:
             for index, row in data.iterrows():
-                conn.execute("""
-                    INSERT OR REPLACE INTO market_data 
-                    (symbol, timeframe, timestamp, open_price, high_price, low_price, close_price, volume)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (symbol, timeframe, index, row['open'], row['high'], row['low'], row['close'], row.get('volume', 0)))
+                try:
+                    # Convert timestamp to string if it's a datetime object
+                    timestamp_str = index.strftime('%Y-%m-%d %H:%M:%S') if hasattr(index, 'strftime') else str(index)
+                    
+                    # Ensure all values are proper Python types (not numpy types)
+                    open_price = float(row['open']) if pd.notna(row['open']) else 0.0
+                    high_price = float(row['high']) if pd.notna(row['high']) else 0.0
+                    low_price = float(row['low']) if pd.notna(row['low']) else 0.0
+                    close_price = float(row['close']) if pd.notna(row['close']) else 0.0
+                    volume = float(row.get('volume', 0)) if pd.notna(row.get('volume', 0)) else 0.0
+                    
+                    conn.execute("""
+                        INSERT OR REPLACE INTO market_data
+                        (symbol, timeframe, timestamp, open_price, high_price, low_price, close_price, volume)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (symbol, timeframe, timestamp_str, open_price, high_price, low_price, close_price, volume))
+                except Exception as e:
+                    self.logger.error(f"Error storing row for {symbol} at {index}: {e}")
+                    continue
             conn.commit()
     
     def get_market_data(self, symbol: str, timeframe: str, start_time: datetime = None,

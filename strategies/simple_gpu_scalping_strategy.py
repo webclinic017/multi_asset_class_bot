@@ -235,10 +235,18 @@ class SimpleGPUScalpingStrategy(bt.Strategy):
             elif current_rsi > self.p.rsi_overbought:
                 sell_score += 0.6
             
-            # Determine signal
-            if buy_score > sell_score and buy_score > 0.7:
+            # Additional momentum signals for more trades
+            if len(prices) > 5:
+                recent_momentum = (prices[-1] - prices[-5]) / prices[-5]
+                if recent_momentum > 0.0001:  # Small positive momentum
+                    buy_score += 0.3
+                elif recent_momentum < -0.0001:  # Small negative momentum
+                    sell_score += 0.3
+            
+            # Determine signal with lower threshold for more trades
+            if buy_score > sell_score and buy_score > 0.5:  # Lowered from 0.7 to 0.5
                 return {'signal': 'BUY', 'strength': buy_score}
-            elif sell_score > buy_score and sell_score > 0.7:
+            elif sell_score > buy_score and sell_score > 0.5:  # Lowered from 0.7 to 0.5
                 return {'signal': 'SELL', 'strength': sell_score}
             else:
                 return {'signal': 'HOLD', 'strength': max(buy_score, sell_score)}

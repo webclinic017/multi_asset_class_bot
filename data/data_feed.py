@@ -156,6 +156,20 @@ class OANDADataFeed(DataFeed):
             start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(tzinfo=pytz.UTC)
             end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(tzinfo=pytz.UTC)
             
+            # Limit date range to avoid API restrictions (max 1 year for practice accounts)
+            max_days = 365
+            if (end_dt - start_dt).days > max_days:
+                self.logger.warning(f"Date range too large ({(end_dt - start_dt).days} days), limiting to {max_days} days")
+                start_dt = end_dt - timedelta(days=max_days)
+            
+            # Ensure we don't request future data
+            now = datetime.now(pytz.UTC)
+            if end_dt > now:
+                end_dt = now
+                self.logger.info(f"Adjusted end date to current time: {end_dt}")
+            
+            self.logger.info(f"Requesting OANDA data for {symbol} from {start_dt} to {end_dt} (practice account)")
+            
             all_candles = []
             current_from_dt = start_dt
             
@@ -291,7 +305,7 @@ class CCXTDataFeed(DataFeed):
                 'secret': secret if secret else '',
                 'password': password if password else '',
                 'enableRateLimit': True,
-                'sandbox': False,  # Use live Kraken API for data
+                'sandbox': False,  # Kraken doesn't have sandbox, use live API for public data
             })
             self.logger.info("Kraken exchange initialized for CCXT data feed")
         except Exception as e:

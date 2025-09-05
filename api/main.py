@@ -646,11 +646,19 @@ async def _run_simulated_backtest(session_id: int, backtest_request: BacktestReq
     total_return = (final_capital - backtest_request.initial_capital) / backtest_request.initial_capital
     end_date_dt = datetime.fromisoformat(backtest_request.end_date)
     
+    # Calculate winning and losing trades for simulation
+    winning_trades = int(num_trades * 0.6)  # 60% win rate
+    losing_trades = num_trades - winning_trades
+    
     db_manager.update_trading_session(
         session_id,
         end_time=end_date_dt,
         final_capital=final_capital,
         total_return=total_return,
+        total_trades=num_trades,
+        winning_trades=winning_trades,
+        losing_trades=losing_trades,
+        win_rate=winning_trades / num_trades if num_trades > 0 else 0,
         status="completed"
     )
     

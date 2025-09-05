@@ -80,9 +80,9 @@ class ScalpingForexStrategy(bt.Strategy):
         ('avoid_news_minutes', 30), # Avoid trading 30 min around news
         
         # Signal Confirmation
-        ('min_signal_strength', 0.6), # Minimum signal strength
-        ('confirmation_bars', 2),      # Bars for signal confirmation
-        ('momentum_threshold', 0.0001), # Minimum momentum for entry
+        ('min_signal_strength', 0.4), # Minimum signal strength (lowered for more trades)
+        ('confirmation_bars', 1),      # Bars for signal confirmation (reduced)
+        ('momentum_threshold', 0.00005), # Minimum momentum for entry (lowered)
         
         # Advanced Scalping Features
         ('use_price_action', True),    # Use price action patterns

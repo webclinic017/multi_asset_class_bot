@@ -319,8 +319,8 @@ class CryptoStrategy(bt.Strategy):
         if signals['volume'] == 1:
             buy_score += 1
         
-        # Need at least 4 points to buy
-        return buy_score >= 4
+        # Need at least 3 points to buy (lowered for more trades)
+        return buy_score >= 3
     
     def should_sell(self, signals):
         """Determine if we should exit a long position"""
@@ -351,8 +351,8 @@ class CryptoStrategy(bt.Strategy):
         if signals['bb'] == -1:
             sell_score += 1
         
-        # Need at least 3 points to sell
-        return sell_score >= 3
+        # Need at least 2 points to sell (lowered for more trades)
+        return sell_score >= 2
     
     def calculate_position_size(self):
         """Calculate position size based on risk management"""

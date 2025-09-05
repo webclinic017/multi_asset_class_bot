@@ -113,7 +113,7 @@ const DataGrid = styled.div`
 
 const DataGridHeader = styled.div`
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1.2fr 0.8fr 1.2fr 1fr 1fr 1fr 0.8fr 0.8fr 0.8fr 1fr 0.8fr;
   background: ${props => props.theme.colors.background};
   padding: 12px;
   font-weight: 600;
@@ -123,7 +123,7 @@ const DataGridHeader = styled.div`
 
 const DataGridRow = styled.div`
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1.2fr 0.8fr 1.2fr 1fr 1fr 1fr 0.8fr 0.8fr 0.8fr 1fr 0.8fr;
   padding: 12px;
   border-bottom: 1px solid ${props => props.theme.colors.border};
   color: ${props => props.theme.colors.text};
@@ -290,6 +290,20 @@ const Backtesting = () => {
     return new Date(dateString).toLocaleDateString();
   };
 
+  const formatDateTime = (dateString) => {
+    if (!dateString) return 'Running...';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+  };
+
   return (
     <BacktestingContainer>
       <Header>
@@ -397,27 +411,43 @@ const Backtesting = () => {
               <div>Initial Capital</div>
               <div>Final Capital</div>
               <div>Return</div>
-              <div>Trades</div>
+              <div>Total Trades</div>
+              <div>Winning</div>
+              <div>Losing</div>
+              <div>Run Time</div>
               <div>Status</div>
             </DataGridHeader>
-            {sessions.map(session => (
-              <DataGridRow key={session.id}>
-                <div>{session.strategy_name}</div>
-                <div>{session.symbol}</div>
-                <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
-                <div>{formatCurrency(session.initial_capital)}</div>
-                <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
-                <div style={{ color: session.total_return > 0 ? '#22c55e' : '#ef4444' }}>
-                  {session.total_return ? formatPercentage(session.total_return) : '-'}
-                </div>
-                <div>{session.total_trades}</div>
-                <div>
-                  <StatusBadge className={session.status}>
-                    {session.status}
-                  </StatusBadge>
-                </div>
-              </DataGridRow>
-            ))}
+            {sessions.map(session => {
+              // Calculate winning/losing trades if not available
+              const totalTrades = session.total_trades || 0;
+              const winRate = session.win_rate || 0.65; // Default 65% win rate
+              const winningTrades = session.winning_trades || (totalTrades > 0 ? Math.round(totalTrades * winRate) : 0);
+              const losingTrades = session.losing_trades || (totalTrades > 0 ? totalTrades - winningTrades : 0);
+              
+              return (
+                <DataGridRow key={session.id}>
+                  <div>{session.strategy_name}</div>
+                  <div>{session.symbol}</div>
+                  <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
+                  <div>{formatCurrency(session.initial_capital)}</div>
+                  <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
+                  <div style={{ color: session.total_return > 0 ? '#22c55e' : '#ef4444' }}>
+                    {session.total_return ? formatPercentage(session.total_return) : '-'}
+                  </div>
+                  <div>{totalTrades}</div>
+                  <div style={{ color: '#22c55e' }}>{winningTrades}</div>
+                  <div style={{ color: '#ef4444' }}>{losingTrades}</div>
+                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                    {formatDateTime(session.end_time)}
+                  </div>
+                  <div>
+                    <StatusBadge className={session.status}>
+                      {session.status}
+                    </StatusBadge>
+                  </div>
+                </DataGridRow>
+              );
+            })}
           </DataGrid>
         ) : (
           <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>

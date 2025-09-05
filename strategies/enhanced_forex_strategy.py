@@ -122,9 +122,9 @@ class EnhancedForexStrategy(bt.Strategy):
         ('use_momentum_filter', True),
         
         # Enhanced Performance Optimization
-        ('min_sharpe_threshold', 0.4), # Lower threshold for more opportunities
-        ('max_drawdown_threshold', 0.18), # Allow slightly higher drawdown
-        ('profit_factor_threshold', 1.15), # Lower threshold for more trades
+        ('min_sharpe_threshold', 0.2), # Lower threshold for more opportunities
+        ('max_drawdown_threshold', 0.25), # Allow higher drawdown for more trades
+        ('profit_factor_threshold', 1.0), # Lower threshold for more trades
         
         # Enhanced Sentiment Integration
         ('sentiment_weight', 0.35),    # Higher sentiment weight
@@ -538,8 +538,8 @@ class EnhancedForexStrategy(bt.Strategy):
         current_vol = self.atr[0] / current_price if current_price > 0 else 0
         
         if not self.position:  # No position
-            # Entry logic
-            if (signals['buy_score'] > 0.5 and
+            # Entry logic (lowered threshold for more trades)
+            if (signals['buy_score'] > 0.3 and
                 signals['volatility_filter'] and
                 signals['regime_filter']):
                 
@@ -558,7 +558,7 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.order = self.buy(size=position_size)
                 self.entry_bar = len(self)
                 
-            elif (signals['sell_score'] > 0.5 and
+            elif (signals['sell_score'] > 0.3 and
                   signals['volatility_filter'] and
                   signals['regime_filter']):
                 
