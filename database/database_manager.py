@@ -315,11 +315,15 @@ class DatabaseManager:
             
             if start_time:
                 query += " AND timestamp >= ?"
-                params.append(start_time)
+                # Convert datetime to string for SQLite compatibility
+                start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(start_time, 'strftime') else str(start_time)
+                params.append(start_time_str)
             
             if end_time:
                 query += " AND timestamp <= ?"
-                params.append(end_time)
+                # Convert datetime to string for SQLite compatibility
+                end_time_str = end_time.strftime('%Y-%m-%d %H:%M:%S') if hasattr(end_time, 'strftime') else str(end_time)
+                params.append(end_time_str)
             
             query += " ORDER BY timestamp DESC LIMIT ?"
             params.append(limit)

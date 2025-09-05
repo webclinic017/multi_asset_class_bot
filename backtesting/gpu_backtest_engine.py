@@ -384,19 +384,25 @@ class GPUBacktestEngine:
         try:
             self.logger.info(f"Fetching database data for {symbol} from {start_date} to {end_date}")
             
+            # Convert symbol format to match database storage
+            # Frontend sends EUR_USD, but database stores EURUSD (yfinance format)
+            db_symbol = symbol.replace('_', '')  # EUR_USD -> EURUSD
+            
+            self.logger.info(f"Converted symbol {symbol} to database format: {db_symbol}")
+            
             # Convert dates to datetime objects
             start_dt = pd.to_datetime(start_date)
             end_dt = pd.to_datetime(end_date)
             
-            # Get data from database
-            df = self.db_manager.get_market_data(symbol, timeframe, start_dt, end_dt, limit=100000)
+            # Get data from database using converted symbol
+            df = self.db_manager.get_market_data(db_symbol, timeframe, start_dt, end_dt, limit=100000)
             
             if not df.empty:
-                self.logger.info(f"Successfully fetched {len(df)} candles from database for {symbol} {timeframe}")
+                self.logger.info(f"Successfully fetched {len(df)} candles from database for {db_symbol} {timeframe}")
                 return df
             else:
                 # If no data in database, suggest running historical data collection
-                raise Exception(f"No data found in database for {symbol} {timeframe} from {start_date} to {end_date}. "
+                raise Exception(f"No data found in database for {db_symbol} (converted from {symbol}) {timeframe} from {start_date} to {end_date}. "
                               f"Please run 'python historical_data.py' to collect historical data first.")
                 
         except Exception as e:
