@@ -132,8 +132,8 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(f"""
-                UPDATE trading_sessions 
-                SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+                UPDATE trading_sessions
+                SET {set_clause}
                 WHERE id = ?
             """, values)
             conn.commit()
