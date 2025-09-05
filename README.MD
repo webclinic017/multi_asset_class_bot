@@ -1,5 +1,12 @@
 # Enhanced Multi-Asset Trading Bot - Complete System Documentation
 
+### 📈 **Running in windows cmd**
+- Activate python venv and install pip -r requirements.txt
+- netstat -ano | findstr :8000
+- taskkill /PID <PID> /F
+- run_webserver.bat --mode server-only
+- python.exe web_server.py --mode server-only
+
 ## 🚀 Executive Summary
 
 This is a sophisticated, quantitative multi-asset trading system optimized for maximum returns using advanced genetic algorithms, dynamic parameter management, and comprehensive risk-adjusted performance metrics. The system features automatic optimization, multi-asset intelligence, and GPU-accelerated parameter tuning.
@@ -25,11 +32,7 @@ This is a sophisticated, quantitative multi-asset trading system optimized for m
 - **Intelligent Mode Switching**: Seamlessly switches between live, backtest, and optimize modes
 - **Multi-Strategy Support**: Simultaneous optimization of forex and crypto strategies
 
-### 📈 **Running in windows cmd**
-- Activate python venv and install pip -r requirements.txt
-- netstat -ano | findstr :8000
-- taskkill /PID <PID> /F
-- run_webserver.bat --mode backtest
+
 
 ## 🏗️ **System Architecture**
 

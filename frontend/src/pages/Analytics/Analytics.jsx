@@ -22,7 +22,7 @@ const PlaceholderCard = styled.div`
   color: ${props => props.theme.colors.textSecondary};
 `;
 
-const Analytics: React.FC = () => {
+const Analytics = () => {
   return (
     <AnalyticsContainer>
       <Title>Analytics</Title>

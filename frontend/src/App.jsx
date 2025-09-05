@@ -6,13 +6,11 @@ import { store } from './store/store';
 import { GlobalStyle, darkTheme } from './styles/theme';
 import Layout from './components/Layout/Layout';
 import Dashboard from './pages/Dashboard/Dashboard';
-import {
-  LiveTrading,
-  Backtesting,
-  Strategies,
-  Analytics,
-  Settings,
-} from './components/placeholder-components';
+import LiveTrading from './pages/LiveTrading/LiveTrading';
+import Backtesting from './pages/Backtesting/Backtesting';
+import Strategies from './pages/Strategies/Strategies';
+import Analytics from './pages/Analytics/Analytics';
+import Settings from './pages/Settings/Settings';
 import './App.css';
 
 const App = () => {

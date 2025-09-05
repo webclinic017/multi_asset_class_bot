@@ -7,12 +7,12 @@ import {
   setConnectionStatus,
 } from '../../store/slices/tradingSlice';
 import TradingChart from '../../components/Charts/TradingChart';
-import {
+import { 
   PerformanceMetrics,
   TradesList,
   PortfolioSummary,
   MarketOverview,
-  RealTimeUpdates,
+  RealTimeUpdates
 } from '../../components/placeholder-components';
 
 const DashboardContainer = styled.div`

@@ -1,7 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 
-const LiveTradingContainer = styled.div`
+const SettingsContainer = styled.div`
   padding: 20px;
   color: ${props => props.theme.colors.text};
 `;
@@ -22,16 +22,16 @@ const PlaceholderCard = styled.div`
   color: ${props => props.theme.colors.textSecondary};
 `;
 
-const LiveTrading: React.FC = () => {
+const Settings = () => {
   return (
-    <LiveTradingContainer>
-      <Title>Live Trading</Title>
+    <SettingsContainer>
+      <Title>Settings</Title>
       <PlaceholderCard>
-        Live trading interface will be implemented here.
-        This page will show real-time trading controls and monitoring.
+        Settings interface will be implemented here.
+        This page will allow users to configure system preferences.
       </PlaceholderCard>
-    </LiveTradingContainer>
+    </SettingsContainer>
   );
 };
 
-export default LiveTrading;
+export default Settings;

@@ -187,33 +187,9 @@ const MetricLabel = styled.div`
   letter-spacing: 0.5px;
 `;
 
-interface BacktestSession {
-  id: number;
-  strategy_name: string;
-  symbol: string;
-  start_time: string;
-  end_time: string;
-  initial_capital: number;
-  final_capital: number;
-  total_return: number;
-  total_trades: number;
-  win_rate: number;
-  max_drawdown: number;
-  sharpe_ratio: number;
-  status: string;
-}
-
-interface Strategy {
-  id: number;
-  name: string;
-  strategy_type: string;
-  asset_class: string;
-  timeframe: string;
-}
-
-const Backtesting: React.FC = () => {
-  const [sessions, setSessions] = useState<BacktestSession[]>([]);
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
+const Backtesting = () => {
+  const [sessions, setSessions] = useState([]);
+  const [strategies, setStrategies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     strategy_id: '',
@@ -232,7 +208,7 @@ const Backtesting: React.FC = () => {
   const fetchSessions = async () => {
     try {
       const response = await axios.get('/api/sessions');
-      const backtestSessions = response.data.filter((session: any) => session.session_type === 'backtest');
+      const backtestSessions = response.data.filter((session) => session.session_type === 'backtest');
       setSessions(backtestSessions);
     } catch (error) {
       console.error('Error fetching sessions:', error);
@@ -248,7 +224,7 @@ const Backtesting: React.FC = () => {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -276,18 +252,18 @@ const Backtesting: React.FC = () => {
     }
   };
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD'
     }).format(value);
   };
 
-  const formatPercentage = (value: number) => {
+  const formatPercentage = (value) => {
     return `${(value * 100).toFixed(2)}%`;
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString();
   };
 

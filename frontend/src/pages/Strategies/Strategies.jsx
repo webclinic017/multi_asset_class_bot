@@ -215,7 +215,7 @@ const StatusIndicator = styled.div`
   margin-top: 12px;
 `;
 
-const StatusDot = styled.div<{ active: boolean }>`
+const StatusDot = styled.div`
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -227,22 +227,10 @@ const StatusText = styled.span`
   font-size: 12px;
 `;
 
-interface Strategy {
-  id: number;
-  name: string;
-  description: string;
-  strategy_type: string;
-  asset_class: string;
-  timeframe: string;
-  parameters: Record<string, any>;
-  created_at: string;
-  is_active: boolean;
-}
-
-const Strategies: React.FC = () => {
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
-  const [editingParameters, setEditingParameters] = useState<Record<string, any>>({});
+const Strategies = () => {
+  const [strategies, setStrategies] = useState([]);
+  const [selectedStrategy, setSelectedStrategy] = useState(null);
+  const [editingParameters, setEditingParameters] = useState({});
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -263,13 +251,13 @@ const Strategies: React.FC = () => {
     }
   };
 
-  const handleStrategySelect = (strategy: Strategy) => {
+  const handleStrategySelect = (strategy) => {
     setSelectedStrategy(strategy);
     setEditingParameters(strategy.parameters);
     setIsEditing(false);
   };
 
-  const handleParameterChange = (key: string, value: any) => {
+  const handleParameterChange = (key, value) => {
     setEditingParameters(prev => ({
       ...prev,
       [key]: value
@@ -309,7 +297,7 @@ const Strategies: React.FC = () => {
     }
   };
 
-  const renderParameterInput = (key: string, value: any) => {
+  const renderParameterInput = (key, value) => {
     const numericValue = typeof value === 'number' ? value : parseFloat(value) || 0;
     
     if (typeof value === 'number' || !isNaN(numericValue)) {
