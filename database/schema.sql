@@ -1,0 +1,276 @@
+-- SQLite Database Schema for Trading Bot Dashboard
+-- Supports both live trading and backtesting data storage
+
+-- Trading strategies table
+CREATE TABLE IF NOT EXISTS strategies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    strategy_type VARCHAR(50) NOT NULL, -- 'scalping', 'swing', 'trend'
+    asset_class VARCHAR(50) NOT NULL,   -- 'forex', 'crypto', 'futures'
+    timeframe VARCHAR(10) NOT NULL,     -- '1m', '5m', '1h', etc.
+    parameters TEXT,                    -- JSON string of strategy parameters
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT 1
+);
+
+-- Trading sessions table
+CREATE TABLE IF NOT EXISTS trading_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_type VARCHAR(20) NOT NULL, -- 'live', 'backtest'
+    strategy_id INTEGER NOT NULL,
+    symbol VARCHAR(20) NOT NULL,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
+    initial_capital DECIMAL(15,2) NOT NULL,
+    final_capital DECIMAL(15,2),
+    total_return DECIMAL(8,4),
+    max_drawdown DECIMAL(8,4),
+    sharpe_ratio DECIMAL(8,4),
+    win_rate DECIMAL(8,4),
+    total_trades INTEGER DEFAULT 0,
+    winning_trades INTEGER DEFAULT 0,
+    losing_trades INTEGER DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'active', -- 'active', 'completed', 'stopped'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (strategy_id) REFERENCES strategies(id)
+);
+
+-- Individual trades table
+CREATE TABLE IF NOT EXISTS trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    trade_id VARCHAR(50), -- External trade ID from broker
+    symbol VARCHAR(20) NOT NULL,
+    side VARCHAR(10) NOT NULL, -- 'BUY', 'SELL'
+    entry_time TIMESTAMP NOT NULL,
+    exit_time TIMESTAMP,
+    entry_price DECIMAL(12,6) NOT NULL,
+    exit_price DECIMAL(12,6),
+    quantity DECIMAL(15,6) NOT NULL,
+    stop_loss DECIMAL(12,6),
+    take_profit DECIMAL(12,6),
+    pnl DECIMAL(15,2),
+    pnl_pips DECIMAL(8,2),
+    commission DECIMAL(10,4),
+    swap DECIMAL(10,4),
+    duration_seconds INTEGER,
+    exit_reason VARCHAR(50), -- 'take_profit', 'stop_loss', 'trailing_stop', 'manual'
+    signal_strength DECIMAL(4,3),
+    confidence DECIMAL(4,3),
+    status VARCHAR(20) DEFAULT 'open', -- 'open', 'closed', 'cancelled'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id)
+);
+
+-- Market data table (OHLCV)
+CREATE TABLE IF NOT EXISTS market_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol VARCHAR(20) NOT NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    open_price DECIMAL(12,6) NOT NULL,
+    high_price DECIMAL(12,6) NOT NULL,
+    low_price DECIMAL(12,6) NOT NULL,
+    close_price DECIMAL(12,6) NOT NULL,
+    volume DECIMAL(15,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol, timeframe, timestamp)
+);
+
+-- Technical indicators table
+CREATE TABLE IF NOT EXISTS technical_indicators (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol VARCHAR(20) NOT NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    indicator_name VARCHAR(50) NOT NULL,
+    indicator_value DECIMAL(12,6),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol, timeframe, timestamp, indicator_name)
+);
+
+-- Trading signals table
+CREATE TABLE IF NOT EXISTS trading_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    symbol VARCHAR(20) NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    signal_type VARCHAR(10) NOT NULL, -- 'BUY', 'SELL', 'HOLD'
+    signal_strength DECIMAL(4,3) NOT NULL,
+    confidence DECIMAL(4,3) NOT NULL,
+    price DECIMAL(12,6) NOT NULL,
+    indicators TEXT, -- JSON string of indicator values
+    executed BOOLEAN DEFAULT 0,
+    trade_id INTEGER, -- Reference to executed trade
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id),
+    FOREIGN KEY (trade_id) REFERENCES trades(id)
+);
+
+-- Portfolio snapshots table (for equity curve)
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    total_value DECIMAL(15,2) NOT NULL,
+    cash_balance DECIMAL(15,2) NOT NULL,
+    unrealized_pnl DECIMAL(15,2) DEFAULT 0,
+    realized_pnl DECIMAL(15,2) DEFAULT 0,
+    open_positions INTEGER DEFAULT 0,
+    daily_pnl DECIMAL(15,2) DEFAULT 0,
+    drawdown DECIMAL(8,4) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id)
+);
+
+-- Risk metrics table
+CREATE TABLE IF NOT EXISTS risk_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    var_1d DECIMAL(10,4), -- 1-day Value at Risk
+    var_5d DECIMAL(10,4), -- 5-day Value at Risk
+    max_drawdown DECIMAL(8,4),
+    current_drawdown DECIMAL(8,4),
+    volatility DECIMAL(8,4),
+    beta DECIMAL(6,4),
+    sharpe_ratio DECIMAL(8,4),
+    sortino_ratio DECIMAL(8,4),
+    calmar_ratio DECIMAL(8,4),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id)
+);
+
+-- Performance analytics table
+CREATE TABLE IF NOT EXISTS performance_analytics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    period_start TIMESTAMP NOT NULL,
+    period_end TIMESTAMP NOT NULL,
+    period_type VARCHAR(20) NOT NULL, -- 'daily', 'weekly', 'monthly'
+    total_return DECIMAL(8,4),
+    benchmark_return DECIMAL(8,4),
+    alpha DECIMAL(8,4),
+    beta DECIMAL(6,4),
+    information_ratio DECIMAL(8,4),
+    tracking_error DECIMAL(8,4),
+    max_drawdown DECIMAL(8,4),
+    win_rate DECIMAL(8,4),
+    profit_factor DECIMAL(8,4),
+    expectancy DECIMAL(10,4),
+    trades_count INTEGER,
+    avg_trade_duration INTEGER, -- in seconds
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id)
+);
+
+-- News and events table
+CREATE TABLE IF NOT EXISTS market_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TIMESTAMP NOT NULL,
+    event_type VARCHAR(50) NOT NULL, -- 'news', 'economic_data', 'earnings'
+    symbol VARCHAR(20),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    impact VARCHAR(20), -- 'high', 'medium', 'low'
+    actual_value DECIMAL(15,4),
+    forecast_value DECIMAL(15,4),
+    previous_value DECIMAL(15,4),
+    sentiment_score DECIMAL(4,3), -- -1 to 1
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- System logs table
+CREATE TABLE IF NOT EXISTS system_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TIMESTAMP NOT NULL,
+    log_level VARCHAR(20) NOT NULL, -- 'DEBUG', 'INFO', 'WARNING', 'ERROR'
+    component VARCHAR(50) NOT NULL, -- 'strategy', 'data_feed', 'broker', 'risk_manager'
+    message TEXT NOT NULL,
+    session_id INTEGER,
+    trade_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id),
+    FOREIGN KEY (trade_id) REFERENCES trades(id)
+);
+
+-- User settings table
+CREATE TABLE IF NOT EXISTS user_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setting_key VARCHAR(100) NOT NULL UNIQUE,
+    setting_value TEXT,
+    setting_type VARCHAR(20) DEFAULT 'string', -- 'string', 'number', 'boolean', 'json'
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Backtest results table (for historical analysis)
+CREATE TABLE IF NOT EXISTS backtest_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    test_name VARCHAR(100) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    initial_capital DECIMAL(15,2) NOT NULL,
+    final_capital DECIMAL(15,2) NOT NULL,
+    total_return DECIMAL(8,4) NOT NULL,
+    annualized_return DECIMAL(8,4),
+    max_drawdown DECIMAL(8,4),
+    sharpe_ratio DECIMAL(8,4),
+    sortino_ratio DECIMAL(8,4),
+    calmar_ratio DECIMAL(8,4),
+    win_rate DECIMAL(8,4),
+    profit_factor DECIMAL(8,4),
+    total_trades INTEGER,
+    winning_trades INTEGER,
+    losing_trades INTEGER,
+    avg_win DECIMAL(10,4),
+    avg_loss DECIMAL(10,4),
+    largest_win DECIMAL(10,4),
+    largest_loss DECIMAL(10,4),
+    avg_trade_duration INTEGER,
+    parameters TEXT, -- JSON string of strategy parameters used
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id)
+);
+
+-- Create indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_trades_session_id ON trades(session_id);
+CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON trades(entry_time);
+CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
+
+CREATE INDEX IF NOT EXISTS idx_market_data_symbol_timeframe ON market_data(symbol, timeframe);
+CREATE INDEX IF NOT EXISTS idx_market_data_timestamp ON market_data(timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_trading_signals_session_id ON trading_signals(session_id);
+CREATE INDEX IF NOT EXISTS idx_trading_signals_timestamp ON trading_signals(timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_session_id ON portfolio_snapshots(session_id);
+CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_timestamp ON portfolio_snapshots(timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_technical_indicators_symbol_timeframe ON technical_indicators(symbol, timeframe);
+CREATE INDEX IF NOT EXISTS idx_technical_indicators_timestamp ON technical_indicators(timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_system_logs_session_id ON system_logs(session_id);
+
+-- Insert default strategies
+INSERT OR IGNORE INTO strategies (name, description, strategy_type, asset_class, timeframe, parameters) VALUES
+('Scalping EUR_USD 1M', 'High-frequency scalping strategy for EUR_USD on 1-minute timeframe', 'scalping', 'forex', '1m', '{"fast_ema": 5, "slow_ema": 13, "rsi_period": 7, "stop_loss_pips": 3, "take_profit_pips": 6}'),
+('Scalping EUR_USD 5M', 'High-frequency scalping strategy for EUR_USD on 5-minute timeframe', 'scalping', 'forex', '5m', '{"fast_ema": 5, "slow_ema": 13, "rsi_period": 7, "stop_loss_pips": 5, "take_profit_pips": 10}'),
+('Enhanced Forex Strategy', 'Advanced quantitative forex strategy with multi-timeframe analysis', 'trend', 'forex', '1h', '{"fast_length": 8, "slow_length": 21, "rsi_period": 9, "dynamic_sizing": true}');
+
+-- Insert default user settings
+INSERT OR IGNORE INTO user_settings (setting_key, setting_value, setting_type, description) VALUES
+('dashboard_refresh_interval', '5', 'number', 'Dashboard refresh interval in seconds'),
+('default_chart_timeframe', '5m', 'string', 'Default timeframe for charts'),
+('risk_alert_threshold', '0.15', 'number', 'Risk alert threshold (15% drawdown)'),
+('max_daily_trades', '50', 'number', 'Maximum trades per day'),
+('enable_notifications', 'true', 'boolean', 'Enable push notifications'),
+('theme', 'dark', 'string', 'Dashboard theme (light/dark)'),
+('timezone', 'UTC', 'string', 'User timezone'),
+('currency_display', 'USD', 'string', 'Display currency');

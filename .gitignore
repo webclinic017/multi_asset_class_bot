@@ -8,3 +8,7 @@ output/
 **/*.json
 **/*.log.1
 eshk/
+**/node_modules/
+**/frontend/*.json
+**/*.bat
+**/*.db
