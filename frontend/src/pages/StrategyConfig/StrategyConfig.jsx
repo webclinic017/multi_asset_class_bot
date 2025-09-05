@@ -226,12 +226,14 @@ const StrategyConfig = () => {
   const [strategy, setStrategy] = useState(null);
   const [parameters, setParameters] = useState({});
   const [originalParameters, setOriginalParameters] = useState({});
+  const [activeSessions, setActiveSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
     fetchStrategy();
+    fetchActiveSessions();
   }, [strategyId]);
 
   useEffect(() => {
@@ -253,6 +255,20 @@ const StrategyConfig = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchActiveSessions = async () => {
+    try {
+      const response = await axios.get('/api/sessions/active');
+      setActiveSessions(response.data);
+    } catch (error) {
+      console.error('Error fetching active sessions:', error);
+    }
+  };
+
+  const isStrategyActive = () => {
+    if (!strategy) return false;
+    return activeSessions.some(session => session.strategy_id === strategy.id);
   };
 
   const handleParameterChange = (key, value) => {
@@ -376,8 +392,8 @@ const StrategyConfig = () => {
           <InfoItem>
             <InfoLabel>Status</InfoLabel>
             <InfoValue>
-              <StatusBadge className={strategy.is_active ? 'active' : 'inactive'}>
-                {strategy.is_active ? 'Active' : 'Inactive'}
+              <StatusBadge className={isStrategyActive() ? 'active' : 'inactive'}>
+                {isStrategyActive() ? 'Active' : 'Inactive'}
               </StatusBadge>
             </InfoValue>
           </InfoItem>

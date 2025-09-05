@@ -84,14 +84,23 @@ class DatabaseManager:
         """Get all strategies"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM strategies WHERE is_active = 1")
+            cursor.execute("""
+                SELECT * FROM strategies
+                WHERE is_active = 1
+                ORDER BY name, created_at DESC
+            """)
             rows = cursor.fetchall()
             
             strategies = []
+            seen_names = set()
             for row in rows:
                 strategy = dict(row)
                 strategy['parameters'] = json.loads(strategy['parameters']) if strategy['parameters'] else {}
-                strategies.append(strategy)
+                
+                # Avoid duplicates by name
+                if strategy['name'] not in seen_names:
+                    strategies.append(strategy)
+                    seen_names.add(strategy['name'])
             
             return strategies
     
