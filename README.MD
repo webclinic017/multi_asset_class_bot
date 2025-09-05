@@ -2,6 +2,7 @@
 
 ### 📈 **Running in windows cmd**
 - Activate python venv and install pip -r requirements.txt
+- python historical_data.py to save historical data to sql lite db to avoid api calls for backtesting
 - netstat -ano | findstr :8000
 - taskkill /PID <PID> /F
 - run_webserver.bat --mode server-only
