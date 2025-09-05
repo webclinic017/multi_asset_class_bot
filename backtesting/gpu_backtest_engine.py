@@ -302,7 +302,7 @@ class GPUBacktestEngine:
             
             # Calculate performance metrics
             final_value = cerebro.broker.getvalue()
-            total_return = (final_value - initial_capital) / initial_capital
+            total_return = (final_value - initial_capital) / max(initial_capital, 1.0)
             
             # Debug trade analyzer results
             self.logger.info(f"Trade Analyzer Results: {trade_analyzer}")
@@ -359,7 +359,7 @@ class GPUBacktestEngine:
             processing_time = self.end_time - self.start_time
             
             self.logger.info(f"GPU Backtest completed in {processing_time:.2f} seconds")
-            self.logger.info(f"Processed {self.total_bars_processed} bars at {self.total_bars_processed/processing_time:.0f} bars/second")
+            self.logger.info(f"Processed {self.total_bars_processed} bars at {self.total_bars_processed/max(processing_time, 0.001):.0f} bars/second")
             self.logger.info(f"Final Portfolio Value: ${final_value:.2f}")
             self.logger.info(f"Total Return: {total_return:.2%}")
             
@@ -709,7 +709,7 @@ class GPUBacktestEngine:
         
         # Calculate speedup
         if GPU_AVAILABLE and 'gpu' in results:
-            speedup = cpu_time / results['gpu']['processing_time']
+            speedup = cpu_time / max(results['gpu']['processing_time'], 0.001)
             results['speedup'] = speedup
             self.logger.info(f"GPU Speedup: {speedup:.2f}x faster than CPU")
         
