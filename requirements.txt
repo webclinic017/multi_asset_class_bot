@@ -8,6 +8,22 @@ oandapyV20
 ibapi # For Interactive Brokers API
 python-dotenv # For loading environment variables from .env file
 
+# GPU Acceleration with PyTorch
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+# For CUDA support (will automatically detect and install appropriate version)
+--index-url https://download.pytorch.org/whl/cu118
+# Alternative CUDA versions:
+# cu121 for CUDA 12.1
+# cu118 for CUDA 11.8
+# cpu for CPU-only version
+
+# GPU-accelerated numerical computing
+cupy-cuda11x>=12.0.0  # For CUDA 11.x
+# cupy-cuda12x>=12.0.0  # For CUDA 12.x (uncomment if using CUDA 12)
+numba>=0.58.0  # JIT compilation with CUDA support
+
 
 # Logging
 # No specific logging library needed beyond standard Python logging, but if a custom one was used, it would go here.

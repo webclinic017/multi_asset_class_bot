@@ -13,3 +13,4 @@ eshk/
 **/*.bat
 **/*.db
 **/*.html
+test_logs/
