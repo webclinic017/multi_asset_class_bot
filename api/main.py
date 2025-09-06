@@ -495,7 +495,7 @@ async def run_backtest_task(session_id: int, backtest_request: BacktestRequest):
             final_capital = backtest_results['final_capital']
             total_return = backtest_results['total_return']
             total_trades = backtest_results['total_trades']
-            win_rate = backtest_results['win_rate'] / 100.0  # Convert to decimal
+            win_rate = max(0.0, min(1.0, backtest_results.get('win_rate', 0.0) / 100.0))  # Convert to decimal and clamp
             max_drawdown = backtest_results['max_drawdown']
             sharpe_ratio = backtest_results['sharpe_ratio']
             

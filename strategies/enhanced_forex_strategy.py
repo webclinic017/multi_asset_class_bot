@@ -256,7 +256,8 @@ class EnhancedForexStrategy(bt.Strategy):
         
         # Volume indicators
         self.volume_sma = bt.indicators.SMA(self.datavolume, period=self.p.volume_period)
-        self.volume_ratio = self.datavolume / self.volume_sma
+        # Safe volume ratio calculation to prevent division by zero
+        self.volume_ratio = self.datavolume / bt.indicators.Max(self.volume_sma, 1e-8)
         
         # Custom supply/demand zones
         if hasattr(self, 'p') and getattr(self.p, 'use_supply_demand', True):
@@ -283,9 +284,9 @@ class EnhancedForexStrategy(bt.Strategy):
         self.roc_10 = bt.indicators.RateOfChange(period=10)
         self.roc_20 = bt.indicators.RateOfChange(period=20)
         
-        # Price position in range
-        self.price_position = (self.dataclose - bt.indicators.Lowest(self.datalow, period=20)) / \
-                             (bt.indicators.Highest(self.datahigh, period=20) - bt.indicators.Lowest(self.datalow, period=20))
+        # Price position in range - will be calculated manually in next() to avoid division by zero
+        self.highest_20 = bt.indicators.Highest(self.datahigh, period=20)
+        self.lowest_20 = bt.indicators.Lowest(self.datalow, period=20)
 
     def detect_market_regime(self) -> Tuple[str, float]:
         """
@@ -307,7 +308,7 @@ class EnhancedForexStrategy(bt.Strategy):
             # Volatility clustering detection
             volatility = np.std(recent_returns) * np.sqrt(252)  # Annualized
             vol_ma = np.mean([np.std(recent_returns[i:i+10]) for i in range(0, len(recent_returns)-10, 5)])
-            vol_ratio = volatility / vol_ma if vol_ma > 0 else 1.0
+            vol_ratio = volatility / max(vol_ma, 1e-8) if vol_ma > 0 else 1.0
             
             # Regime classification
             trend_strength = abs(r_value)
@@ -348,7 +349,7 @@ class EnhancedForexStrategy(bt.Strategy):
             avg_loss = 0.015  # Estimated average loss
             
             if win_rate > 0 and avg_loss > 0:
-                kelly_fraction = (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_win
+                kelly_fraction = (win_rate * avg_win - (1 - win_rate) * avg_loss) / max(avg_win, 1e-8)
                 kelly_fraction = max(0, min(kelly_fraction, 0.25))  # Cap at 25%
             else:
                 kelly_fraction = 0.02  # Default 2%

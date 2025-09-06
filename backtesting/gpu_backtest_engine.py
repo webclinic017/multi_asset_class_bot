@@ -248,10 +248,21 @@ class GPUBacktestEngine:
         self.start_time = time.time()
         self.logger.info(f"Starting GPU backtest for {symbol} from {start_date} to {end_date}")
         
+        # Validate inputs
+        if initial_capital <= 0:
+            raise ValueError("Initial capital must be greater than zero")
+        
         try:
             # Fetch market data from database
             data = self._fetch_database_data(symbol, start_date, end_date, timeframe)
+            
+            if data.empty:
+                raise ValueError(f"No market data available for {symbol} from {start_date} to {end_date}")
+            
             self.total_bars_processed = len(data)
+            
+            if self.total_bars_processed == 0:
+                raise ValueError("No data bars to process")
             
             # Prepare data for GPU processing
             gpu_data = self.prepare_data_gpu(data)
@@ -302,7 +313,7 @@ class GPUBacktestEngine:
             
             # Calculate performance metrics
             final_value = cerebro.broker.getvalue()
-            total_return = (final_value - initial_capital) / max(initial_capital, 1.0)
+            total_return = (final_value - initial_capital) / max(initial_capital, 1.0) if initial_capital > 0 else 0.0
             
             # Debug trade analyzer results
             self.logger.info(f"Trade Analyzer Results: {trade_analyzer}")
@@ -337,21 +348,20 @@ class GPUBacktestEngine:
                 'total_trades': total_trades,
                 'winning_trades': winning_trades,
                 'losing_trades': losing_trades,
-                'win_rate': (winning_trades / max(total_trades, 1)) * 100,
+                'win_rate': (winning_trades / max(total_trades, 1)) * 100 if total_trades > 0 else 0.0,
                 'gross_profit': trade_analyzer.get('won', {}).get('pnl', {}).get('total', 0),
                 'gross_loss': abs(trade_analyzer.get('lost', {}).get('pnl', {}).get('total', 0)),
                 'max_drawdown': drawdown_analyzer.get('max', {}).get('drawdown', 0),
                 'sharpe_ratio': sharpe_analyzer.get('sharperatio', 0),
                 'avg_trade_duration': 0,  # Would need custom analyzer
-                'profit_factor': (trade_analyzer.get('won', {}).get('pnl', {}).get('total', 0) /
-                                max(abs(trade_analyzer.get('lost', {}).get('pnl', {}).get('total', 1)), 1)),
+                'profit_factor': self._calculate_safe_profit_factor(trade_analyzer),
                 
                 # GPU-specific metrics
                 'gpu_accelerated': self.use_gpu,
                 'device_used': self.device,
                 'bars_processed': self.total_bars_processed,
                 'processing_time': time.time() - self.start_time,
-                'bars_per_second': self.total_bars_processed / max(time.time() - self.start_time, 0.001),
+                'bars_per_second': self._calculate_safe_bars_per_second(),
                 'gpu_memory_usage': self.gpu_memory_usage if self.use_gpu else None
             }
             
@@ -359,7 +369,8 @@ class GPUBacktestEngine:
             processing_time = self.end_time - self.start_time
             
             self.logger.info(f"GPU Backtest completed in {processing_time:.2f} seconds")
-            self.logger.info(f"Processed {self.total_bars_processed} bars at {self.total_bars_processed/max(processing_time, 0.001):.0f} bars/second")
+            bars_per_sec = self.total_bars_processed / max(processing_time, 0.001) if processing_time > 0 else 0
+            self.logger.info(f"Processed {self.total_bars_processed} bars at {bars_per_sec:.0f} bars/second")
             self.logger.info(f"Final Portfolio Value: ${final_value:.2f}")
             self.logger.info(f"Total Return: {total_return:.2%}")
             
@@ -658,6 +669,50 @@ class GPUBacktestEngine:
             # Safe fallback
             return ScalpingForexStrategy
     
+    def _calculate_safe_profit_factor(self, trade_analyzer: Dict) -> float:
+        """
+        Calculate profit factor with division by zero protection
+        
+        Args:
+            trade_analyzer: Trade analyzer results from backtrader
+            
+        Returns:
+            Safe profit factor value
+        """
+        try:
+            gross_profit = trade_analyzer.get('won', {}).get('pnl', {}).get('total', 0)
+            gross_loss = abs(trade_analyzer.get('lost', {}).get('pnl', {}).get('total', 0))
+            
+            if gross_loss == 0:
+                return float('inf') if gross_profit > 0 else 0.0
+            
+            return gross_profit / gross_loss if gross_profit >= 0 else 0.0
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating profit factor: {e}")
+            return 0.0
+    
+    def _calculate_safe_bars_per_second(self) -> float:
+        """
+        Calculate bars per second with division by zero protection
+        
+        Returns:
+            Safe bars per second value
+        """
+        try:
+            if not self.start_time or self.total_bars_processed <= 0:
+                return 0.0
+            
+            processing_time = time.time() - self.start_time
+            if processing_time <= 0:
+                return 0.0
+            
+            return self.total_bars_processed / processing_time
+            
+        except Exception as e:
+            self.logger.warning(f"Error calculating bars per second: {e}")
+            return 0.0
+    
     def benchmark_performance(self, strategy_params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Benchmark GPU vs CPU performance
@@ -709,7 +764,8 @@ class GPUBacktestEngine:
         
         # Calculate speedup
         if GPU_AVAILABLE and 'gpu' in results:
-            speedup = cpu_time / max(results['gpu']['processing_time'], 0.001)
+            gpu_time = results['gpu']['processing_time']
+            speedup = cpu_time / max(gpu_time, 0.001) if gpu_time > 0 else 0.0
             results['speedup'] = speedup
             self.logger.info(f"GPU Speedup: {speedup:.2f}x faster than CPU")
         
