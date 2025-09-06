@@ -492,7 +492,10 @@ const Backtesting = () => {
                   <div style={{ color: '#22c55e' }}>{winningTrades}</div>
                   <div style={{ color: '#ef4444' }}>{losingTrades}</div>
                   <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                    {formatDateTime(session.end_time)}
+                    {session.status === 'running' ?
+                      `Started: ${formatDateTime(session.start_time)}` :
+                      formatDateTime(session.end_time || session.start_time)
+                    }
                   </div>
                   <div>
                     <StatusBadge className={session.status}>

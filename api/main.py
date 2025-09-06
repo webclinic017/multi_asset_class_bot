@@ -232,14 +232,18 @@ async def get_strategy(strategy_id: int):
 # Trading session endpoints - REAL DATA ONLY
 @app.get("/api/sessions", response_model=List[TradingSessionResponse])
 async def get_trading_sessions(limit: int = 100):
-    """Get real trading sessions from database - only sessions with actual trades"""
+    """Get all backtest sessions from database - including running, completed, and failed"""
     try:
         sessions = db_manager.get_trading_sessions(limit=limit)
         
-        # Only return sessions with real trades in the trades table
-        real_sessions = []
+        # Return all backtest sessions, regardless of status
+        all_sessions = []
         for session in sessions:
             session_id = session.get('id')
+            
+            # Skip non-backtest sessions
+            if session.get('session_type') != 'backtest':
+                continue
             
             # Check if session has actual trades in trades table
             with db_manager.get_connection() as conn:
@@ -247,14 +251,11 @@ async def get_trading_sessions(limit: int = 100):
                 cursor.execute("SELECT COUNT(*) FROM trades WHERE session_id = ?", (session_id,))
                 actual_trade_count = cursor.fetchone()[0]
             
-            # Only include sessions with actual trades and completed status
-            if (session.get('status') == 'completed' and
-                actual_trade_count > 0 and
-                session.get('final_capital') is not None):
-                
-                # Update session data with actual trade counts
-                session['total_trades'] = actual_trade_count
-                
+            # Update session data with actual trade counts
+            session['total_trades'] = actual_trade_count
+            
+            # For completed sessions with trades, get detailed trade statistics
+            if session.get('status') == 'completed' and actual_trade_count > 0:
                 # Get actual win/loss counts from trades table
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
@@ -272,16 +273,26 @@ async def get_trading_sessions(limit: int = 100):
                         session['winning_trades'] = trade_stats[0] or 0
                         session['losing_trades'] = trade_stats[1] or 0
                         
-                        # Update final capital if we have P&L data
+                        # Update final capital and total return if we have P&L data
                         if trade_stats[2] is not None:
-                            correct_final_capital = session.get('initial_capital', 10000) + trade_stats[2]
+                            initial_capital = session.get('initial_capital', 10000)
+                            total_pnl = trade_stats[2]
+                            
+                            # Calculate correct final capital: initial + total P&L
+                            correct_final_capital = initial_capital + total_pnl
                             session['final_capital'] = correct_final_capital
-                            session['total_return'] = trade_stats[2] / session.get('initial_capital', 10000)
-                
-                real_sessions.append(TradingSessionResponse(**session))
+                            
+                            # Calculate total return as percentage: P&L / initial capital
+                            session['total_return'] = total_pnl / initial_capital
+            else:
+                # For running/failed sessions, set defaults
+                session['winning_trades'] = session.get('winning_trades', 0)
+                session['losing_trades'] = session.get('losing_trades', 0)
+            
+            all_sessions.append(TradingSessionResponse(**session))
         
-        logger.info(f"Returning {len(real_sessions)} sessions with actual trades out of {len(sessions)} total")
-        return real_sessions
+        logger.info(f"Returning {len(all_sessions)} backtest sessions out of {len(sessions)} total")
+        return all_sessions
     
     except Exception as e:
         logger.error(f"Error getting trading sessions: {e}")
