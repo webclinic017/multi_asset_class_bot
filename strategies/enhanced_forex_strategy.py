@@ -121,10 +121,10 @@ class EnhancedForexStrategy(bt.Strategy):
         ('use_correlation_filter', False), # Disable for more trades
         ('use_momentum_filter', True),
         
-        # Enhanced Performance Optimization
-        ('min_sharpe_threshold', 0.2), # Lower threshold for more opportunities
-        ('max_drawdown_threshold', 0.25), # Allow higher drawdown for more trades
-        ('profit_factor_threshold', 1.0), # Lower threshold for more trades
+        # Enhanced Performance Optimization for 1-hour data
+        ('min_sharpe_threshold', 0.1), # Much lower threshold for 1-hour data
+        ('max_drawdown_threshold', 0.35), # Allow higher drawdown for 1-hour data
+        ('profit_factor_threshold', 0.8), # Lower threshold for more trades
         
         # Enhanced Sentiment Integration
         ('sentiment_weight', 0.35),    # Higher sentiment weight
@@ -510,11 +510,11 @@ class EnhancedForexStrategy(bt.Strategy):
             signals['sell_score'] = sell_score
             signals['signal_strength'] = max(buy_score, sell_score)
             
-            # Enhanced filters with more lenient thresholds
+            # Enhanced filters with very lenient thresholds for 1-hour data
             if self.p.use_volatility_filter:
                 current_vol = self.atr[0] / self.dataclose[0] if self.dataclose[0] > 0 else 0
-                # More lenient volatility filter for more trading opportunities
-                if current_vol > self.p.volatility_threshold * 1.2:
+                # Very lenient volatility filter for 1-hour data
+                if current_vol > self.p.volatility_threshold * 3.0:
                     signals['volatility_filter'] = False
                     
             return signals
@@ -539,8 +539,8 @@ class EnhancedForexStrategy(bt.Strategy):
         current_vol = self.atr[0] / current_price if current_price > 0 else 0
         
         if not self.position:  # No position
-            # Entry logic (lowered threshold for more trades)
-            if (signals['buy_score'] > 0.3 and
+            # Entry logic (much lower threshold for 1-hour data)
+            if (signals['buy_score'] > 0.15 and
                 signals['volatility_filter'] and
                 signals['regime_filter']):
                 
@@ -559,7 +559,7 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.order = self.buy(size=position_size)
                 self.entry_bar = len(self)
                 
-            elif (signals['sell_score'] > 0.3 and
+            elif (signals['sell_score'] > 0.15 and
                   signals['volatility_filter'] and
                   signals['regime_filter']):
                 

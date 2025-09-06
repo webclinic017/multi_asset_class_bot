@@ -3,7 +3,7 @@ import sqlite3
 conn = sqlite3.connect('database/trading_bot.db')
 cursor = conn.cursor()
 
-# Check trade status for sessions 44 and 43
+# Check trade status for sessions with missing final capital
 print("Checking trade status for sessions with missing final capital:")
 
 for session_id in [44, 43]:
