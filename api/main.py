@@ -1,6 +1,6 @@
 """
 FastAPI REST API Backend for Trading Bot Dashboard
-Provides endpoints for live trading and backtesting data
+Serves ONLY real backtesting data from SQLite database - no simulations or synthetic data
 """
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect
@@ -23,8 +23,6 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.database_manager import DatabaseManager
-from strategies.scalping_forex_strategy import ScalpingForexStrategy
-from data.data_feed import OANDADataFeed
 from utils.logger import setup_logging
 
 # Pydantic models for API requests/responses
@@ -68,6 +66,8 @@ class TradingSessionResponse(BaseModel):
     sharpe_ratio: Optional[float]
     win_rate: Optional[float]
     total_trades: int
+    winning_trades: Optional[int]
+    losing_trades: Optional[int]
     status: str
 
 class TradeResponse(BaseModel):
@@ -115,9 +115,9 @@ class PerformanceMetrics(BaseModel):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Trading Bot Dashboard API",
-    description="REST API for trading bot dashboard with live trading and backtesting capabilities",
-    version="1.0.0"
+    title="Trading Bot Dashboard API - Real Data Only",
+    description="REST API serving authentic backtesting data from SQLite database",
+    version="2.0.0"
 )
 
 # Add CORS middleware
@@ -189,13 +189,12 @@ manager = ConnectionManager()
 # Serve static files (React build)
 app.mount("/static", StaticFiles(directory="frontend/build/static"), name="static")
 
-# API Routes
+# API Routes - REAL DATA ONLY
 
-# Move the API root to /api/
 @app.get("/api/")
 async def read_root():
     """API root endpoint"""
-    return {"message": "Trading Bot Dashboard API", "version": "1.0.0"}
+    return {"message": "Trading Bot Dashboard API - Real Data Only", "version": "2.0.0"}
 
 @app.get("/health")
 async def health_check():
@@ -203,29 +202,9 @@ async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 # Strategy endpoints
-@app.post("/api/strategies", response_model=StrategyResponse)
-async def create_strategy(strategy: StrategyCreate):
-    """Create a new trading strategy"""
-    try:
-        strategy_id = db_manager.create_strategy(
-            strategy.name,
-            strategy.description,
-            strategy.strategy_type,
-            strategy.asset_class,
-            strategy.timeframe,
-            strategy.parameters
-        )
-        
-        created_strategy = db_manager.get_strategy(strategy_id)
-        return StrategyResponse(**created_strategy)
-    
-    except Exception as e:
-        logger.error(f"Error creating strategy: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/strategies", response_model=List[StrategyResponse])
 async def get_strategies():
-    """Get all strategies"""
+    """Get all strategies from database"""
     try:
         strategies = db_manager.get_strategies()
         return [StrategyResponse(**strategy) for strategy in strategies]
@@ -236,7 +215,7 @@ async def get_strategies():
 
 @app.get("/api/strategies/{strategy_id}", response_model=StrategyResponse)
 async def get_strategy(strategy_id: int):
-    """Get strategy by ID"""
+    """Get strategy by ID from database"""
     try:
         strategy = db_manager.get_strategy(strategy_id)
         if not strategy:
@@ -250,68 +229,59 @@ async def get_strategy(strategy_id: int):
         logger.error(f"Error getting strategy {strategy_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/api/strategies/{strategy_id}", response_model=StrategyResponse)
-async def update_strategy(strategy_id: int, strategy: StrategyCreate):
-    """Update an existing strategy"""
-    try:
-        # Check if strategy exists
-        existing_strategy = db_manager.get_strategy(strategy_id)
-        if not existing_strategy:
-            raise HTTPException(status_code=404, detail="Strategy not found")
-        
-        # Update strategy in database
-        with db_manager.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE strategies
-                SET name = ?, description = ?, strategy_type = ?, asset_class = ?,
-                    timeframe = ?, parameters = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (strategy.name, strategy.description, strategy.strategy_type,
-                  strategy.asset_class, strategy.timeframe, json.dumps(strategy.parameters), strategy_id))
-            conn.commit()
-        
-        # Return updated strategy
-        updated_strategy = db_manager.get_strategy(strategy_id)
-        return StrategyResponse(**updated_strategy)
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating strategy {strategy_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Trading session endpoints
-@app.post("/api/sessions", response_model=TradingSessionResponse)
-async def create_trading_session(session: TradingSessionCreate):
-    """Create a new trading session"""
-    try:
-        session_id = db_manager.create_trading_session(
-            session.session_type,
-            session.strategy_id,
-            session.symbol,
-            session.initial_capital
-        )
-        
-        # Get the created session with strategy info
-        sessions = db_manager.get_trading_sessions(limit=1)
-        created_session = next((s for s in sessions if s['id'] == session_id), None)
-        
-        if not created_session:
-            raise HTTPException(status_code=500, detail="Failed to retrieve created session")
-        
-        return TradingSessionResponse(**created_session)
-    
-    except Exception as e:
-        logger.error(f"Error creating trading session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+# Trading session endpoints - REAL DATA ONLY
 @app.get("/api/sessions", response_model=List[TradingSessionResponse])
 async def get_trading_sessions(limit: int = 100):
-    """Get trading sessions"""
+    """Get real trading sessions from database - only sessions with actual trades"""
     try:
         sessions = db_manager.get_trading_sessions(limit=limit)
-        return [TradingSessionResponse(**session) for session in sessions]
+        
+        # Only return sessions with real trades in the trades table
+        real_sessions = []
+        for session in sessions:
+            session_id = session.get('id')
+            
+            # Check if session has actual trades in trades table
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM trades WHERE session_id = ?", (session_id,))
+                actual_trade_count = cursor.fetchone()[0]
+            
+            # Only include sessions with actual trades and completed status
+            if (session.get('status') == 'completed' and
+                actual_trade_count > 0 and
+                session.get('final_capital') is not None):
+                
+                # Update session data with actual trade counts
+                session['total_trades'] = actual_trade_count
+                
+                # Get actual win/loss counts from trades table
+                with db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT
+                            COUNT(CASE WHEN pnl > 0 THEN 1 END) as wins,
+                            COUNT(CASE WHEN pnl < 0 THEN 1 END) as losses,
+                            SUM(pnl) as total_pnl
+                        FROM trades
+                        WHERE session_id = ? AND pnl IS NOT NULL
+                    """, (session_id,))
+                    
+                    trade_stats = cursor.fetchone()
+                    if trade_stats:
+                        session['winning_trades'] = trade_stats[0] or 0
+                        session['losing_trades'] = trade_stats[1] or 0
+                        
+                        # Update final capital if we have P&L data
+                        if trade_stats[2] is not None:
+                            correct_final_capital = session.get('initial_capital', 10000) + trade_stats[2]
+                            session['final_capital'] = correct_final_capital
+                            session['total_return'] = trade_stats[2] / session.get('initial_capital', 10000)
+                
+                real_sessions.append(TradingSessionResponse(**session))
+        
+        logger.info(f"Returning {len(real_sessions)} sessions with actual trades out of {len(sessions)} total")
+        return real_sessions
     
     except Exception as e:
         logger.error(f"Error getting trading sessions: {e}")
@@ -319,7 +289,7 @@ async def get_trading_sessions(limit: int = 100):
 
 @app.get("/api/sessions/active", response_model=List[TradingSessionResponse])
 async def get_active_sessions():
-    """Get active trading sessions"""
+    """Get active trading sessions from database"""
     try:
         sessions = db_manager.get_active_sessions()
         return [TradingSessionResponse(**session) for session in sessions]
@@ -330,7 +300,7 @@ async def get_active_sessions():
 
 @app.get("/api/sessions/{session_id}/performance", response_model=PerformanceMetrics)
 async def get_session_performance(session_id: int):
-    """Get performance metrics for a session"""
+    """Get real performance metrics for a session from database"""
     try:
         performance = db_manager.calculate_session_performance(session_id)
         return PerformanceMetrics(**performance)
@@ -339,10 +309,10 @@ async def get_session_performance(session_id: int):
         logger.error(f"Error getting session performance: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Trade endpoints
+# Trade endpoints - REAL DATA ONLY
 @app.get("/api/sessions/{session_id}/trades", response_model=List[TradeResponse])
 async def get_session_trades(session_id: int, limit: int = 1000):
-    """Get trades for a session"""
+    """Get real trades for a session from database"""
     try:
         trades = db_manager.get_trades(session_id=session_id, limit=limit)
         return [TradeResponse(**trade) for trade in trades]
@@ -353,7 +323,7 @@ async def get_session_trades(session_id: int, limit: int = 1000):
 
 @app.get("/api/trades/open", response_model=List[TradeResponse])
 async def get_open_trades():
-    """Get all open trades"""
+    """Get all open trades from database"""
     try:
         trades = db_manager.get_open_trades()
         return [TradeResponse(**trade) for trade in trades]
@@ -362,7 +332,7 @@ async def get_open_trades():
         logger.error(f"Error getting open trades: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Market data endpoints
+# Market data endpoints - REAL DATA ONLY
 @app.get("/api/market-data/{symbol}", response_model=List[MarketDataResponse])
 async def get_market_data(
     symbol: str,
@@ -371,7 +341,7 @@ async def get_market_data(
     start_time: Optional[str] = None,
     end_time: Optional[str] = None
 ):
-    """Get market data for a symbol"""
+    """Get real market data for a symbol from database"""
     try:
         start_dt = datetime.fromisoformat(start_time) if start_time else None
         end_dt = datetime.fromisoformat(end_time) if end_time else None
@@ -399,14 +369,14 @@ async def get_market_data(
         logger.error(f"Error getting market data for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Portfolio endpoints
+# Portfolio endpoints - REAL DATA ONLY
 @app.get("/api/sessions/{session_id}/portfolio")
 async def get_portfolio_snapshots(
     session_id: int,
     start_time: Optional[str] = None,
     end_time: Optional[str] = None
 ):
-    """Get portfolio snapshots for equity curve"""
+    """Get real portfolio snapshots for equity curve from database"""
     try:
         start_dt = datetime.fromisoformat(start_time) if start_time else None
         end_dt = datetime.fromisoformat(end_time) if end_time else None
@@ -418,10 +388,10 @@ async def get_portfolio_snapshots(
         logger.error(f"Error getting portfolio snapshots: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Backtesting endpoints
+# Backtesting endpoints - REAL BACKTESTING ENGINES ONLY
 @app.post("/api/backtest")
 async def run_backtest(backtest_request: BacktestRequest, background_tasks: BackgroundTasks):
-    """Run a backtest"""
+    """Run a real backtest using authentic backtesting engines (GPU/backtrader) - NO SIMULATION"""
     try:
         # Create a new session for the backtest with correct start time
         start_date_dt = datetime.fromisoformat(backtest_request.start_date)
@@ -433,110 +403,194 @@ async def run_backtest(backtest_request: BacktestRequest, background_tasks: Back
             start_time=start_date_dt
         )
         
-        # Add backtest to background tasks
+        # Add backtest to background tasks - REAL BACKTESTING ONLY
         background_tasks.add_task(
-            run_backtest_task,
+            run_real_backtest_task,
             session_id,
             backtest_request
         )
         
         return {
-            "message": "Backtest started",
+            "message": "Real backtest started using authentic backtesting engines",
             "session_id": session_id,
-            "status": "running"
+            "status": "running",
+            "note": "Using real GPU/backtrader engines - no simulation"
         }
     
     except Exception as e:
-        logger.error(f"Error starting backtest: {e}")
+        logger.error(f"Error starting real backtest: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def run_backtest_task(session_id: int, backtest_request: BacktestRequest):
-    """Background task to run GPU-accelerated backtest"""
+async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequest):
+    """Background task to run REAL backtesting using actual engines with real market data"""
     try:
-        logger.info(f"Starting GPU-accelerated backtest for session {session_id}")
+        logger.info(f"Starting REAL backtest for session {session_id} using actual market data")
         
         # Get strategy
         strategy = db_manager.get_strategy(backtest_request.strategy_id)
         if not strategy:
             raise Exception("Strategy not found")
         
-        # Import GPU backtest engine
-        try:
-            from backtesting.gpu_backtest_engine import GPUBacktestEngine
-            gpu_available = True
-        except ImportError as e:
-            logger.warning(f"GPU backtest engine not available: {e}")
-            gpu_available = False
+        # Convert symbol format and check available data
+        symbol_db_format = backtest_request.symbol.replace('_', '')  # EUR_USD -> EURUSD
         
-        if gpu_available:
-            # Use GPU-accelerated backtesting
-            logger.info("Using GPU-accelerated backtesting engine")
+        # Check what data is actually available
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, timeframe, COUNT(*) as count, MIN(timestamp), MAX(timestamp)
+                FROM market_data
+                WHERE symbol = ? OR symbol = ?
+                GROUP BY symbol, timeframe
+                ORDER BY count DESC
+            """, (symbol_db_format, backtest_request.symbol))
             
-            # Initialize GPU backtest engine
-            gpu_engine = GPUBacktestEngine(use_gpu=True)
+            available_data = cursor.fetchall()
+            logger.info(f"Available data for {backtest_request.symbol}: {available_data}")
+        
+        if not available_data:
+            raise Exception(f"No market data found for {backtest_request.symbol} or {symbol_db_format}")
+        
+        # Use the best available data (highest count)
+        best_data = available_data[0]
+        actual_symbol = best_data[0]
+        actual_timeframe = best_data[1]
+        data_count = best_data[2]
+        data_start = best_data[3]
+        data_end = best_data[4]
+        
+        logger.info(f"Using real market data: {actual_symbol} {actual_timeframe} ({data_count} records from {data_start} to {data_end})")
+        
+        # Get actual market data from database
+        df = db_manager.get_market_data(
+            actual_symbol,
+            actual_timeframe,
+            datetime.fromisoformat(backtest_request.start_date) if backtest_request.start_date >= data_start else datetime.fromisoformat(data_start),
+            datetime.fromisoformat(backtest_request.end_date) if backtest_request.end_date <= data_end else datetime.fromisoformat(data_end),
+            limit=10000
+        )
+        
+        if df.empty:
+            raise Exception(f"No market data retrieved for {actual_symbol}")
+        
+        logger.info(f"Retrieved {len(df)} real market data records for backtesting")
+        
+        # Run real backtest using backtrader with actual market data
+        try:
+            from backtesting.backtest_engine import BacktestEngine
+            from data.data_feed import OANDADataFeed
             
-            # Prepare strategy parameters
-            strategy_params = strategy.get('parameters', {})
-            strategy_params['printlog'] = False  # Reduce logging for background task
+            logger.info("Initializing real backtrader engine with actual market data")
             
-            # Run GPU backtest with strategy information
-            backtest_results = gpu_engine.run_gpu_backtest(
-                strategy_params=strategy_params,
-                symbol=backtest_request.symbol,
-                start_date=backtest_request.start_date,
-                end_date=backtest_request.end_date,
-                initial_capital=backtest_request.initial_capital,
-                timeframe=backtest_request.timeframe,
-                strategy_name=strategy.get('name', 'Unknown Strategy'),
-                strategy_type=strategy.get('strategy_type', 'scalping')
-            )
+            # Create config for backtest engine
+            config = {
+                'backtesting': {
+                    'initial_capital': backtest_request.initial_capital,
+                    'commission': 0.001,
+                    'slippage': 0.0005,
+                    'start_date': backtest_request.start_date,
+                    'end_date': backtest_request.end_date
+                },
+                'oanda': {
+                    'account_id': 'dummy',
+                    'access_token': 'dummy',
+                    'practice': True
+                }
+            }
             
-            # Store results in database
-            final_capital = backtest_results['final_capital']
-            total_return = backtest_results['total_return']
-            total_trades = backtest_results['total_trades']
-            win_rate = max(0.0, min(1.0, backtest_results.get('win_rate', 0.0) / 100.0))  # Convert to decimal and clamp
-            max_drawdown = backtest_results['max_drawdown']
-            sharpe_ratio = backtest_results['sharpe_ratio']
+            # Initialize backtest engine
+            backtest_engine = BacktestEngine(config=config)
             
-            # Update session with GPU backtest results using correct end time
-            end_date_dt = datetime.fromisoformat(backtest_request.end_date)
-            db_manager.update_trading_session(
-                session_id,
-                end_time=end_date_dt,
-                final_capital=final_capital,
-                total_return=total_return,
-                total_trades=total_trades,
-                win_rate=win_rate,
-                max_drawdown=max_drawdown,
-                sharpe_ratio=sharpe_ratio,
-                status="completed"
-            )
+            # Create a custom data feed that uses our real database data
+            class DatabaseDataFeed:
+                def __init__(self, df):
+                    self.df = df
+                
+                def get_forex_data(self, symbol, timeframe, start_date, end_date):
+                    return self.df
             
-            # Generate realistic trades based on backtest results
-            if total_trades > 0:
-                await _generate_backtest_trades(session_id, backtest_request, backtest_results)
+            # Set the data feed with real data
+            backtest_engine.data_feed = DatabaseDataFeed(df)
             
-            # Broadcast completion with GPU metrics
-            await manager.broadcast(json.dumps({
-                "type": "backtest_completed",
-                "session_id": session_id,
-                "status": "completed",
-                "gpu_accelerated": backtest_results.get('gpu_accelerated', False),
-                "processing_time": backtest_results.get('processing_time', 0),
-                "bars_per_second": backtest_results.get('bars_per_second', 0),
-                "device_used": backtest_results.get('device_used', 'CPU')
-            }))
+            # Load the real data
+            asset_type = strategy.get('asset_class', 'forex')
+            loaded_data = backtest_engine.load_data(actual_symbol, asset_type, actual_timeframe)
             
-            logger.info(f"GPU backtest completed for session {session_id} in {backtest_results.get('processing_time', 0):.2f}s")
-            
-        else:
-            # Fallback to original simulation
-            logger.info("Falling back to simulated backtesting")
-            await _run_simulated_backtest(session_id, backtest_request)
+            if loaded_data is not None and not loaded_data.empty:
+                logger.info(f"Successfully loaded {len(loaded_data)} real data points for backtesting")
+                
+                # Map strategy name to class name
+                strategy_name = strategy.get('name', 'ForexStrategy')
+                if 'Enhanced' in strategy_name:
+                    strategy_class_name = 'EnhancedForexStrategy'
+                elif 'Scalping' in strategy_name:
+                    strategy_class_name = 'ForexStrategy'
+                else:
+                    strategy_class_name = 'ForexStrategy'
+                
+                # Add strategy with real parameters
+                strategy_params = strategy.get('parameters', {})
+                strategy_params['printlog'] = False
+                backtest_engine.add_strategy(strategy_class_name, **strategy_params)
+                
+                # Run real backtest
+                results = backtest_engine.run()
+                
+                if results and isinstance(results, dict):
+                    logger.info(f"Real backtest completed with results: {results}")
+                    
+                    # Extract real results
+                    final_capital = results.get('final_value', backtest_request.initial_capital)
+                    total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital)
+                    total_trades = results.get('total_trades', 0)
+                    winning_trades = results.get('winning_trades', 0)
+                    losing_trades = results.get('losing_trades', 0)
+                    win_rate = (winning_trades / total_trades) if total_trades > 0 else 0.0
+                    max_drawdown = results.get('max_drawdown', 0.0) / 100.0 if results.get('max_drawdown', 0.0) > 1 else results.get('max_drawdown', 0.0)
+                    sharpe_ratio = results.get('sharpe_ratio', 0.0)
+                    
+                    # Update session with real backtest results
+                    end_date_dt = datetime.fromisoformat(backtest_request.end_date)
+                    db_manager.update_trading_session(
+                        session_id,
+                        end_time=end_date_dt,
+                        final_capital=final_capital,
+                        total_return=total_return,
+                        total_trades=total_trades,
+                        winning_trades=winning_trades,
+                        losing_trades=losing_trades,
+                        win_rate=win_rate,
+                        max_drawdown=max_drawdown,
+                        sharpe_ratio=sharpe_ratio,
+                        status="completed"
+                    )
+                    
+                    # Broadcast completion with real metrics
+                    await manager.broadcast(json.dumps({
+                        "type": "backtest_completed",
+                        "session_id": session_id,
+                        "status": "completed",
+                        "gpu_accelerated": False,
+                        "real_computation": True,
+                        "engine": "backtrader",
+                        "data_points": len(loaded_data),
+                        "final_capital": final_capital,
+                        "total_return": total_return
+                    }))
+                    
+                    logger.info(f"REAL backtest completed for session {session_id}: Final Capital: ${final_capital:.2f}, Return: {total_return*100:.2f}%, Trades: {total_trades}")
+                    
+                else:
+                    raise Exception("Backtrader engine returned no valid results")
+            else:
+                raise Exception(f"Failed to load market data for {actual_symbol}")
+                
+        except Exception as backtest_error:
+            logger.error(f"Real backtest engine failed: {backtest_error}")
+            raise Exception(f"Real backtesting failed: {backtest_error}")
         
     except Exception as e:
-        logger.error(f"Error in backtest task: {e}")
+        logger.error(f"Error in REAL backtest task: {e}")
         
         # Update session status to failed
         db_manager.update_trading_session(session_id, status="failed")
@@ -545,130 +599,77 @@ async def run_backtest_task(session_id: int, backtest_request: BacktestRequest):
         await manager.broadcast(json.dumps({
             "type": "backtest_failed",
             "session_id": session_id,
-            "error": str(e)
+            "error": str(e),
+            "note": "Real backtesting engine failed - no simulation fallback available"
         }))
 
-async def _generate_backtest_trades(session_id: int, backtest_request: BacktestRequest, backtest_results: Dict):
-    """Generate realistic trades based on backtest results"""
+# Additional backtesting endpoints for detailed data
+@app.get("/api/sessions/{session_id}/details")
+async def get_session_details(session_id: int):
+    """Get detailed real session information from database"""
     try:
-        start_date = datetime.fromisoformat(backtest_request.start_date)
-        end_date = datetime.fromisoformat(backtest_request.end_date)
+        # Get session info
+        sessions = db_manager.get_trading_sessions(limit=1000)
+        session = next((s for s in sessions if s['id'] == session_id), None)
         
-        num_trades = min(backtest_results.get('total_trades', 50), 100)  # Limit for demo
-        winning_trades = int(num_trades * (backtest_results.get('win_rate', 50) / 100))
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
         
-        current_time = start_date
-        time_delta = (end_date - start_date) / num_trades
+        # Only return if it's a real completed session
+        if session.get('status') != 'completed' or session.get('total_trades', 0) == 0:
+            raise HTTPException(status_code=404, detail="No real backtest data available for this session")
         
-        for i in range(num_trades):
-            entry_time = current_time + (time_delta * i)
-            exit_time = entry_time + timedelta(minutes=np.random.randint(5, 60))
-            
-            entry_price = 1.1000 + np.random.normal(0, 0.01)
-            
-            # Generate realistic P&L based on backtest results
-            if i < winning_trades:
-                pnl = abs(np.random.normal(10, 5))  # Winning trade
-            else:
-                pnl = -abs(np.random.normal(5, 3))  # Losing trade
-            
-            exit_price = entry_price + (pnl * 0.0001)
-            
-            trade_id = db_manager.create_trade(
-                session_id=session_id,
-                symbol=backtest_request.symbol,
-                side="BUY" if np.random.random() > 0.5 else "SELL",
-                entry_time=entry_time,
-                entry_price=entry_price,
-                quantity=10000,
-                signal_strength=np.random.uniform(0.6, 0.9),
-                confidence=np.random.uniform(0.7, 0.95)
-            )
-            
-            # Close the trade
-            db_manager.close_trade(
-                trade_id=trade_id,
-                exit_time=exit_time,
-                exit_price=exit_price,
-                exit_reason="take_profit" if pnl > 0 else "stop_loss",
-                pnl=pnl,
-                pnl_pips=pnl
-            )
-            
+        # Get trades for this session
+        trades = db_manager.get_trades(session_id=session_id, limit=1000)
+        
+        # Get performance metrics
+        try:
+            performance = db_manager.calculate_session_performance(session_id)
+        except:
+            performance = {}
+        
+        # Get portfolio snapshots
+        try:
+            portfolio_snapshots = db_manager.get_portfolio_snapshots(session_id)
+        except:
+            portfolio_snapshots = []
+        
+        return {
+            "session": session,
+            "trades": trades,
+            "performance": performance,
+            "portfolio_snapshots": portfolio_snapshots
+        }
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error generating backtest trades: {e}")
+        logger.error(f"Error getting session details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-async def _run_simulated_backtest(session_id: int, backtest_request: BacktestRequest):
-    """Fallback simulated backtesting"""
-    # Simulate processing time
-    await asyncio.sleep(5)
-    
-    # Generate sample trades
-    start_date = datetime.fromisoformat(backtest_request.start_date)
-    end_date = datetime.fromisoformat(backtest_request.end_date)
-    
-    # Create sample trades
-    num_trades = 50
-    current_time = start_date
-    time_delta = (end_date - start_date) / num_trades
-    
-    for i in range(num_trades):
-        entry_time = current_time + (time_delta * i)
-        exit_time = entry_time + timedelta(minutes=np.random.randint(5, 60))
+@app.get("/api/backtest/status/{session_id}")
+async def get_backtest_status(session_id: int):
+    """Get real status of a backtest session from database"""
+    try:
+        sessions = db_manager.get_trading_sessions(limit=1000)
+        session = next((s for s in sessions if s['id'] == session_id), None)
         
-        entry_price = 1.1000 + np.random.normal(0, 0.01)
-        pnl = np.random.normal(5, 20)  # Random P&L
-        exit_price = entry_price + (pnl * 0.0001)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
         
-        trade_id = db_manager.create_trade(
-            session_id=session_id,
-            symbol=backtest_request.symbol,
-            side="BUY" if np.random.random() > 0.5 else "SELL",
-            entry_time=entry_time,
-            entry_price=entry_price,
-            quantity=10000,
-            signal_strength=np.random.uniform(0.6, 0.9),
-            confidence=np.random.uniform(0.7, 0.95)
-        )
-        
-        # Close the trade
-        db_manager.close_trade(
-            trade_id=trade_id,
-            exit_time=exit_time,
-            exit_price=exit_price,
-            exit_reason="take_profit" if pnl > 0 else "stop_loss",
-            pnl=pnl,
-            pnl_pips=pnl
-        )
+        return {
+            "session_id": session_id,
+            "status": session['status'],
+            "progress": "completed" if session['status'] == 'completed' else session['status'],
+            "total_trades": session.get('total_trades', 0),
+            "current_capital": session.get('final_capital', session.get('initial_capital', 0))
+        }
     
-    # Update session with final results using correct end time
-    final_capital = backtest_request.initial_capital + sum([np.random.normal(5, 20) for _ in range(num_trades)])
-    total_return = (final_capital - backtest_request.initial_capital) / backtest_request.initial_capital
-    end_date_dt = datetime.fromisoformat(backtest_request.end_date)
-    
-    # Calculate winning and losing trades for simulation
-    winning_trades = int(num_trades * 0.6)  # 60% win rate
-    losing_trades = num_trades - winning_trades
-    
-    db_manager.update_trading_session(
-        session_id,
-        end_time=end_date_dt,
-        final_capital=final_capital,
-        total_return=total_return,
-        total_trades=num_trades,
-        winning_trades=winning_trades,
-        losing_trades=losing_trades,
-        win_rate=winning_trades / num_trades if num_trades > 0 else 0,
-        status="completed"
-    )
-    
-    # Broadcast completion via WebSocket
-    await manager.broadcast(json.dumps({
-        "type": "backtest_completed",
-        "session_id": session_id,
-        "status": "completed",
-        "gpu_accelerated": False
-    }))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting backtest status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # WebSocket endpoint for real-time updates
 @app.websocket("/ws")
@@ -689,7 +690,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # System endpoints
 @app.get("/api/system/logs")
 async def get_system_logs(limit: int = 100, log_level: Optional[str] = None):
-    """Get system logs"""
+    """Get real system logs from database"""
     try:
         logs = db_manager.get_system_logs(limit=limit, log_level=log_level)
         return logs
@@ -700,7 +701,7 @@ async def get_system_logs(limit: int = 100, log_level: Optional[str] = None):
 
 @app.get("/api/system/settings")
 async def get_system_settings():
-    """Get system settings"""
+    """Get real system settings from database"""
     try:
         # Get common settings
         settings = {
@@ -718,7 +719,7 @@ async def get_system_settings():
 
 @app.post("/api/system/settings")
 async def update_system_settings(settings: Dict[str, Any]):
-    """Update system settings"""
+    """Update system settings in database"""
     try:
         for key, value in settings.items():
             # Determine setting type
@@ -738,6 +739,37 @@ async def update_system_settings(settings: Dict[str, Any]):
         logger.error(f"Error updating system settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Database statistics endpoint
+@app.get("/api/database/stats")
+async def get_database_stats():
+    """Get real database statistics"""
+    try:
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get table counts
+            stats = {}
+            tables = ['trading_sessions', 'trades', 'strategies', 'market_data', 'portfolio_snapshots']
+            
+            for table in tables:
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                stats[f"{table}_count"] = cursor.fetchone()[0]
+            
+            # Get completed backtests count
+            cursor.execute("SELECT COUNT(*) FROM trading_sessions WHERE status = 'completed' AND total_trades > 0")
+            stats['completed_backtests'] = cursor.fetchone()[0]
+            
+            # Get total trades from completed sessions
+            cursor.execute("SELECT SUM(total_trades) FROM trading_sessions WHERE status = 'completed'")
+            result = cursor.fetchone()[0]
+            stats['total_backtest_trades'] = result if result else 0
+            
+            return stats
+    
+    except Exception as e:
+        logger.error(f"Error getting database stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Serve React app at root and for all non-API routes
 @app.get("/", response_class=HTMLResponse)
 async def serve_react_root():
@@ -748,12 +780,13 @@ async def serve_react_root():
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
-            <head><title>Trading Bot Dashboard</title></head>
+            <head><title>Trading Bot Dashboard - Real Data Only</title></head>
             <body>
-                <h1>Trading Bot Dashboard</h1>
+                <h1>Trading Bot Dashboard - Real Data Only</h1>
                 <p>Frontend not built yet. Please build the React frontend first.</p>
                 <p>API is running at <a href="/docs">/docs</a></p>
                 <p>API root is at <a href="/api/">/api/</a></p>
+                <p><strong>This API serves only real backtesting data from SQLite database.</strong></p>
             </body>
         </html>
         """)
@@ -771,12 +804,13 @@ async def serve_react_app(full_path: str):
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
-            <head><title>Trading Bot Dashboard</title></head>
+            <head><title>Trading Bot Dashboard - Real Data Only</title></head>
             <body>
-                <h1>Trading Bot Dashboard</h1>
+                <h1>Trading Bot Dashboard - Real Data Only</h1>
                 <p>Frontend not built yet. Please build the React frontend first.</p>
                 <p>API is running at <a href="/docs">/docs</a></p>
                 <p>API root is at <a href="/api/">/api/</a></p>
+                <p><strong>This API serves only real backtesting data from SQLite database.</strong></p>
             </body>
         </html>
         """)

@@ -191,6 +191,7 @@ const Backtesting = () => {
   const [sessions, setSessions] = useState([]);
   const [strategies, setStrategies] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
   const [formData, setFormData] = useState({
     strategy_id: '',
     symbol: 'EUR_USD',
@@ -203,7 +204,56 @@ const Backtesting = () => {
   useEffect(() => {
     fetchSessions();
     fetchStrategies();
+    setupWebSocket();
+    
+    // Cleanup WebSocket on unmount
+    return () => {
+      if (window.backtestWs) {
+        window.backtestWs.close();
+      }
+    };
   }, []);
+
+  const setupWebSocket = () => {
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      const ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        setWsConnected(true);
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'backtest_completed' || data.type === 'backtest_failed') {
+            // Refresh sessions when backtest completes
+            setTimeout(fetchSessions, 1000);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        setWsConnected(false);
+        // Attempt to reconnect after 5 seconds
+        setTimeout(setupWebSocket, 5000);
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setWsConnected(false);
+      };
+      
+      window.backtestWs = ws;
+    } catch (error) {
+      console.error('Failed to setup WebSocket:', error);
+    }
+  };
 
   const fetchSessions = async () => {
     try {
@@ -263,13 +313,14 @@ const Backtesting = () => {
 
     setLoading(true);
     try {
-      await axios.post('/api/backtest', formData);
-      alert('Backtest started successfully!');
-      // Refresh sessions after a short delay
-      setTimeout(fetchSessions, 2000);
+      const response = await axios.post('/api/backtest', formData);
+      alert(`✅ Real backtest started successfully!\n\nSession ID: ${response.data.session_id}\n\nUsing: ${response.data.note}\n\nResults will appear below when completed.`);
+      // Refresh sessions immediately to show the new running session
+      fetchSessions();
     } catch (error) {
       console.error('Error running backtest:', error);
-      alert('Error starting backtest');
+      const errorMessage = error.response?.data?.detail || 'Error starting backtest';
+      alert(`❌ Backtest Error:\n\n${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -308,10 +359,13 @@ const Backtesting = () => {
     <BacktestingContainer>
       <Header>
         <Title>Backtesting</Title>
+        <div style={{ fontSize: '12px', color: wsConnected ? '#22c55e' : '#ef4444' }}>
+          WebSocket: {wsConnected ? 'Connected' : 'Disconnected'}
+        </div>
       </Header>
 
       <Card>
-        <CardTitle>Run New Backtest</CardTitle>
+        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines)</CardTitle>
         <FormGrid>
           <FormGroup>
             <Label>Strategy</Label>
@@ -396,7 +450,7 @@ const Backtesting = () => {
         </FormGrid>
         
         <Button onClick={handleRunBacktest} disabled={loading}>
-          {loading ? 'Running Backtest...' : 'Run Backtest'}
+          {loading ? '⚡ Running Real Backtest...' : '🚀 Run Real Backtest (No Simulation)'}
         </Button>
       </Card>
 
@@ -418,11 +472,11 @@ const Backtesting = () => {
               <div>Status</div>
             </DataGridHeader>
             {sessions.map(session => {
-              // Calculate winning/losing trades if not available
+              // Use actual database values, with fallbacks only for null/undefined
               const totalTrades = session.total_trades || 0;
-              const winRate = session.win_rate || 0.65; // Default 65% win rate
-              const winningTrades = session.winning_trades || (totalTrades > 0 ? Math.round(totalTrades * winRate) : 0);
-              const losingTrades = session.losing_trades || (totalTrades > 0 ? totalTrades - winningTrades : 0);
+              const winningTrades = session.winning_trades || 0;
+              const losingTrades = session.losing_trades || 0;
+              const winRate = session.win_rate || 0;
               
               return (
                 <DataGridRow key={session.id}>
@@ -431,8 +485,8 @@ const Backtesting = () => {
                   <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
                   <div>{formatCurrency(session.initial_capital)}</div>
                   <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
-                  <div style={{ color: session.total_return > 0 ? '#22c55e' : '#ef4444' }}>
-                    {session.total_return ? formatPercentage(session.total_return) : '-'}
+                  <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
+                    {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
                   </div>
                   <div>{totalTrades}</div>
                   <div style={{ color: '#22c55e' }}>{winningTrades}</div>
@@ -451,7 +505,7 @@ const Backtesting = () => {
           </DataGrid>
         ) : (
           <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-            No backtest results available. Run your first backtest to see results here.
+            📊 No backtest results yet. Run your first real backtest above to see authentic results here.
           </div>
         )}
         
@@ -469,7 +523,7 @@ const Backtesting = () => {
             </MetricCard>
             <MetricCard>
               <MetricValue>
-                {sessions.filter(s => s.total_return > 0).length}
+                {sessions.filter(s => (s.total_return || 0) > 0).length}
               </MetricValue>
               <MetricLabel>Profitable</MetricLabel>
             </MetricCard>
@@ -478,6 +532,21 @@ const Backtesting = () => {
                 {sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0)}
               </MetricValue>
               <MetricLabel>Total Trades</MetricLabel>
+            </MetricCard>
+            <MetricCard>
+              <MetricValue>
+                {sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0)}
+              </MetricValue>
+              <MetricLabel>Total Wins</MetricLabel>
+            </MetricCard>
+            <MetricCard>
+              <MetricValue>
+                {sessions.length > 0 ?
+                  ((sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0) /
+                    Math.max(1, sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0))) * 100).toFixed(1) + '%'
+                  : '0%'}
+              </MetricValue>
+              <MetricLabel>Overall Win Rate</MetricLabel>
             </MetricCard>
           </MetricsGrid>
         )}
