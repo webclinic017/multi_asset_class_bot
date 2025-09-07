@@ -417,17 +417,32 @@ class EnhancedForexStrategy(bt.Strategy):
             
             # === INDICATOR VALUES LOGGING ===
             self.logger.info("Current indicator values:")
-            self.logger.info(f"  EMA Fast: {self.ema_fast[0]:.5f}")
-            self.logger.info(f"  EMA Slow: {self.ema_slow[0]:.5f}")
-            self.logger.info(f"  TEMA: {self.tema[0]:.5f}")
-            self.logger.info(f"  RSI: {self.rsi[0]:.2f}")
-            self.logger.info(f"  MACD: {self.macd.macd[0]:.6f}")
-            self.logger.info(f"  MACD Signal: {self.macd.signal[0]:.6f}")
-            self.logger.info(f"  BB Mid: {self.bb.lines.mid[0]:.5f}")
-            self.logger.info(f"  BB Top: {self.bb.lines.top[0]:.5f}")
-            self.logger.info(f"  BB Bot: {self.bb.lines.bot[0]:.5f}")
-            self.logger.info(f"  ATR: {self.atr[0]:.6f}")
-            self.logger.info(f"  Current Price: {self.dataclose[0]:.5f}")
+            try:
+                self.logger.info(f"  EMA Fast: {float(self.ema_fast[0]):.5f}")
+                self.logger.info(f"  EMA Slow: {float(self.ema_slow[0]):.5f}")
+                self.logger.info(f"  TEMA: {float(self.tema[0]):.5f}")
+                self.logger.info(f"  RSI: {float(self.rsi[0]):.2f}")
+                self.logger.info(f"  MACD: {float(self.macd.macd[0]):.6f}")
+                self.logger.info(f"  MACD Signal: {float(self.macd.signal[0]):.6f}")
+                self.logger.info(f"  BB Mid: {float(self.bb.lines.mid[0]):.5f}")
+                self.logger.info(f"  BB Top: {float(self.bb.lines.top[0]):.5f}")
+                self.logger.info(f"  BB Bot: {float(self.bb.lines.bot[0]):.5f}")
+                self.logger.info(f"  ATR: {float(self.atr[0]):.6f}")
+                self.logger.info(f"  Current Price: {float(self.dataclose[0]):.5f}")
+            except Exception as indicator_error:
+                self.logger.error(f"Error logging indicator values: {indicator_error}")
+                # Log raw values without formatting
+                self.logger.info(f"  EMA Fast: {self.ema_fast[0]}")
+                self.logger.info(f"  EMA Slow: {self.ema_slow[0]}")
+                self.logger.info(f"  TEMA: {self.tema[0]}")
+                self.logger.info(f"  RSI: {self.rsi[0]}")
+                self.logger.info(f"  MACD: {self.macd.macd[0]}")
+                self.logger.info(f"  MACD Signal: {self.macd.signal[0]}")
+                self.logger.info(f"  BB Mid: {self.bb.lines.mid[0]}")
+                self.logger.info(f"  BB Top: {self.bb.lines.top[0]}")
+                self.logger.info(f"  BB Bot: {self.bb.lines.bot[0]}")
+                self.logger.info(f"  ATR: {self.atr[0]}")
+                self.logger.info(f"  Current Price: {self.dataclose[0]}")
             
             # Enhanced Trend signals with acceleration
             self.logger.info("=== TREND ANALYSIS ===")
@@ -440,7 +455,12 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.logger.info("  Added 1.2 to trend_score")
             
             tema_condition = self.tema[0] > self.tema[-1] if len(self.tema) > 1 else False
-            self.logger.info(f"TEMA momentum: {tema_condition} ({self.tema[0]:.5f} > {self.tema[-1]:.5f if len(self.tema) > 1 else 'N/A'})")
+            # Safe formatting for TEMA momentum comparison
+            if len(self.tema) > 1:
+                tema_prev_str = f"{float(self.tema[-1]):.5f}"
+            else:
+                tema_prev_str = "N/A"
+            self.logger.info(f"TEMA momentum: {tema_condition} ({float(self.tema[0]):.5f} > {tema_prev_str})")
             if tema_condition:
                 trend_score += 0.8
                 self.logger.info("  Added 0.8 to trend_score")
@@ -689,7 +709,9 @@ class EnhancedForexStrategy(bt.Strategy):
             return signals
             
         except Exception as e:
-            self.logger.error(f"Error generating enhanced signals: {e}")
+            import traceback
+            self.logger.error(f"Error generating enhanced signals: {str(e)}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return signals
 
     def next(self):
