@@ -16,6 +16,7 @@ from typing import List, Dict, Optional, Any
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
+import yaml
 
 # Import our modules
 import sys
@@ -511,8 +512,8 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     'end_date': backtest_request.end_date
                 },
                 'oanda': {
-                    'account_id': 'dummy',
-                    'access_token': 'dummy',
+                    'account_id': config['data']['oanda']['account_id'],
+                    'access_token': config['data']['oanda']['access_token'],
                     'practice': True
                 }
             }
