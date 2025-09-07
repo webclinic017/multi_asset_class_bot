@@ -602,9 +602,9 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 # Add strategy with real parameters
                 try:
                     backtest_engine.add_strategy(strategy_class_name, **strategy_params)
-                    logger.info("✅ Successfully called backtest_engine.add_strategy()")
+                    logger.info(f"Successfully called backtest_engine.add_strategy() with {strategy_class_name}")
                 except Exception as strategy_add_error:
-                    logger.error(f"❌ Error calling add_strategy: {strategy_add_error}")
+                    logger.error(f"Error calling add_strategy: {strategy_add_error}")
                     logger.error(f"Strategy class name: {strategy_class_name}")
                     logger.error(f"Parameters passed: {strategy_params}")
                     raise
@@ -618,29 +618,78 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 logger.info(f"Engine start_date: {backtest_engine.start_date}")
                 logger.info(f"Engine end_date: {backtest_engine.end_date}")
                 
-                # Check cerebro strategies
-                if hasattr(backtest_engine.cerebro, '_strats'):
-                    logger.info(f"Number of strategies in cerebro: {len(backtest_engine.cerebro._strats)}")
-                    for i, strat in enumerate(backtest_engine.cerebro._strats):
-                        logger.info(f"Strategy {i}: {strat}")
-                        if hasattr(strat, '_args'):
-                            logger.info(f"Strategy {i} args: {strat._args}")
-                        if hasattr(strat, '_kwargs'):
-                            logger.info(f"Strategy {i} kwargs: {strat._kwargs}")
-                else:
-                    logger.warning("Cerebro does not have _strats attribute")
+                # Discover all cerebro attributes first
+                logger.info("=== CEREBRO ATTRIBUTE DISCOVERY ===")
+                cerebro_attrs = [attr for attr in dir(backtest_engine.cerebro) if not attr.startswith('__')]
+                logger.info(f"Available cerebro attributes: {cerebro_attrs}")
                 
-                # Check cerebro data feeds
-                if hasattr(backtest_engine.cerebro, 'datas'):
-                    logger.info(f"Number of data feeds in cerebro: {len(backtest_engine.cerebro.datas)}")
-                    for i, data in enumerate(backtest_engine.cerebro.datas):
-                        logger.info(f"Data feed {i}: {type(data)} - {data}")
-                        if hasattr(data, '_name'):
-                            logger.info(f"Data feed {i} name: {data._name}")
-                        if hasattr(data, 'params'):
-                            logger.info(f"Data feed {i} params: {data.params}")
-                else:
-                    logger.warning("Cerebro does not have datas attribute")
+                # Check for strategy-related attributes
+                strategy_attrs = [attr for attr in cerebro_attrs if 'strat' in attr.lower()]
+                logger.info(f"Strategy-related attributes: {strategy_attrs}")
+                
+                # Check cerebro strategies using multiple possible attribute names
+                strategies_found = False
+                for attr_name in ['_strats', 'strats', '_strategies', 'strategies']:
+                    if hasattr(backtest_engine.cerebro, attr_name):
+                        strategies = getattr(backtest_engine.cerebro, attr_name)
+                        logger.info(f"Found strategies in '{attr_name}': {len(strategies) if hasattr(strategies, '__len__') else 'Unknown length'}")
+                        strategies_found = True
+                        
+                        if hasattr(strategies, '__len__') and hasattr(strategies, '__iter__'):
+                            for i, strat in enumerate(strategies):
+                                logger.info(f"Strategy {i} from {attr_name}: {strat}")
+                                logger.info(f"Strategy {i} type: {type(strat)}")
+                                
+                                # Check for strategy parameters/arguments
+                                strat_attrs = [attr for attr in dir(strat) if not attr.startswith('__')]
+                                logger.info(f"Strategy {i} attributes: {strat_attrs}")
+                                
+                                # Look for parameter-related attributes
+                                param_attrs = [attr for attr in strat_attrs if any(keyword in attr.lower() for keyword in ['param', 'arg', 'kwarg', 'p'])]
+                                logger.info(f"Strategy {i} parameter-related attributes: {param_attrs}")
+                                
+                                for param_attr in param_attrs:
+                                    try:
+                                        param_value = getattr(strat, param_attr)
+                                        logger.info(f"Strategy {i} {param_attr}: {param_value}")
+                                    except Exception as e:
+                                        logger.warning(f"Could not access Strategy {i} {param_attr}: {e}")
+                        break
+                
+                if not strategies_found:
+                    logger.warning("No strategy attributes found in cerebro")
+                
+                # Check cerebro data feeds using multiple possible attribute names
+                data_attrs = [attr for attr in cerebro_attrs if 'data' in attr.lower()]
+                logger.info(f"Data-related attributes: {data_attrs}")
+                
+                data_found = False
+                for attr_name in ['datas', '_datas', 'data', '_data']:
+                    if hasattr(backtest_engine.cerebro, attr_name):
+                        datas = getattr(backtest_engine.cerebro, attr_name)
+                        logger.info(f"Found data feeds in '{attr_name}': {len(datas) if hasattr(datas, '__len__') else 'Unknown length'}")
+                        data_found = True
+                        
+                        if hasattr(datas, '__len__') and hasattr(datas, '__iter__'):
+                            for i, data in enumerate(datas):
+                                logger.info(f"Data feed {i} from {attr_name}: {type(data)} - {data}")
+                                
+                                # Check data feed attributes
+                                data_attrs_list = [attr for attr in dir(data) if not attr.startswith('__')]
+                                logger.info(f"Data feed {i} attributes: {data_attrs_list}")
+                                
+                                # Look for name and parameter attributes
+                                for check_attr in ['_name', 'name', 'params', '_params']:
+                                    if hasattr(data, check_attr):
+                                        try:
+                                            attr_value = getattr(data, check_attr)
+                                            logger.info(f"Data feed {i} {check_attr}: {attr_value}")
+                                        except Exception as e:
+                                            logger.warning(f"Could not access Data feed {i} {check_attr}: {e}")
+                        break
+                
+                if not data_found:
+                    logger.warning("No data attributes found in cerebro")
                 
                 # Check broker settings
                 if hasattr(backtest_engine.cerebro, 'broker'):
