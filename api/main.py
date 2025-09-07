@@ -441,9 +441,9 @@ def load_yaml_config(filepath):
         return config_data
 
 async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequest):
-    """Background task to run REAL backtesting using actual engines with real market data"""
+    """Background task to run REAL backtesting with real-time portfolio value tracking"""
     try:
-        logger.info(f"=== STARTING REAL BACKTEST DEBUG SESSION {session_id} ===")
+        logger.info(f"=== STARTING REAL-TIME BACKTEST SESSION {session_id} ===")
         logger.info(f"Backtest request details: {backtest_request.dict()}")
         
         # Get strategy with detailed logging
@@ -454,8 +454,6 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             raise Exception("Strategy not found")
         
         logger.info(f"Retrieved strategy: {strategy}")
-        logger.info(f"Strategy type: {type(strategy)}")
-        logger.info(f"Strategy keys: {list(strategy.keys()) if isinstance(strategy, dict) else 'Not a dict'}")
         
         # Convert symbol format and check available data
         symbol_db_format = backtest_request.symbol.replace('_', '')  # EUR_USD -> EURUSD
@@ -504,14 +502,13 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
 
         config_s=load_yaml_config('config/config.yaml')
         
-        # Run real backtest using backtrader with actual market data
+        # Run real backtest using REAL-TIME backtest engine with portfolio tracking
         try:
-            from backtesting.backtest_engine import BacktestEngine
-            from data.data_feed import OANDADataFeed
+            from backtesting.realtime_backtest_engine import create_realtime_backtest_engine
             
-            logger.info("=== INITIALIZING BACKTEST ENGINE ===")
+            logger.info("=== INITIALIZING REAL-TIME BACKTEST ENGINE ===")
             
-            # Create config for backtest engine
+            # Create config for real-time backtest engine
             config = {
                 'backtesting': {
                     'initial_capital': backtest_request.initial_capital,
@@ -526,12 +523,56 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     'practice': True
                 }
             }
-            logger.info(f"Backtest engine config: {config}")
+            logger.info(f"Real-time backtest engine config: {config}")
             
-            # Initialize backtest engine
-            backtest_engine = BacktestEngine(config=config)
-            logger.info(f"Backtest engine initialized: {type(backtest_engine)}")
-            logger.info(f"Backtest engine attributes: {[attr for attr in dir(backtest_engine) if not attr.startswith('_')]}")
+            # Define portfolio update callback for real-time tracking
+            async def portfolio_update_callback(snapshot):
+                """Callback to handle real-time portfolio updates"""
+                try:
+                    # Store portfolio snapshot in database
+                    db_manager.store_portfolio_snapshot(
+                        session_id=session_id,
+                        timestamp=datetime.fromisoformat(snapshot['timestamp']),
+                        total_value=snapshot['total_value'],
+                        cash_balance=snapshot['cash_balance'],
+                        unrealized_pnl=snapshot['unrealized_pnl'],
+                        realized_pnl=0.0,  # Will be updated by trades
+                        open_positions=0,  # Will be updated by trades
+                        daily_pnl=snapshot['unrealized_pnl']
+                    )
+                    
+                    # Broadcast real-time update via WebSocket
+                    await manager.broadcast(json.dumps({
+                        "type": "portfolio_realtime_update",
+                        "session_id": session_id,
+                        "timestamp": snapshot['timestamp'],
+                        "portfolio_value": snapshot['total_value'],
+                        "total_return": snapshot['total_return'],
+                        "unrealized_pnl": snapshot['unrealized_pnl'],
+                        "drawdown": snapshot['drawdown'],
+                        "progress": snapshot['progress'],
+                        "trade_count": snapshot['trade_count']
+                    }))
+                    
+                    logger.debug(f"Portfolio update: ${snapshot['total_value']:.2f} "
+                               f"({snapshot['total_return']:.2f}% return, "
+                               f"{snapshot['progress']:.1f}% complete)")
+                    
+                except Exception as e:
+                    logger.error(f"Error in portfolio update callback: {e}")
+            
+            # Initialize real-time backtest engine with portfolio tracking
+            backtest_engine = create_realtime_backtest_engine(
+                config=config,
+                session_id=session_id,
+                update_callback=portfolio_update_callback,
+                websocket_manager=manager
+            )
+            
+            # Set database manager for portfolio snapshots
+            backtest_engine.db_manager = db_manager
+            
+            logger.info(f"Real-time backtest engine initialized: {type(backtest_engine)}")
             
             # Create a custom data feed that uses our real database data
             class DatabaseDataFeed:
@@ -747,18 +788,16 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     for i, analyzer in enumerate(backtest_engine.cerebro._analyzers):
                         logger.info(f"Analyzer {i}: {analyzer}")
                 
-                # Run real backtest
-                logger.info("=== EXECUTING BACKTEST ===")
-                results = backtest_engine.run()
+                # Run real-time backtest with portfolio tracking
+                logger.info("=== EXECUTING REAL-TIME BACKTEST ===")
+                results = backtest_engine.run_with_realtime_updates()
 
-                logger.info(f"=== BACKTEST EXECUTION COMPLETED ===")
+                logger.info(f"=== REAL-TIME BACKTEST EXECUTION COMPLETED ===")
                 logger.info(f"Results type: {type(results)}")
-                logger.info(f"Results content: {results}")
+                logger.info(f"Portfolio snapshots captured: {len(results.get('portfolio_snapshots', []))}")
 
-                
-                
                 if results and isinstance(results, dict):
-                    logger.info(f"Real backtest completed with results: {results}")
+                    logger.info(f"Real-time backtest completed with results: {results}")
                     
                     # Extract real results
                     final_capital = results.get('final_value', backtest_request.initial_capital)
@@ -786,20 +825,27 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                         status="completed"
                     )
                     
-                    # Broadcast completion with real metrics
+                    # Broadcast completion with real-time tracking metrics
                     await manager.broadcast(json.dumps({
                         "type": "backtest_completed",
                         "session_id": session_id,
                         "status": "completed",
-                        "gpu_accelerated": False,
-                        "real_computation": True,
-                        "engine": "backtrader",
+                        "realtime_tracking": True,
+                        "portfolio_snapshots": len(results.get('portfolio_snapshots', [])),
+                        "execution_time": results.get('execution_time', 0),
+                        "engine": "realtime_backtrader",
                         "data_points": len(loaded_data),
                         "final_capital": final_capital,
-                        "total_return": total_return
+                        "total_return": total_return,
+                        "max_drawdown": max_drawdown,
+                        "total_trades": total_trades
                     }))
                     
-                    logger.info(f"REAL backtest completed for session {session_id}: Final Capital: ${final_capital:.2f}, Return: {total_return*100:.2f}%, Trades: {total_trades}")
+                    logger.info(f"REAL-TIME backtest completed for session {session_id}: "
+                              f"Final Capital: ${final_capital:.2f}, "
+                              f"Return: {total_return*100:.2f}%, "
+                              f"Trades: {total_trades}, "
+                              f"Portfolio Updates: {len(results.get('portfolio_snapshots', []))}")
 
                     # Option 1: Create DataFrame with metrics as rows (key-value pairs)
                     # This creates a two-column DataFrame: Metric | Value
@@ -831,13 +877,13 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     logger.info(f"Backtest results saved to {csv_path} with {len(results_df)} rows")
                     
                 else:
-                    raise Exception("Backtrader engine returned no valid results")
+                    raise Exception("Real-time backtest engine returned no valid results")
             else:
                 raise Exception(f"Failed to load market data for {actual_symbol}")
                 
         except Exception as backtest_error:
-            logger.error(f"Real backtest engine failed: {backtest_error}")
-            raise Exception(f"Real backtesting failed: {backtest_error}")
+            logger.error(f"Real-time backtest engine failed: {backtest_error}")
+            raise Exception(f"Real-time backtesting failed: {backtest_error}")
         
     except Exception as e:
         logger.error(f"Error in REAL backtest task: {e}")
@@ -850,7 +896,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             "type": "backtest_failed",
             "session_id": session_id,
             "error": str(e),
-            "note": "Real backtesting engine failed - no simulation fallback available"
+            "note": "Real-time backtesting engine failed - no simulation fallback available"
         }))
 
 # Additional backtesting endpoints for detailed data

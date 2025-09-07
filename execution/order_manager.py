@@ -2,39 +2,43 @@
 Order Manager Module for Trading Bot
 
 This module handles order placement, modification, and cancellation,
-interacting with the broker connection.
+interacting with the broker connection and portfolio manager.
 """
 
 import logging
 import yaml
 import os
 from datetime import datetime
+from typing import Optional
 
 class OrderManager:
     """
     Manages trading orders, including placement, modification, and cancellation.
-    Interacts with the BrokerConnector to send orders to exchanges.
+    Interacts with the BrokerConnector to send orders to exchanges and updates portfolio.
     """
 
-    def __init__(self, broker_connector, config: dict):
+    def __init__(self, broker_connector, config: dict, portfolio_manager=None):
         """
         Initialize OrderManager.
  
         Args:
             broker_connector: An instance of BrokerConnector for sending orders.
             config (dict): Configuration dictionary.
+            portfolio_manager: Portfolio manager instance for real-time tracking.
         """
         self.broker_connector = broker_connector
         self.config = config
+        self.portfolio_manager = portfolio_manager
         
         self.logger = logging.getLogger(__name__)
         self.logger.info("OrderManager initialized")
         
         self.open_orders = {} # Track open orders: {order_id: order_details}
+        self.executed_trades = {} # Track executed trades for portfolio updates
 
     def place_order(self, symbol: str, order_type: str, side: str, amount: float, price: float = None, **kwargs):
         """
-        Places a new order.
+        Places a new order and updates portfolio tracking.
 
         Args:
             symbol (str): The trading pair or instrument (e.g., 'EUR_USD', 'BTC/USDT').
@@ -60,6 +64,14 @@ class OrderManager:
             if order_details and 'id' in order_details:
                 self.open_orders[order_details['id']] = order_details
                 self.logger.info(f"Order placed successfully: {order_details}")
+                
+                # Update portfolio if order was filled immediately (market orders)
+                if (order_details.get('status') == 'filled' and
+                    self.portfolio_manager and
+                    'trade_id' in order_details):
+                    
+                    self._update_portfolio_for_filled_order(order_details)
+                    
             else:
                 self.logger.error(f"Failed to place order for {symbol}. Details: {order_details}")
             return order_details
@@ -97,7 +109,7 @@ class OrderManager:
 
     def get_order_status(self, order_id: str, symbol: str = None):
         """
-        Retrieves the current status of an order.
+        Retrieves the current status of an order and updates portfolio if filled.
 
         Args:
             order_id (str): The ID of the order.
@@ -111,6 +123,15 @@ class OrderManager:
             status = self.broker_connector.fetch_order_status(order_id, symbol)
             if status:
                 self.logger.info(f"Status for order {order_id}: {status['status']}")
+                
+                # Check if order was just filled and update portfolio
+                if (status['status'] == 'filled' and
+                    order_id in self.open_orders and
+                    self.open_orders[order_id].get('status') != 'filled' and
+                    self.portfolio_manager):
+                    
+                    self._update_portfolio_for_filled_order(status)
+                
                 # Update internal tracking if status changed (e.g., filled, canceled)
                 if status['status'] in ['closed', 'canceled', 'rejected']:
                     if order_id in self.open_orders:
@@ -148,6 +169,104 @@ class OrderManager:
         except Exception as e:
             self.logger.error(f"Error fetching open orders: {str(e)}")
             return []
+    
+    def _update_portfolio_for_filled_order(self, order_details: dict):
+        """
+        Update portfolio manager when an order is filled
+        
+        Args:
+            order_details: Order details from broker
+        """
+        try:
+            if not self.portfolio_manager:
+                return
+            
+            # Extract order information
+            trade_id = order_details.get('trade_id') or order_details.get('id')
+            symbol = order_details.get('symbol')
+            side = order_details.get('side')
+            amount = order_details.get('amount')
+            price = order_details.get('price')
+            
+            # Calculate commission (if available)
+            commission = 0.0
+            if 'info' in order_details:
+                info = order_details['info']
+                if 'orderFillTransaction' in info:
+                    fill_info = info['orderFillTransaction']
+                    if 'commission' in fill_info:
+                        commission = abs(float(fill_info['commission']))
+            
+            # Add position to portfolio manager
+            if all([trade_id, symbol, side, amount, price]):
+                self.portfolio_manager.add_position(
+                    trade_id=str(trade_id),
+                    symbol=symbol,
+                    side=side,
+                    size=float(amount),
+                    entry_price=float(price),
+                    commission=commission
+                )
+                
+                # Store trade details for potential closing
+                self.executed_trades[str(trade_id)] = {
+                    'symbol': symbol,
+                    'side': side,
+                    'amount': amount,
+                    'entry_price': price,
+                    'entry_time': datetime.utcnow(),
+                    'commission': commission
+                }
+                
+                self.logger.info(f"Portfolio updated for filled order {trade_id}: "
+                               f"{side.upper()} {amount} {symbol} @ {price}")
+            else:
+                self.logger.warning(f"Incomplete order details for portfolio update: {order_details}")
+                
+        except Exception as e:
+            self.logger.error(f"Error updating portfolio for filled order: {e}")
+    
+    def close_position(self, trade_id: str, exit_price: float, commission: float = 0.0):
+        """
+        Close a position in the portfolio manager
+        
+        Args:
+            trade_id: Trade ID to close
+            exit_price: Exit price
+            commission: Exit commission
+        """
+        try:
+            if self.portfolio_manager:
+                self.portfolio_manager.close_position(trade_id, exit_price, commission)
+                
+                # Remove from executed trades
+                if trade_id in self.executed_trades:
+                    del self.executed_trades[trade_id]
+                    
+                self.logger.info(f"Position {trade_id} closed at {exit_price}")
+            else:
+                self.logger.warning("No portfolio manager available for position closing")
+                
+        except Exception as e:
+            self.logger.error(f"Error closing position {trade_id}: {e}")
+    
+    def get_portfolio_summary(self) -> dict:
+        """Get current portfolio summary from portfolio manager"""
+        if self.portfolio_manager:
+            return self.portfolio_manager.get_portfolio_summary()
+        else:
+            return {
+                'error': 'Portfolio manager not available',
+                'current_value': 0.0,
+                'total_return': 0.0
+            }
+    
+    def get_current_portfolio_value(self) -> float:
+        """Get current portfolio value"""
+        if self.portfolio_manager:
+            return self.portfolio_manager.get_current_portfolio_value()
+        else:
+            return 0.0
 
 if __name__ == "__main__":
     # Example Usage (requires a mock BrokerConnector for testing)
