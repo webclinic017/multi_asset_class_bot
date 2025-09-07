@@ -546,6 +546,10 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 
                 # Run real backtest
                 results = backtest_engine.run()
+
+                logger.info(f"EK results type: {type(results)}")
+
+                
                 
                 if results and isinstance(results, dict):
                     logger.info(f"Real backtest completed with results: {results}")
@@ -590,6 +594,35 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     }))
                     
                     logger.info(f"REAL backtest completed for session {session_id}: Final Capital: ${final_capital:.2f}, Return: {total_return*100:.2f}%, Trades: {total_trades}")
+
+                    # Option 1: Create DataFrame with metrics as rows (key-value pairs)
+                    # This creates a two-column DataFrame: Metric | Value
+                    results_df = pd.DataFrame(list(results.items()), columns=['Metric', 'Value'])
+                    
+                    # Option 2: Alternative - transpose single row to make columns into rows
+                    # results_df = pd.DataFrame([results]).T.reset_index()
+                    # results_df.columns = ['Metric', 'Value']
+                    
+                    # Option 3: If you want to accumulate multiple backtest runs over time
+                    # Add timestamp and other metadata for historical tracking
+                    # results_with_metadata = {
+                    #     'timestamp': datetime.now().isoformat(),
+                    #     'session_id': session_id,
+                    #     'symbol': actual_symbol,
+                    #     'strategy': strategy.get('name', 'Unknown'),
+                    #     **results
+                    # }
+                    # results_df = pd.DataFrame([results_with_metadata])
+                    
+                    # Ensure the forex_hist_csv directory exists
+                    csv_dir = 'forex_hist_csv'
+                    os.makedirs(csv_dir, exist_ok=True)
+                    
+                    csv_filename = f"bk_results_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+                    csv_path = os.path.join(csv_dir, csv_filename)
+                    
+                    results_df.to_csv(csv_path, index=False)
+                    logger.info(f"Backtest results saved to {csv_path} with {len(results_df)} rows")
                     
                 else:
                     raise Exception("Backtrader engine returned no valid results")
