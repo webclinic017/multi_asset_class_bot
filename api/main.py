@@ -691,6 +691,35 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 if not data_found:
                     logger.warning("No data attributes found in cerebro")
                 
+                # === DATA FEED SHAPE LOGGING ===
+                logger.info("=== DATA FEED SHAPE ANALYSIS ===")
+                logger.info(f"Original DataFrame shape: {df.shape}")
+                logger.info(f"Original DataFrame columns: {list(df.columns)}")
+                logger.info(f"Original DataFrame index type: {type(df.index)}")
+                logger.info(f"Original DataFrame date range: {df.index.min()} to {df.index.max()}")
+                logger.info(f"Original DataFrame first 3 rows:\n{df.head(3)}")
+                logger.info(f"Original DataFrame last 3 rows:\n{df.tail(3)}")
+                logger.info(f"Original DataFrame info:")
+                logger.info(f"  - Non-null counts: {df.count().to_dict()}")
+                logger.info(f"  - Data types: {df.dtypes.to_dict()}")
+                logger.info(f"  - Memory usage: {df.memory_usage(deep=True).sum()} bytes")
+                
+                # Check if loaded_data is different from df
+                if loaded_data is not None and not loaded_data.empty:
+                    logger.info(f"Loaded data shape: {loaded_data.shape}")
+                    logger.info(f"Loaded data columns: {list(loaded_data.columns)}")
+                    logger.info(f"Loaded data index type: {type(loaded_data.index)}")
+                    logger.info(f"Loaded data date range: {loaded_data.index.min()} to {loaded_data.index.max()}")
+                    logger.info(f"Loaded data first 3 rows:\n{loaded_data.head(3)}")
+                    logger.info(f"Loaded data last 3 rows:\n{loaded_data.tail(3)}")
+                    
+                    # Check if data was modified during loading
+                    if not df.equals(loaded_data):
+                        logger.info("⚠️  Data was modified during backtest_engine.load_data()")
+                        logger.info(f"Original shape: {df.shape} vs Loaded shape: {loaded_data.shape}")
+                    else:
+                        logger.info("✅ Data unchanged during backtest_engine.load_data()")
+                
                 # Check broker settings
                 if hasattr(backtest_engine.cerebro, 'broker'):
                     broker = backtest_engine.cerebro.broker
