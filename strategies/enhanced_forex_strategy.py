@@ -312,44 +312,62 @@ class EnhancedForexStrategy(bt.Strategy):
 
     def detect_market_regime(self) -> Tuple[str, float]:
         """
-        Detect current market regime using advanced statistical methods
+        Detect current market regime using advanced statistical methods with progressive data handling
         Returns: (regime_type, confidence_score)
         """
-        if len(self.data) < self.p.regime_lookback:
+        current_data_length = len(self.data)
+        
+        # Use available data, but with minimum requirements
+        min_regime_data = 20  # Minimum for basic regime detection
+        if current_data_length < min_regime_data:
             return 'neutral', 0.0
             
         try:
-            # Get recent price data
-            recent_closes = np.array([self.dataclose[-i] for i in range(self.p.regime_lookback, 0, -1)])
+            # Use available data up to regime_lookback, but at least min_regime_data
+            lookback_period = min(current_data_length - 1, self.p.regime_lookback)
+            lookback_period = max(lookback_period, min_regime_data)
+            
+            # Get recent price data with available lookback
+            recent_closes = np.array([self.dataclose[-i] for i in range(lookback_period, 0, -1)])
             recent_returns = np.diff(np.log(recent_closes))
             
             # Trend detection using linear regression
             x = np.arange(len(recent_closes))
             slope, intercept, r_value, p_value, std_err = stats.linregress(x, recent_closes)
             
-            # Volatility clustering detection
+            # Volatility clustering detection (adapted for shorter periods)
             volatility = np.std(recent_returns) * np.sqrt(252)  # Annualized
-            vol_ma = np.mean([np.std(recent_returns[i:i+10]) for i in range(0, len(recent_returns)-10, 5)])
+            
+            # Adaptive volatility calculation based on available data
+            vol_window = min(10, len(recent_returns) // 2)
+            if vol_window >= 3:
+                vol_segments = [np.std(recent_returns[i:i+vol_window])
+                               for i in range(0, len(recent_returns)-vol_window+1, max(1, vol_window//2))]
+                vol_ma = np.mean(vol_segments) if vol_segments else volatility
+            else:
+                vol_ma = volatility
+                
             vol_ratio = volatility / max(vol_ma, 1e-8) if vol_ma > 0 else 1.0
             
-            # Regime classification
+            # Regime classification with confidence adjustment for data length
             trend_strength = abs(r_value)
+            data_confidence_factor = min(1.0, lookback_period / self.p.regime_lookback)
             
             if trend_strength > self.p.trend_threshold and slope > 0:
                 regime = 'bullish_trend'
-                confidence = min(trend_strength, 0.95)
+                confidence = min(trend_strength * data_confidence_factor, 0.95)
             elif trend_strength > self.p.trend_threshold and slope < 0:
                 regime = 'bearish_trend'
-                confidence = min(trend_strength, 0.95)
+                confidence = min(trend_strength * data_confidence_factor, 0.95)
             elif vol_ratio > 1.5:
                 regime = 'high_volatility'
-                confidence = min(vol_ratio / 2.0, 0.9)
+                confidence = min((vol_ratio / 2.0) * data_confidence_factor, 0.9)
             elif trend_strength < self.p.mean_reversion_threshold:
                 regime = 'mean_reverting'
-                confidence = min((self.p.mean_reversion_threshold - trend_strength) * 2, 0.8)
+                confidence = min((self.p.mean_reversion_threshold - trend_strength) * 2 * data_confidence_factor, 0.8)
             else:
                 regime = 'neutral'
-                confidence = 0.3
+                confidence = 0.3 * data_confidence_factor
                 
             return regime, confidence
             
@@ -756,19 +774,57 @@ class EnhancedForexStrategy(bt.Strategy):
                         self.logger.warning(f"  Bars since submission: {bars_since_submission}")
                         self.logger.warning(f"  Order status: {self.order.getstatusname()}")
         
+        # Enhanced pending order management
         if self.order:
             if self.next_call_count <= 10 or self.next_call_count % 100 == 0:
-                self.logger.info("Skipping next() - pending order exists")
+                self.logger.info("Pending order exists - checking status")
+                
+            # Check for stuck orders and implement timeout
+            if hasattr(self, 'order_submitted_bar'):
+                bars_since_submission = len(self) - self.order_submitted_bar
+                
+                # Log order status periodically
+                if bars_since_submission % 10 == 0:
+                    self.logger.warning(f"Order pending for {bars_since_submission} bars")
+                    self.logger.warning(f"Order status: {self.order.getstatusname()}")
+                    self.logger.warning(f"Order alive: {self.order.alive()}")
+                
+                # Cancel stuck orders after reasonable timeout
+                if bars_since_submission > 20:  # Cancel after 20 bars
+                    self.logger.error(f"*** CANCELING STUCK ORDER ***")
+                    self.logger.error(f"Order {self.order.ref} stuck for {bars_since_submission} bars")
+                    try:
+                        self.cancel(self.order)
+                        self.logger.error(f"Cancellation request sent for order {self.order.ref}")
+                    except Exception as cancel_error:
+                        self.logger.error(f"Failed to cancel order: {cancel_error}")
+                    
+                    # Force clear the order reference to prevent infinite blocking
+                    self.order = None
+                    if hasattr(self, 'order_submitted_bar'):
+                        delattr(self, 'order_submitted_bar')
+                    self.logger.error("Order reference cleared - strategy can continue")
+                    
             return
         
         # === DATA AVAILABILITY CHECK ===
         try:
-            # Check if we have enough data for indicators
-            min_data_required = max(self.p.slow_length, self.p.regime_lookback, self.p.bb_period, self.p.atr_period)
-            if len(self.data) < min_data_required:
+            # Progressive data requirement - start with minimum needed for basic indicators
+            basic_min_data = max(self.p.slow_length, self.p.bb_period, self.p.atr_period)  # ~21 bars
+            advanced_min_data = self.p.regime_lookback  # 75 bars
+            
+            current_data_length = len(self.data)
+            
+            # Allow strategy to run with basic indicators if we have at least basic_min_data
+            if current_data_length < basic_min_data:
                 if self.next_call_count <= 10:
-                    self.logger.info(f"Insufficient data: {len(self.data)} < {min_data_required} required")
+                    self.logger.info(f"Insufficient data for basic indicators: {current_data_length} < {basic_min_data} required")
                 return
+            
+            # Log data availability status
+            if current_data_length < advanced_min_data:
+                if self.next_call_count <= 5:
+                    self.logger.info(f"Running with limited data: {current_data_length}/{advanced_min_data} bars (regime detection disabled)")
             
             # Validate current data
             if self.dataclose[0] <= 0:
@@ -1086,10 +1142,27 @@ class EnhancedForexStrategy(bt.Strategy):
         self.logger.info(f"Order created: {order.created}")
         self.logger.info(f"Order alive: {order.alive()}")
         
-        # Log broker state
-        self.logger.info(f"Broker cash: {self.broker.get_cash():.2f}")
-        self.logger.info(f"Broker value: {self.broker.get_value():.2f}")
-        self.logger.info(f"Current position size: {self.position.size if self.position else 0}")
+        # Enhanced broker state logging with portfolio debugging
+        self.logger.info(f"=== BROKER STATE ANALYSIS ===")
+        broker_cash = self.broker.get_cash()
+        broker_value = self.broker.get_value()
+        self.logger.info(f"Broker cash: {broker_cash:.2f}")
+        self.logger.info(f"Broker value: {broker_value:.2f}")
+        
+        # Debug portfolio calculation
+        if self.position:
+            position_value = self.position.size * self.dataclose[0]
+            total_calculated = broker_cash + position_value
+            self.logger.info(f"Position size: {self.position.size}")
+            self.logger.info(f"Position price: {self.position.price:.5f}")
+            self.logger.info(f"Current market price: {self.dataclose[0]:.5f}")
+            self.logger.info(f"Position market value: {position_value:.2f}")
+            self.logger.info(f"Calculated total (cash + position): {total_calculated:.2f}")
+            self.logger.info(f"Broker reported value: {broker_value:.2f}")
+            self.logger.info(f"Value discrepancy: {abs(total_calculated - broker_value):.2f}")
+        else:
+            self.logger.info(f"No position - cash should equal value")
+            self.logger.info(f"Cash vs Value discrepancy: {abs(broker_cash - broker_value):.2f}")
         
         if order.status in [order.Submitted, order.Accepted]:
             self.logger.info(f"*** ORDER {order.getstatusname().upper()}: {order}")
@@ -1115,16 +1188,47 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.logger.info(f"  Commission: {order.executed.comm:.2f}")
                 self.logger.info(f"  Execution time: {order.executed.dt}")
                 
-            # Log portfolio impact
+            # Enhanced portfolio impact analysis
             self.logger.info(f"*** POST-EXECUTION PORTFOLIO STATE ***")
-            self.logger.info(f"  New broker cash: {self.broker.get_cash():.2f}")
-            self.logger.info(f"  New broker value: {self.broker.get_value():.2f}")
+            new_cash = self.broker.get_cash()
+            new_value = self.broker.get_value()
+            self.logger.info(f"  New broker cash: {new_cash:.2f}")
+            self.logger.info(f"  New broker value: {new_value:.2f}")
             self.logger.info(f"  New position size: {self.position.size}")
-            self.logger.info(f"  Position value: {self.position.size * order.executed.price:.2f}")
+            
+            if self.position.size != 0:
+                position_market_value = self.position.size * self.dataclose[0]
+                self.logger.info(f"  Position market value: {position_market_value:.2f}")
+                expected_total = new_cash + position_market_value
+                self.logger.info(f"  Expected total value: {expected_total:.2f}")
+                self.logger.info(f"  Actual broker value: {new_value:.2f}")
+                
+                # Check for broker calculation issues
+                if abs(expected_total - new_value) > 0.01:
+                    self.logger.error(f"*** BROKER VALUE CALCULATION ERROR ***")
+                    self.logger.error(f"  Expected: {expected_total:.2f}, Actual: {new_value:.2f}")
+                    self.logger.error(f"  Discrepancy: {abs(expected_total - new_value):.2f}")
+                    
+                    # Force broker to recalculate
+                    try:
+                        # Access internal broker methods to force recalculation
+                        if hasattr(self.broker, '_value'):
+                            old_value = self.broker._value
+                            self.logger.error(f"  Broker internal _value: {old_value}")
+                        
+                        # Try to trigger value recalculation
+                        self.broker.get_value()
+                        recalc_value = self.broker.get_value()
+                        self.logger.error(f"  After recalculation: {recalc_value:.2f}")
+                        
+                    except Exception as broker_error:
+                        self.logger.error(f"  Broker recalculation failed: {broker_error}")
                 
             self.log(f'ORDER EXECUTED - {order.getstatusname()} at {order.executed.price:.5f}')
             # Clear order reference after execution
             self.order = None
+            if hasattr(self, 'order_submitted_bar'):
+                delattr(self, 'order_submitted_bar')
             
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
             self.logger.error(f"*** ORDER FAILED: {order.getstatusname()} ***")
