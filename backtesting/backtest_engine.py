@@ -309,6 +309,8 @@ class BacktestEngine:
             
         strategy = strategies[0]  # Get the first strategy instance
 
+        self.logger.info(f"EK log Strategy executed: {strategies[0]}")
+
         self.logger.info("Backtest finished.")
         
         # Get results

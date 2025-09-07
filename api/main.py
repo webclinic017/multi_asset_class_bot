@@ -715,10 +715,10 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     
                     # Check if data was modified during loading
                     if not df.equals(loaded_data):
-                        logger.info("⚠️  Data was modified during backtest_engine.load_data()")
+                        logger.info("Data was modified during backtest_engine.load_data()")
                         logger.info(f"Original shape: {df.shape} vs Loaded shape: {loaded_data.shape}")
                     else:
-                        logger.info("✅ Data unchanged during backtest_engine.load_data()")
+                        logger.info("Data unchanged during backtest_engine.load_data()")
                 
                 # Check broker settings
                 if hasattr(backtest_engine.cerebro, 'broker'):
