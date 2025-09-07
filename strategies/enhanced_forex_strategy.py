@@ -1168,6 +1168,43 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.info(f"*** ORDER {order.getstatusname().upper()}: {order}")
             self.logger.info(f"*** Order is alive: {order.alive()}")
             self.logger.info(f"*** Waiting for execution...")
+            
+            # Enhanced diagnostics for accepted orders that don't execute
+            if order.status == order.Accepted:
+                self.logger.warning(f"*** ORDER ACCEPTED BUT NOT EXECUTING ***")
+                self.logger.warning(f"  Order ref: {order.ref}")
+                self.logger.warning(f"  Order size: {order.size}")
+                self.logger.warning(f"  Order type: {order.ordtype}")
+                self.logger.warning(f"  Current price: {self.dataclose[0]:.5f}")
+                self.logger.warning(f"  Order price: {order.price if order.price else 'Market'}")
+                
+                # Check broker state for execution issues
+                self.logger.warning(f"  Broker cash: {self.broker.get_cash():.2f}")
+                self.logger.warning(f"  Required cash: {order.size * self.dataclose[0]:.2f}")
+                self.logger.warning(f"  Cash sufficient: {self.broker.get_cash() >= order.size * self.dataclose[0]}")
+                
+                # Check if this is a market data issue
+                try:
+                    current_bar_time = self.datas[0].datetime.datetime(0)
+                    self.logger.warning(f"  Current bar time: {current_bar_time}")
+                    self.logger.warning(f"  Data available: {len(self.data)} bars")
+                    self.logger.warning(f"  Price data valid: {self.dataclose[0] > 0}")
+                except Exception as time_error:
+                    self.logger.error(f"  Time/data error: {time_error}")
+                
+                # Check for broker execution issues
+                if hasattr(self.broker, '_orders'):
+                    pending_orders = len([o for o in self.broker._orders if o.alive()])
+                    self.logger.warning(f"  Broker pending orders: {pending_orders}")
+                
+                # Log order execution requirements
+                self.logger.warning(f"*** POTENTIAL EXECUTION BLOCKERS ***")
+                self.logger.warning(f"  1. Insufficient liquidity at current price")
+                self.logger.warning(f"  2. Market closed or no trading session")
+                self.logger.warning(f"  3. Broker execution engine not processing orders")
+                self.logger.warning(f"  4. Order size too small for execution")
+                self.logger.warning(f"  5. Data feed synchronization issues")
+            
             # Don't clear order reference yet - wait for execution
             
         elif order.status in [order.Completed]:
