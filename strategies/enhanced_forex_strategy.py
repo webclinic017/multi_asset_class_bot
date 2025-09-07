@@ -726,6 +726,35 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.info(f"Current price: {self.dataclose[0]:.5f}")
             self.logger.info(f"Current position: {self.position.size if self.position else 0}")
             self.logger.info(f"Pending order: {self.order is not None}")
+            
+            # === BROKER STATE MONITORING ===
+            self.logger.info(f"=== BROKER STATE MONITORING ===")
+            self.logger.info(f"Broker cash: {self.broker.get_cash():.2f}")
+            self.logger.info(f"Broker value: {self.broker.get_value():.2f}")
+            if self.position:
+                self.logger.info(f"Position size: {self.position.size}")
+                self.logger.info(f"Position price: {self.position.price:.5f}")
+                self.logger.info(f"Position value: {self.position.size * self.dataclose[0]:.2f}")
+                self.logger.info(f"Position P&L: {(self.dataclose[0] - self.position.price) * self.position.size:.2f}")
+            else:
+                self.logger.info(f"No open position")
+                
+            # Check for pending orders
+            if self.order:
+                self.logger.info(f"=== PENDING ORDER STATUS ===")
+                self.logger.info(f"Order ref: {self.order.ref}")
+                self.logger.info(f"Order status: {self.order.getstatusname()}")
+                self.logger.info(f"Order alive: {self.order.alive()}")
+                self.logger.info(f"Order size: {self.order.size}")
+                self.logger.info(f"Order type: {self.order.ordtype}")
+                
+                # Check if order is stuck
+                if hasattr(self, 'order_submitted_bar'):
+                    bars_since_submission = len(self) - self.order_submitted_bar
+                    if bars_since_submission > 5:  # Order stuck for more than 5 bars
+                        self.logger.warning(f"*** ORDER POTENTIALLY STUCK ***")
+                        self.logger.warning(f"  Bars since submission: {bars_since_submission}")
+                        self.logger.warning(f"  Order status: {self.order.getstatusname()}")
         
         if self.order:
             if self.next_call_count <= 10 or self.next_call_count % 100 == 0:
@@ -832,11 +861,39 @@ class EnhancedForexStrategy(bt.Strategy):
                         f'Regime: {self.current_regime}, Size: {position_size:.3f}')
                 
                 try:
+                    self.logger.info(f"*** PLACING BUY ORDER ***")
+                    self.logger.info(f"  Pre-order broker cash: {self.broker.get_cash():.2f}")
+                    self.logger.info(f"  Pre-order broker value: {self.broker.get_value():.2f}")
+                    self.logger.info(f"  Order size: {position_size}")
+                    self.logger.info(f"  Current price: {current_price:.5f}")
+                    self.logger.info(f"  Required margin: {position_size * current_price:.2f}")
+                    
+                    # Check if we have enough cash
+                    required_cash = position_size * current_price
+                    available_cash = self.broker.get_cash()
+                    self.logger.info(f"  Cash check: Required {required_cash:.2f}, Available {available_cash:.2f}")
+                    
+                    if required_cash > available_cash:
+                        self.logger.error(f"*** INSUFFICIENT CASH FOR BUY ORDER ***")
+                        self.logger.error(f"  Required: {required_cash:.2f}, Available: {available_cash:.2f}")
+                        return
+                    
                     self.order = self.buy(size=position_size)
                     self.entry_bar = len(self)
-                    self.logger.info(f"BUY ORDER PLACED: {self.order}")
+                    self.order_submitted_bar = len(self)  # Track when order was submitted
+                    
+                    self.logger.info(f"*** BUY ORDER SUBMITTED ***")
+                    self.logger.info(f"  Order reference: {self.order.ref if self.order else 'None'}")
+                    self.logger.info(f"  Order object: {self.order}")
+                    self.logger.info(f"  Order status: {self.order.getstatusname() if self.order else 'None'}")
+                    self.logger.info(f"  Order alive: {self.order.alive() if self.order else 'None'}")
+                    self.logger.info(f"  Submitted at bar: {self.order_submitted_bar}")
+                    
                 except Exception as e:
-                    self.logger.error(f"BUY ORDER FAILED: {e}")
+                    self.logger.error(f"*** BUY ORDER PLACEMENT FAILED ***")
+                    self.logger.error(f"  Error: {e}")
+                    import traceback
+                    self.logger.error(f"  Traceback: {traceback.format_exc()}")
                 
             elif (sell_score_ok and sell_vol_filter_ok and sell_regime_filter_ok):
                 
@@ -855,11 +912,39 @@ class EnhancedForexStrategy(bt.Strategy):
                         f'Regime: {self.current_regime}, Size: {position_size:.3f}')
                 
                 try:
+                    self.logger.info(f"*** PLACING SELL ORDER ***")
+                    self.logger.info(f"  Pre-order broker cash: {self.broker.get_cash():.2f}")
+                    self.logger.info(f"  Pre-order broker value: {self.broker.get_value():.2f}")
+                    self.logger.info(f"  Order size: {position_size}")
+                    self.logger.info(f"  Current price: {current_price:.5f}")
+                    self.logger.info(f"  Required margin: {position_size * current_price:.2f}")
+                    
+                    # Check if we have enough cash for margin
+                    required_cash = position_size * current_price
+                    available_cash = self.broker.get_cash()
+                    self.logger.info(f"  Cash check: Required {required_cash:.2f}, Available {available_cash:.2f}")
+                    
+                    if required_cash > available_cash:
+                        self.logger.error(f"*** INSUFFICIENT CASH FOR SELL ORDER ***")
+                        self.logger.error(f"  Required: {required_cash:.2f}, Available: {available_cash:.2f}")
+                        return
+                    
                     self.order = self.sell(size=position_size)
                     self.entry_bar = len(self)
-                    self.logger.info(f"SELL ORDER PLACED: {self.order}")
+                    self.order_submitted_bar = len(self)  # Track when order was submitted
+                    
+                    self.logger.info(f"*** SELL ORDER SUBMITTED ***")
+                    self.logger.info(f"  Order reference: {self.order.ref if self.order else 'None'}")
+                    self.logger.info(f"  Order object: {self.order}")
+                    self.logger.info(f"  Order status: {self.order.getstatusname() if self.order else 'None'}")
+                    self.logger.info(f"  Order alive: {self.order.alive() if self.order else 'None'}")
+                    self.logger.info(f"  Submitted at bar: {self.order_submitted_bar}")
+                    
                 except Exception as e:
-                    self.logger.error(f"SELL ORDER FAILED: {e}")
+                    self.logger.error(f"*** SELL ORDER PLACEMENT FAILED ***")
+                    self.logger.error(f"  Error: {e}")
+                    import traceback
+                    self.logger.error(f"  Traceback: {traceback.format_exc()}")
                     
             else:
                 # Log why no signal was generated
@@ -993,36 +1078,74 @@ class EnhancedForexStrategy(bt.Strategy):
     def notify_order(self, order):
         """Enhanced order notification with detailed logging"""
         self.logger.info(f"=== ORDER NOTIFICATION ===")
+        self.logger.info(f"Order ID: {order.ref}")
         self.logger.info(f"Order status: {order.getstatusname()}")
         self.logger.info(f"Order type: {order.ordtype}")
         self.logger.info(f"Order size: {order.size}")
         self.logger.info(f"Order price: {order.price if order.price else 'Market'}")
+        self.logger.info(f"Order created: {order.created}")
+        self.logger.info(f"Order alive: {order.alive()}")
+        
+        # Log broker state
+        self.logger.info(f"Broker cash: {self.broker.get_cash():.2f}")
+        self.logger.info(f"Broker value: {self.broker.get_value():.2f}")
+        self.logger.info(f"Current position size: {self.position.size if self.position else 0}")
         
         if order.status in [order.Submitted, order.Accepted]:
-            self.logger.info(f"Order {order.getstatusname()}: {order}")
+            self.logger.info(f"*** ORDER {order.getstatusname().upper()}: {order}")
+            self.logger.info(f"*** Order is alive: {order.alive()}")
+            self.logger.info(f"*** Waiting for execution...")
+            # Don't clear order reference yet - wait for execution
             
         elif order.status in [order.Completed]:
             if order.isbuy():
-                self.logger.info(f"BUY ORDER EXECUTED")
+                self.logger.info(f"*** BUY ORDER EXECUTED ***")
                 self.logger.info(f"  Executed price: {order.executed.price:.5f}")
                 self.logger.info(f"  Executed size: {order.executed.size}")
+                self.logger.info(f"  Executed value: {order.executed.value:.2f}")
                 self.logger.info(f"  Commission: {order.executed.comm:.2f}")
+                self.logger.info(f"  Execution time: {order.executed.dt}")
                 self.buyprice = order.executed.price
                 self.buycomm = order.executed.comm
             else:
-                self.logger.info(f"SELL ORDER EXECUTED")
+                self.logger.info(f"*** SELL ORDER EXECUTED ***")
                 self.logger.info(f"  Executed price: {order.executed.price:.5f}")
                 self.logger.info(f"  Executed size: {order.executed.size}")
+                self.logger.info(f"  Executed value: {order.executed.value:.2f}")
                 self.logger.info(f"  Commission: {order.executed.comm:.2f}")
+                self.logger.info(f"  Execution time: {order.executed.dt}")
+                
+            # Log portfolio impact
+            self.logger.info(f"*** POST-EXECUTION PORTFOLIO STATE ***")
+            self.logger.info(f"  New broker cash: {self.broker.get_cash():.2f}")
+            self.logger.info(f"  New broker value: {self.broker.get_value():.2f}")
+            self.logger.info(f"  New position size: {self.position.size}")
+            self.logger.info(f"  Position value: {self.position.size * order.executed.price:.2f}")
                 
             self.log(f'ORDER EXECUTED - {order.getstatusname()} at {order.executed.price:.5f}')
+            # Clear order reference after execution
+            self.order = None
             
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            self.logger.error(f"ORDER FAILED: {order.getstatusname()}")
+            self.logger.error(f"*** ORDER FAILED: {order.getstatusname()} ***")
+            if hasattr(order, 'info'):
+                self.logger.error(f"  Order info: {order.info}")
+            self.logger.error(f"  Broker cash: {self.broker.get_cash():.2f}")
+            self.logger.error(f"  Broker value: {self.broker.get_value():.2f}")
             self.log(f'ORDER FAILED - {order.getstatusname()}')
+            # Clear order reference on failure
+            self.order = None
             
-        # Clear order reference
-        self.order = None
+        elif order.status in [order.Partial]:
+            self.logger.info(f"*** ORDER PARTIALLY FILLED ***")
+            self.logger.info(f"  Partial execution price: {order.executed.price:.5f}")
+            self.logger.info(f"  Partial execution size: {order.executed.size}")
+            self.logger.info(f"  Remaining size: {order.size - order.executed.size}")
+            # Don't clear order reference - still active
+            
+        else:
+            self.logger.warning(f"*** UNKNOWN ORDER STATUS: {order.status} ({order.getstatusname()}) ***")
+            self.logger.warning(f"  Order details: {order}")
 
     def log(self, txt, dt=None):
         """Enhanced logging with performance metrics"""
