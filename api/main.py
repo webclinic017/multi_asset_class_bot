@@ -433,6 +433,13 @@ async def run_backtest(backtest_request: BacktestRequest, background_tasks: Back
         logger.error(f"Error starting real backtest: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def load_yaml_config(filepath):
+        """Loads a YAML file and returns its content as a Python dictionary."""
+        with open(filepath, 'r') as file:
+            # Use yaml.safe_load() for security, especially with untrusted sources
+            config_data = yaml.safe_load(file)
+        return config_data
+
 async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequest):
     """Background task to run REAL backtesting using actual engines with real market data"""
     try:
@@ -494,6 +501,8 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             raise Exception(f"No market data retrieved for {actual_symbol}")
         
         logger.info(f"Retrieved {len(df)} real market data records for backtesting")
+
+        config_s=load_yaml_config('config/config.yaml')
         
         # Run real backtest using backtrader with actual market data
         try:
@@ -512,8 +521,8 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     'end_date': backtest_request.end_date
                 },
                 'oanda': {
-                    'account_id': config['data']['oanda']['account_id'],
-                    'access_token': config['data']['oanda']['access_token'],
+                    'account_id': config_s['data']['oanda']['account_id'],
+                    'access_token': config_s['data']['oanda']['access_token'],
                     'practice': True
                 }
             }
