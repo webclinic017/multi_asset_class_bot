@@ -435,15 +435,23 @@ async def run_backtest(backtest_request: BacktestRequest, background_tasks: Back
 async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequest):
     """Background task to run REAL backtesting using actual engines with real market data"""
     try:
-        logger.info(f"Starting REAL backtest for session {session_id} using actual market data")
+        logger.info(f"=== STARTING REAL BACKTEST DEBUG SESSION {session_id} ===")
+        logger.info(f"Backtest request details: {backtest_request.dict()}")
         
-        # Get strategy
+        # Get strategy with detailed logging
+        logger.info(f"Fetching strategy with ID: {backtest_request.strategy_id}")
         strategy = db_manager.get_strategy(backtest_request.strategy_id)
         if not strategy:
+            logger.error(f"Strategy not found for ID: {backtest_request.strategy_id}")
             raise Exception("Strategy not found")
+        
+        logger.info(f"Retrieved strategy: {strategy}")
+        logger.info(f"Strategy type: {type(strategy)}")
+        logger.info(f"Strategy keys: {list(strategy.keys()) if isinstance(strategy, dict) else 'Not a dict'}")
         
         # Convert symbol format and check available data
         symbol_db_format = backtest_request.symbol.replace('_', '')  # EUR_USD -> EURUSD
+        logger.info(f"Symbol conversion: {backtest_request.symbol} -> {symbol_db_format}")
         
         # Check what data is actually available
         with db_manager.get_connection() as conn:
@@ -491,7 +499,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             from backtesting.backtest_engine import BacktestEngine
             from data.data_feed import OANDADataFeed
             
-            logger.info("Initializing real backtrader engine with actual market data")
+            logger.info("=== INITIALIZING BACKTEST ENGINE ===")
             
             # Create config for backtest engine
             config = {
@@ -508,9 +516,12 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     'practice': True
                 }
             }
+            logger.info(f"Backtest engine config: {config}")
             
             # Initialize backtest engine
             backtest_engine = BacktestEngine(config=config)
+            logger.info(f"Backtest engine initialized: {type(backtest_engine)}")
+            logger.info(f"Backtest engine attributes: {[attr for attr in dir(backtest_engine) if not attr.startswith('_')]}")
             
             # Create a custom data feed that uses our real database data
             class DatabaseDataFeed:
@@ -522,16 +533,23 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             
             # Set the data feed with real data
             backtest_engine.data_feed = DatabaseDataFeed(df)
+            logger.info(f"Data feed set on backtest engine: {type(backtest_engine.data_feed)}")
             
             # Load the real data
             asset_type = strategy.get('asset_class', 'forex')
+            logger.info(f"Asset type from strategy: {asset_type}")
             loaded_data = backtest_engine.load_data(actual_symbol, asset_type, actual_timeframe)
             
             if loaded_data is not None and not loaded_data.empty:
                 logger.info(f"Successfully loaded {len(loaded_data)} real data points for backtesting")
                 
+                # === DETAILED STRATEGY PARAMETER LOGGING ===
+                logger.info("=== STRATEGY PARAMETER EXTRACTION AND PROCESSING ===")
+                
                 # Map strategy name to class name
                 strategy_name = strategy.get('name', 'ForexStrategy')
+                logger.info(f"Original strategy name from DB: '{strategy_name}'")
+                
                 if 'Enhanced' in strategy_name:
                     strategy_class_name = 'EnhancedForexStrategy'
                 elif 'Scalping' in strategy_name:
@@ -539,15 +557,115 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 else:
                     strategy_class_name = 'ForexStrategy'
                 
-                # Add strategy with real parameters
-                strategy_params = strategy.get('parameters', {})
+                logger.info(f"Mapped strategy class name: '{strategy_class_name}'")
+                
+                # Extract strategy parameters with detailed logging
+                logger.info("=== EXTRACTING STRATEGY PARAMETERS ===")
+                raw_strategy_params = strategy.get('parameters', {})
+                logger.info(f"Raw strategy parameters from DB: {raw_strategy_params}")
+                logger.info(f"Raw parameters type: {type(raw_strategy_params)}")
+                
+                if raw_strategy_params is None:
+                    logger.warning("Strategy parameters is None, using empty dict")
+                    raw_strategy_params = {}
+                
+                # Create a copy for modification
+                strategy_params = raw_strategy_params.copy() if isinstance(raw_strategy_params, dict) else {}
+                logger.info(f"Strategy parameters after copy: {strategy_params}")
+                
+                # Add printlog parameter
+                logger.info("=== MODIFYING STRATEGY PARAMETERS ===")
+                logger.info(f"Setting printlog=False (was: {strategy_params.get('printlog', 'not set')})")
                 strategy_params['printlog'] = False
-                backtest_engine.add_strategy(strategy_class_name, **strategy_params)
+                
+                logger.info(f"Final strategy parameters dictionary: {strategy_params}")
+                logger.info(f"Final parameters type: {type(strategy_params)}")
+                logger.info(f"Final parameters keys: {list(strategy_params.keys())}")
+                
+                # Log each parameter individually
+                logger.info("=== INDIVIDUAL PARAMETER VALUES ===")
+                for key, value in strategy_params.items():
+                    logger.info(f"  {key}: {value} (type: {type(value)})")
+                
+                # Validate parameters before passing to engine
+                logger.info("=== PARAMETER VALIDATION ===")
+                if not isinstance(strategy_params, dict):
+                    logger.error(f"Strategy parameters is not a dict: {type(strategy_params)}")
+                    strategy_params = {}
+                
+                # Log the actual method call
+                logger.info("=== CALLING BACKTEST ENGINE ADD_STRATEGY ===")
+                logger.info(f"Method: backtest_engine.add_strategy")
+                logger.info(f"Strategy class name argument: '{strategy_class_name}'")
+                logger.info(f"Keyword arguments being passed: {strategy_params}")
+                
+                # Add strategy with real parameters
+                try:
+                    backtest_engine.add_strategy(strategy_class_name, **strategy_params)
+                    logger.info("✅ Successfully called backtest_engine.add_strategy()")
+                except Exception as strategy_add_error:
+                    logger.error(f"❌ Error calling add_strategy: {strategy_add_error}")
+                    logger.error(f"Strategy class name: {strategy_class_name}")
+                    logger.error(f"Parameters passed: {strategy_params}")
+                    raise
+                
+                # === BACKTEST ENGINE STATE BEFORE EXECUTION ===
+                logger.info("=== BACKTEST ENGINE STATE BEFORE EXECUTION ===")
+                logger.info(f"Engine cerebro object: {type(backtest_engine.cerebro)}")
+                logger.info(f"Engine initial capital: {backtest_engine.initial_capital}")
+                logger.info(f"Engine commission: {backtest_engine.commission}")
+                logger.info(f"Engine slippage: {backtest_engine.slippage}")
+                logger.info(f"Engine start_date: {backtest_engine.start_date}")
+                logger.info(f"Engine end_date: {backtest_engine.end_date}")
+                
+                # Check cerebro strategies
+                if hasattr(backtest_engine.cerebro, '_strats'):
+                    logger.info(f"Number of strategies in cerebro: {len(backtest_engine.cerebro._strats)}")
+                    for i, strat in enumerate(backtest_engine.cerebro._strats):
+                        logger.info(f"Strategy {i}: {strat}")
+                        if hasattr(strat, '_args'):
+                            logger.info(f"Strategy {i} args: {strat._args}")
+                        if hasattr(strat, '_kwargs'):
+                            logger.info(f"Strategy {i} kwargs: {strat._kwargs}")
+                else:
+                    logger.warning("Cerebro does not have _strats attribute")
+                
+                # Check cerebro data feeds
+                if hasattr(backtest_engine.cerebro, 'datas'):
+                    logger.info(f"Number of data feeds in cerebro: {len(backtest_engine.cerebro.datas)}")
+                    for i, data in enumerate(backtest_engine.cerebro.datas):
+                        logger.info(f"Data feed {i}: {type(data)} - {data}")
+                        if hasattr(data, '_name'):
+                            logger.info(f"Data feed {i} name: {data._name}")
+                        if hasattr(data, 'params'):
+                            logger.info(f"Data feed {i} params: {data.params}")
+                else:
+                    logger.warning("Cerebro does not have datas attribute")
+                
+                # Check broker settings
+                if hasattr(backtest_engine.cerebro, 'broker'):
+                    broker = backtest_engine.cerebro.broker
+                    logger.info(f"Broker type: {type(broker)}")
+                    logger.info(f"Broker cash: {broker.getcash()}")
+                    logger.info(f"Broker value: {broker.getvalue()}")
+                    if hasattr(broker, '_commission'):
+                        logger.info(f"Broker commission: {broker._commission}")
+                else:
+                    logger.warning("Cerebro does not have broker attribute")
+                
+                # Log any analyzers
+                if hasattr(backtest_engine.cerebro, '_analyzers'):
+                    logger.info(f"Number of analyzers: {len(backtest_engine.cerebro._analyzers)}")
+                    for i, analyzer in enumerate(backtest_engine.cerebro._analyzers):
+                        logger.info(f"Analyzer {i}: {analyzer}")
                 
                 # Run real backtest
+                logger.info("=== EXECUTING BACKTEST ===")
                 results = backtest_engine.run()
 
-                logger.info(f"EK results type: {type(results)}")
+                logger.info(f"=== BACKTEST EXECUTION COMPLETED ===")
+                logger.info(f"Results type: {type(results)}")
+                logger.info(f"Results content: {results}")
 
                 
                 
