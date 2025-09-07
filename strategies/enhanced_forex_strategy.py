@@ -934,16 +934,30 @@ class EnhancedForexStrategy(bt.Strategy):
                         self.logger.error(f"  Required: {required_cash:.2f}, Available: {available_cash:.2f}")
                         return
                     
-                    self.order = self.buy(size=position_size)
+                    # CRITICAL FIX: Use Market order with immediate execution
+                    self.order = self.buy(size=position_size, exectype=bt.Order.Market)
                     self.entry_bar = len(self)
                     self.order_submitted_bar = len(self)  # Track when order was submitted
                     
                     self.logger.info(f"*** BUY ORDER SUBMITTED ***")
                     self.logger.info(f"  Order reference: {self.order.ref if self.order else 'None'}")
                     self.logger.info(f"  Order object: {self.order}")
+                    self.logger.info(f"  Order exectype: Market")
                     self.logger.info(f"  Order status: {self.order.getstatusname() if self.order else 'None'}")
                     self.logger.info(f"  Order alive: {self.order.alive() if self.order else 'None'}")
                     self.logger.info(f"  Submitted at bar: {self.order_submitted_bar}")
+                    
+                    # CRITICAL: Check if notify_order callback will be triggered
+                    self.logger.info(f"*** CHECKING ORDER PROCESSING ***")
+                    self.logger.info(f"  Strategy has notify_order method: {hasattr(self, 'notify_order')}")
+                    self.logger.info(f"  Broker type: {type(self.broker)}")
+                    self.logger.info(f"  Broker has _orders: {hasattr(self.broker, '_orders')}")
+                    
+                    if hasattr(self.broker, '_orders'):
+                        pending_orders = [o for o in self.broker._orders if o.alive()]
+                        self.logger.info(f"  Broker pending orders count: {len(pending_orders)}")
+                        for i, pending_order in enumerate(pending_orders):
+                            self.logger.info(f"    Pending order {i}: {pending_order.ref} - {pending_order.getstatusname()}")
                     
                 except Exception as e:
                     self.logger.error(f"*** BUY ORDER PLACEMENT FAILED ***")
@@ -985,16 +999,30 @@ class EnhancedForexStrategy(bt.Strategy):
                         self.logger.error(f"  Required: {required_cash:.2f}, Available: {available_cash:.2f}")
                         return
                     
-                    self.order = self.sell(size=position_size)
+                    # CRITICAL FIX: Use Market order with immediate execution
+                    self.order = self.sell(size=position_size, exectype=bt.Order.Market)
                     self.entry_bar = len(self)
                     self.order_submitted_bar = len(self)  # Track when order was submitted
                     
                     self.logger.info(f"*** SELL ORDER SUBMITTED ***")
                     self.logger.info(f"  Order reference: {self.order.ref if self.order else 'None'}")
                     self.logger.info(f"  Order object: {self.order}")
+                    self.logger.info(f"  Order exectype: Market")
                     self.logger.info(f"  Order status: {self.order.getstatusname() if self.order else 'None'}")
                     self.logger.info(f"  Order alive: {self.order.alive() if self.order else 'None'}")
                     self.logger.info(f"  Submitted at bar: {self.order_submitted_bar}")
+                    
+                    # CRITICAL: Check if notify_order callback will be triggered
+                    self.logger.info(f"*** CHECKING ORDER PROCESSING ***")
+                    self.logger.info(f"  Strategy has notify_order method: {hasattr(self, 'notify_order')}")
+                    self.logger.info(f"  Broker type: {type(self.broker)}")
+                    self.logger.info(f"  Broker has _orders: {hasattr(self.broker, '_orders')}")
+                    
+                    if hasattr(self.broker, '_orders'):
+                        pending_orders = [o for o in self.broker._orders if o.alive()]
+                        self.logger.info(f"  Broker pending orders count: {len(pending_orders)}")
+                        for i, pending_order in enumerate(pending_orders):
+                            self.logger.info(f"    Pending order {i}: {pending_order.ref} - {pending_order.getstatusname()}")
                     
                 except Exception as e:
                     self.logger.error(f"*** SELL ORDER PLACEMENT FAILED ***")
