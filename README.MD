@@ -2,6 +2,7 @@
 
 ### 📈 **Running in windows cmd**
 - Activate python venv and install pip -r requirements.txt
+- Web app frontend at http://localhost:8000/backtesting
 - python historical_data.py to save historical data to sql lite db to avoid api calls for backtesting
 - python load_real_data.py
 - netstat -ano | findstr :8000
