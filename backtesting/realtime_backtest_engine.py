@@ -44,6 +44,15 @@ class RealTimeBacktestEngine(BacktestEngine):
         self.session_id = session_id
         self.logger = logging.getLogger(__name__)
         
+        # Replace default broker with real-time broker for immediate execution
+        from backtesting.realtime_broker import create_realtime_broker
+        realtime_broker = create_realtime_broker(
+            initial_cash=self.initial_capital,
+            commission=self.commission
+        )
+        self.cerebro.broker = realtime_broker
+        self.logger.info(f"Real-time broker installed for immediate order execution")
+        
         # Real-time tracking
         self.portfolio_snapshots = []
         self.current_bar = 0

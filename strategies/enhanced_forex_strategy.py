@@ -155,6 +155,11 @@ class EnhancedForexStrategy(bt.Strategy):
         self.logger.info("=== ENHANCED FOREX STRATEGY INITIALIZATION ===")
         self.logger.info(f"Strategy parameters received: {dict(self.params._getitems())}")
         
+        # Initialize portfolio value tracker for accurate portfolio tracking
+        from execution.portfolio_value_tracker import get_portfolio_tracker
+        self.portfolio_tracker = get_portfolio_tracker(10000.0)
+        self.logger.info("Portfolio value tracker initialized")
+        
         # Basic price data
         self.dataclose = self.datas[0].close
         self.datahigh = self.datas[0].high
@@ -1065,7 +1070,7 @@ class EnhancedForexStrategy(bt.Strategy):
             target_price = self.buyprice * (1 + target_distance)
             
             # Implement trailing stop logic
-            if not hasattr(self, 'highest_price_long'):
+            if not hasattr(self, 'highest_price_long') or self.highest_price_long is None:
                 self.highest_price_long = current_price
             else:
                 self.highest_price_long = max(self.highest_price_long, current_price)
@@ -1117,7 +1122,7 @@ class EnhancedForexStrategy(bt.Strategy):
             target_price = self.buyprice * (1 - target_distance)
             
             # Implement trailing stop logic for short
-            if not hasattr(self, 'lowest_price_short'):
+            if not hasattr(self, 'lowest_price_short') or self.lowest_price_short is None:
                 self.lowest_price_short = current_price
             else:
                 self.lowest_price_short = min(self.lowest_price_short, current_price)
@@ -1253,7 +1258,7 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.logger.info(f"  Commission: {order.executed.comm:.2f}")
                 self.logger.info(f"  Execution time: {order.executed.dt}")
                 
-            # Enhanced portfolio impact analysis
+            # Enhanced portfolio impact analysis with FORCED VALUE CORRECTION
             self.logger.info(f"*** POST-EXECUTION PORTFOLIO STATE ***")
             new_cash = self.broker.get_cash()
             new_value = self.broker.get_value()
@@ -1261,33 +1266,48 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.info(f"  New broker value: {new_value:.2f}")
             self.logger.info(f"  New position size: {self.position.size}")
             
-            if self.position.size != 0:
-                position_market_value = self.position.size * self.dataclose[0]
-                self.logger.info(f"  Position market value: {position_market_value:.2f}")
-                expected_total = new_cash + position_market_value
-                self.logger.info(f"  Expected total value: {expected_total:.2f}")
-                self.logger.info(f"  Actual broker value: {new_value:.2f}")
+            # Update portfolio tracker with execution details
+            if order.isbuy():
+                self.portfolio_tracker.update_cash(new_cash)
+                self.portfolio_tracker.add_position(
+                    symbol="EUR_USD",  # Assuming EUR_USD for forex
+                    size=order.executed.size,
+                    entry_price=order.executed.price,
+                    commission=order.executed.comm
+                )
+            else:  # sell order
+                self.portfolio_tracker.close_position(
+                    symbol="EUR_USD",
+                    exit_price=order.executed.price,
+                    commission=order.executed.comm
+                )
+            
+            # Get correct portfolio value from tracker
+            correct_portfolio_value = self.portfolio_tracker.get_total_portfolio_value()
+            portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+            
+            self.logger.info(f"*** PORTFOLIO VALUE TRACKER RESULTS ***")
+            self.logger.info(f"  Tracker portfolio value: ${correct_portfolio_value:.2f}")
+            self.logger.info(f"  Tracker total return: {portfolio_summary['total_return']:.2f}%")
+            self.logger.info(f"  Tracker unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+            self.logger.info(f"  Tracker realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+            
+            # Force broker value correction if there's a discrepancy
+            if abs(correct_portfolio_value - new_value) > 0.01:
+                self.logger.error(f"*** BROKER VALUE DISCREPANCY DETECTED ***")
+                self.logger.error(f"  Broker reported: ${new_value:.2f}")
+                self.logger.error(f"  Correct value: ${correct_portfolio_value:.2f}")
+                self.logger.error(f"  Discrepancy: ${abs(correct_portfolio_value - new_value):.2f}")
                 
-                # Check for broker calculation issues
-                if abs(expected_total - new_value) > 0.01:
-                    self.logger.error(f"*** BROKER VALUE CALCULATION ERROR ***")
-                    self.logger.error(f"  Expected: {expected_total:.2f}, Actual: {new_value:.2f}")
-                    self.logger.error(f"  Discrepancy: {abs(expected_total - new_value):.2f}")
-                    
-                    # Force broker to recalculate
-                    try:
-                        # Access internal broker methods to force recalculation
-                        if hasattr(self.broker, '_value'):
-                            old_value = self.broker._value
-                            self.logger.error(f"  Broker internal _value: {old_value}")
-                        
-                        # Try to trigger value recalculation
-                        self.broker.get_value()
-                        recalc_value = self.broker.get_value()
-                        self.logger.error(f"  After recalculation: {recalc_value:.2f}")
-                        
-                    except Exception as broker_error:
-                        self.logger.error(f"  Broker recalculation failed: {broker_error}")
+                # Force correct value
+                success = self.portfolio_tracker.force_broker_value_update(self.broker)
+                if success:
+                    updated_value = self.broker.get_value()
+                    self.logger.info(f"*** BROKER VALUE CORRECTED: ${updated_value:.2f} ***")
+                else:
+                    self.logger.error("*** FAILED TO CORRECT BROKER VALUE ***")
+            else:
+                self.logger.info(f"*** PORTFOLIO VALUES MATCH - NO CORRECTION NEEDED ***")
                 
             self.log(f'ORDER EXECUTED - {order.getstatusname()} at {order.executed.price:.5f}')
             # Clear order reference after execution
