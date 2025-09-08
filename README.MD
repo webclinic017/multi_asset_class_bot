@@ -301,7 +301,8 @@ multi_asset_bot/
 │   ├── optimization_log.json          # Optimization history
 │   └── *.csv                         # Optimization results
 ├── enhanced_fast_optimize.py          # Enhanced optimization script
-├── main.py                           # Main application entry point
+├── main.py                            # Main application entry point
+├── web_server.py                      # Entry point for webserver
 └── README.md                         # This documentation
 ```
 
