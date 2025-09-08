@@ -22,7 +22,7 @@ class RealTimeBroker(bt.brokers.BackBroker):
         self.execution_count = 0
         self.pending_orders = []
         
-    def submit(self, order):
+    def submit(self, order, check=True):
         """Override submit to force immediate execution of market orders"""
         self.logger.info(f"=== BROKER SUBMIT CALLED ===")
         self.logger.info(f"Order ref: {order.ref}")
