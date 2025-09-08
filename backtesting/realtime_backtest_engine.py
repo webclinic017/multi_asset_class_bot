@@ -82,12 +82,20 @@ class RealTimeBacktestEngine(BacktestEngine):
         
         try:
             # Add custom analyzer for real-time tracking
-            self.cerebro.addanalyzer(RealTimePortfolioAnalyzer, 
-                                   _name='realtime_portfolio',
-                                   engine=self)
+            self.cerebro.addanalyzer(RealTimePortfolioAnalyzer,
+                                   _name='realtime_portfolio')
+            
+            # Store engine reference for analyzer access
+            self.cerebro._engine_ref = self
             
             # Run the standard backtest
             results = super().run()
+            
+            # Set engine reference in analyzer after strategies are created
+            if hasattr(self.cerebro, '_analyzers'):
+                for analyzer in self.cerebro._analyzers:
+                    if hasattr(analyzer[0], 'engine') and analyzer[0].engine is None:
+                        analyzer[0].engine = self
             
             # Stop real-time updates
             self.is_running = False
@@ -236,22 +244,30 @@ class RealTimePortfolioAnalyzer(bt.Analyzer):
     and updates the real-time backtest engine
     """
     
+    params = (
+        ('engine', None),  # Will be set by the backtest engine
+    )
+    
     def __init__(self):
         super(RealTimePortfolioAnalyzer, self).__init__()
-        self.engine = self.p.engine
+        self.engine = None  # Will be set after initialization
         self.trade_count = 0
         self.bar_count = 0
         
     def start(self):
         """Called when backtest starts"""
-        self.engine.logger.info("Real-time portfolio analyzer started")
+        # Get engine reference from strategy's cerebro
+        if hasattr(self.strategy, '_owner') and hasattr(self.strategy._owner, '_engine_ref'):
+            self.engine = self.strategy._owner._engine_ref
+        if self.engine:
+            self.engine.logger.info("Real-time portfolio analyzer started")
         
     def next(self):
         """Called on each bar"""
         self.bar_count += 1
         
         # Update progress every 10 bars to avoid too frequent updates
-        if self.bar_count % 10 == 0:
+        if self.bar_count % 10 == 0 and self.engine:
             # Estimate total bars (this is approximate)
             total_bars = len(self.strategy.datas[0]) if hasattr(self.strategy, 'datas') and self.strategy.datas else 1000
             self.engine.update_progress(self.bar_count, total_bars)
@@ -260,31 +276,33 @@ class RealTimePortfolioAnalyzer(bt.Analyzer):
         """Called when a trade is closed"""
         if trade.isclosed:
             self.trade_count += 1
-            self.engine.update_trade_count(self.trade_count)
-            
-            # Log trade details
-            self.engine.logger.info(f"Trade #{self.trade_count} closed: "
-                                  f"P&L: {trade.pnl:.2f}, "
-                                  f"Portfolio Value: {self.strategy.broker.getvalue():.2f}")
+            if self.engine:
+                self.engine.update_trade_count(self.trade_count)
+                
+                # Log trade details
+                self.engine.logger.info(f"Trade #{self.trade_count} closed: "
+                                      f"P&L: {trade.pnl:.2f}, "
+                                      f"Portfolio Value: {self.strategy.broker.getvalue():.2f}")
     
     def notify_order(self, order):
         """Called when an order status changes"""
-        if order.status in [order.Completed]:
+        if order.status in [order.Completed] and self.engine:
             # Force a portfolio update when orders are executed
             self.engine._update_portfolio_snapshot()
     
     def stop(self):
         """Called when backtest ends"""
-        self.engine.logger.info(f"Real-time portfolio analyzer stopped. "
-                              f"Total trades: {self.trade_count}, "
-                              f"Total bars: {self.bar_count}")
+        if self.engine:
+            self.engine.logger.info(f"Real-time portfolio analyzer stopped. "
+                                  f"Total trades: {self.trade_count}, "
+                                  f"Total bars: {self.bar_count}")
     
     def get_analysis(self):
         """Return analysis results"""
         return {
             'total_trades': self.trade_count,
             'total_bars': self.bar_count,
-            'portfolio_snapshots': len(self.engine.portfolio_snapshots)
+            'portfolio_snapshots': len(self.engine.portfolio_snapshots) if self.engine else 0
         }
 
 # Integration function for the API
