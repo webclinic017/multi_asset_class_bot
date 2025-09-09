@@ -18,6 +18,10 @@ class RealTimeBroker(bt.brokers.BackBroker):
         self.logger = logging.getLogger(__name__)
         self.logger.info("RealTimeBroker initialized for immediate order execution")
         
+        # Initialize cash and value properly - use the parent class method
+        self.cash = 10000.0  # Set initial cash
+        self.value = 10000.0  # Set initial portfolio value
+        
         # Track execution for debugging
         self.execution_count = 0
         self.pending_orders = []
@@ -91,59 +95,28 @@ class RealTimeBroker(bt.brokers.BackBroker):
             # Update order status to completed
             order.completed()
             
-            # Update broker state
+            # Update broker state using proper cash management
             if order.isbuy():
                 # Buy order: reduce cash, increase position
-                self._cash -= (value + order.executed.comm)
-                self.logger.info(f"Buy execution: Cash reduced by {value + order.executed.comm:.2f}")
+                if self.cash >= (value + order.executed.comm):
+                    self.cash -= (value + order.executed.comm)
+                    self.logger.info(f"Buy execution: Cash reduced by {value + order.executed.comm:.2f}")
+                else:
+                    order.reject()
+                    self.logger.error(f"Insufficient cash for buy order: {value + order.executed.comm:.2f} > {self.cash:.2f}")
+                    return
             else:
                 # Sell order: increase cash, reduce position
-                self._cash += (value - order.executed.comm)
+                self.cash += (value - order.executed.comm)
                 self.logger.info(f"Sell execution: Cash increased by {value - order.executed.comm:.2f}")
             
-            # CRITICAL FIX: Force immediate portfolio value recalculation
-            self._value = None  # Clear cached value
-            
-            # Force update of all position values
-            if hasattr(self, '_positions'):
-                for data_feed, position_size in self._positions.items():
-                    if position_size != 0:
-                        current_price = data_feed.close[0]
-                        self.logger.info(f"Position update: {position_size} units @ {current_price:.5f}")
-            
-            # Force complete value recalculation
-            new_value = self.get_value()
-            
-            # Double-check the calculation manually
-            total_cash = self.get_cash()
-            total_position_value = 0
-            
-            if hasattr(self, '_positions'):
-                for data_feed, position_size in self._positions.items():
-                    if position_size != 0:
-                        current_price = data_feed.close[0]
-                        position_value = position_size * current_price
-                        total_position_value += position_value
-                        self.logger.info(f"Position value calculation: {position_size} * {current_price:.5f} = {position_value:.2f}")
-            
-            manual_total = total_cash + total_position_value
-            self.logger.info(f"Manual portfolio calculation: Cash({total_cash:.2f}) + Positions({total_position_value:.2f}) = {manual_total:.2f}")
-            self.logger.info(f"Broker get_value() result: {new_value:.2f}")
-            
-            if abs(manual_total - new_value) > 0.01:
-                self.logger.error(f"*** PORTFOLIO VALUE MISMATCH ***")
-                self.logger.error(f"Manual calculation: {manual_total:.2f}")
-                self.logger.error(f"Broker get_value(): {new_value:.2f}")
-                self.logger.error(f"Difference: {abs(manual_total - new_value):.2f}")
-                
-                # Force the correct value
-                self._value = manual_total
-                self.logger.error(f"*** FORCING CORRECT PORTFOLIO VALUE: {manual_total:.2f} ***")
+            # Update portfolio value
+            self._update_value()
             
             self.execution_count += 1
             self.logger.info(f"*** IMMEDIATE EXECUTION #{self.execution_count} COMPLETED ***")
             self.logger.info(f"  Final cash: {self.get_cash():.2f}")
-            self.logger.info(f"  Final value: {new_value:.2f}")
+            self.logger.info(f"  Final value: {self.get_value():.2f}")
             
         except Exception as e:
             self.logger.error(f"Error in immediate execution: {e}")
@@ -166,34 +139,51 @@ class RealTimeBroker(bt.brokers.BackBroker):
         
         return result
     
-    def get_value(self, datas=None, mkt=False, lever=False):
-        """Override get_value to ensure accurate portfolio calculation"""
+    
+    def _update_value(self):
+        """Update the total portfolio value"""
         try:
-            # Force recalculation of portfolio value
-            value = super().get_value(datas, mkt, lever)
+            # Calculate total value = cash + positions value
+            positions_value = 0
+            if hasattr(self, 'cerebro') and self.cerebro:
+                for data in self.cerebro.datas:
+                    position = self.getposition(data)
+                    if position.size != 0:
+                        current_price = data.close[0]
+                        positions_value += position.size * current_price
             
-            # Debug portfolio calculation
-            if hasattr(self, '_positions') and self._positions:
-                total_position_value = 0
-                for data, position in self._positions.items():
-                    if position:
-                        current_price = data.close[0] if hasattr(data, 'close') else 0
-                        position_value = position * current_price
-                        total_position_value += position_value
-                
-                calculated_value = self.get_cash() + total_position_value
-                
-                if abs(calculated_value - value) > 0.01:
-                    self.logger.debug(f"Portfolio calculation: Cash={self.get_cash():.2f}, "
-                                    f"Positions={total_position_value:.2f}, "
-                                    f"Calculated={calculated_value:.2f}, "
-                                    f"Broker={value:.2f}")
-            
-            return value
+            self.value = self.cash + positions_value
             
         except Exception as e:
-            self.logger.error(f"Error calculating portfolio value: {e}")
-            return super().get_value(datas, mkt, lever)
+            self.logger.error(f"Error updating portfolio value: {e}")
+
+    def get_cash(self):
+        """Return current cash"""
+        return self.cash
+    
+    def get_value(self, datas=None, mkt=False, lever=False):
+        """Return current portfolio value"""
+        try:
+            # Update value first
+            self._update_value()
+            return self.value
+        except Exception as e:
+            self.logger.error(f"Error getting portfolio value: {e}")
+            return self.value
+        
+    def getcash(self):
+        """Backtrader compatibility method"""
+        return self.get_cash()
+        
+    def getvalue(self):
+        """Backtrader compatibility method"""
+        return self.get_value()
+    
+    def set_cash(self, cash):
+        """Set cash amount"""
+        self.cash = float(cash)
+        self.value = self.cash  # Reset value when cash is set
+        self.logger.info(f"Cash set to: ${self.cash:.2f}")
 
 def create_realtime_broker(initial_cash=10000.0, commission=0.001):
     """
