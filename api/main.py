@@ -603,10 +603,19 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 
                 if 'Enhanced' in strategy_name:
                     strategy_class_name = 'EnhancedForexStrategy'
+                elif 'Realtime Scalping 1M' in strategy_name:
+                    strategy_class_name = 'RealtimeScalping1MStrategy'
+                elif 'Realtime Scalping 5M' in strategy_name:
+                    strategy_class_name = 'RealtimeScalping5MStrategy'
+                elif 'Scalping' in strategy_name and '1M' in strategy_name:
+                    strategy_class_name = 'RealtimeScalping1MStrategy'
+                elif 'Scalping' in strategy_name and '5M' in strategy_name:
+                    strategy_class_name = 'RealtimeScalping5MStrategy'
                 elif 'Scalping' in strategy_name:
-                    strategy_class_name = 'ForexStrategy'
+                    # Default scalping to 1M strategy
+                    strategy_class_name = 'RealtimeScalping1MStrategy'
                 else:
-                    strategy_class_name = 'ForexStrategy'
+                    strategy_class_name = 'EnhancedForexStrategy'
                 
                 logger.info(f"Mapped strategy class name: '{strategy_class_name}'")
                 
@@ -623,6 +632,60 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 # Create a copy for modification
                 strategy_params = raw_strategy_params.copy() if isinstance(raw_strategy_params, dict) else {}
                 logger.info(f"Strategy parameters after copy: {strategy_params}")
+                
+                # === PARAMETER CONVERSION FOR OLD SCALPING STRATEGIES ===
+                logger.info("=== CONVERTING OLD SCALPING PARAMETERS ===")
+                if 'Scalping' in strategy_name and strategy_class_name in ['RealtimeScalping1MStrategy', 'RealtimeScalping5MStrategy']:
+                    # Convert old parameter names to new ones
+                    param_mapping = {
+                        'fast_ema': 'fast_length',
+                        'slow_ema': 'slow_length',
+                        'signal_ema': 'signal_length',
+                        'stop_loss_pips': 'base_stop_loss',
+                        'take_profit_pips': 'base_take_profit'
+                    }
+                    
+                    converted_params = {}
+                    for old_param, new_param in param_mapping.items():
+                        if old_param in strategy_params:
+                            old_value = strategy_params[old_param]
+                            logger.info(f"Converting {old_param}={old_value} to {new_param}")
+                            
+                            # Convert pip values to percentage values
+                            if old_param in ['stop_loss_pips', 'take_profit_pips']:
+                                # Convert pips to percentage (assuming EUR_USD where 1 pip = 0.0001)
+                                if old_param == 'stop_loss_pips':
+                                    converted_params[new_param] = old_value * 0.0001  # 3 pips = 0.0003
+                                elif old_param == 'take_profit_pips':
+                                    converted_params[new_param] = old_value * 0.0001  # 6 pips = 0.0006
+                            else:
+                                converted_params[new_param] = old_value
+                    
+                    # Add the converted parameters
+                    strategy_params.update(converted_params)
+                    
+                    # Add default parameters for real-time compatibility
+                    default_realtime_params = {
+                        'dynamic_sizing': True,
+                        'volatility_adjustment': True,
+                        'use_regime_filter': True,
+                        'use_volatility_filter': True,
+                        'volume_confirmation': True,
+                        'momentum_acceleration': 1.6 if '1M' in strategy_name else 1.4,
+                        'trend_following_boost': 1.4 if '1M' in strategy_name else 1.3,
+                        'breakout_multiplier': 1.8 if '1M' in strategy_name else 1.6,
+                        'mean_reversion_factor': 0.7 if '1M' in strategy_name else 0.8,
+                        'max_trades_per_hour': 15 if '1M' in strategy_name else 8,
+                        'min_time_between_trades': 30 if '1M' in strategy_name else 120,
+                        'quick_exit_threshold': 0.002 if '1M' in strategy_name else 0.003
+                    }
+                    
+                    # Add defaults only if not already present
+                    for param, value in default_realtime_params.items():
+                        if param not in strategy_params:
+                            strategy_params[param] = value
+                    
+                    logger.info(f"Converted scalping parameters: {strategy_params}")
                 
                 # Add printlog parameter
                 logger.info("=== MODIFYING STRATEGY PARAMETERS ===")

@@ -28,6 +28,8 @@ from strategies.simple_crypto_strategy import SimpleCryptoStrategy
 from strategies.ultra_simple_crypto_strategy import UltraSimpleCryptoStrategy
 from strategies.advanced_quant_crypto_strategy import AdvancedQuantCryptoStrategy
 from strategies.production_quant_crypto_strategy import ProductionQuantCryptoStrategy
+from strategies.realtime_scalping_1m_strategy import RealtimeScalping1MStrategy
+from strategies.realtime_scalping_5m_strategy import RealtimeScalping5MStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
 from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
@@ -245,6 +247,10 @@ class BacktestEngine:
             strategy_class = ProfitableForexStrategy
         elif strategy_name == 'EnhancedForexStrategy':
             strategy_class = EnhancedForexStrategy
+        elif strategy_name == 'RealtimeScalping1MStrategy':
+            strategy_class = RealtimeScalping1MStrategy
+        elif strategy_name == 'RealtimeScalping5MStrategy':
+            strategy_class = RealtimeScalping5MStrategy
         elif strategy_name == 'CryptoStrategy':
             strategy_class = CryptoStrategy
         elif strategy_name == 'EnhancedCryptoStrategy':
