@@ -615,3 +615,277 @@ if __name__ == "__main__":
     print(f"Created trade with ID: {trade_id}")
     
     print("Database manager test completed successfully!")
+    
+    # Real-time Signal Logging Methods
+    def store_realtime_signal_log(self, signal_id: str, session_id: int, symbol: str,
+                                 timeframe: str, timestamp: datetime, signal_type: str,
+                                 signal_strength: float, confidence: float, price: float,
+                                 source: str, priority: int, strategy_name: str,
+                                 indicators: Dict = None, market_conditions: Dict = None,
+                                 risk_metrics: Dict = None, execution_context: Dict = None):
+        """Store real-time signal log"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO realtime_signal_logs
+                (signal_id, session_id, symbol, timeframe, timestamp, signal_type,
+                 signal_strength, confidence, price, source, priority, strategy_name,
+                 indicators, market_conditions, risk_metrics, execution_context)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (signal_id, session_id, symbol, timeframe, timestamp, signal_type,
+                  signal_strength, confidence, price, source, priority, strategy_name,
+                  json.dumps(indicators) if indicators else None,
+                  json.dumps(market_conditions) if market_conditions else None,
+                  json.dumps(risk_metrics) if risk_metrics else None,
+                  json.dumps(execution_context) if execution_context else None))
+            conn.commit()
+    
+    def get_realtime_signal_logs(self, session_id: int = None, limit: int = 1000,
+                                signal_type: str = None, priority: int = None) -> List[Dict]:
+        """Get real-time signal logs with optional filtering"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            query = "SELECT * FROM realtime_signal_logs"
+            params = []
+            conditions = []
+            
+            if session_id:
+                conditions.append("session_id = ?")
+                params.append(session_id)
+            
+            if signal_type:
+                conditions.append("signal_type = ?")
+                params.append(signal_type.upper())
+            
+            if priority:
+                conditions.append("priority = ?")
+                params.append(priority)
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            
+            signals = []
+            for row in cursor.fetchall():
+                signal = dict(row)
+                # Parse JSON fields
+                for field in ['indicators', 'market_conditions', 'risk_metrics', 'execution_context']:
+                    if signal[field]:
+                        signal[field] = json.loads(signal[field])
+                signals.append(signal)
+            
+            return signals
+    
+    def mark_signal_executed(self, signal_id: str, execution_time: datetime,
+                           execution_price: float, trade_id: int, pnl: float = None):
+        """Mark a signal as executed"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE realtime_signal_logs
+                SET executed = 1, execution_time = ?, execution_price = ?, trade_id = ?, pnl = ?
+                WHERE signal_id = ?
+            """, (execution_time, execution_price, trade_id, pnl, signal_id))
+            conn.commit()
+    
+    # Real-time Order Activity Logging Methods
+    def store_realtime_order_activity(self, activity_id: str, session_id: int, order_id: int,
+                                     symbol: str, timestamp: datetime, order_type: str,
+                                     side: str, size: float, price: float, status: str,
+                                     message: str, execution_price: float = None,
+                                     execution_size: float = None, commission: float = None,
+                                     strategy_name: str = None, signal_id: str = None):
+        """Store real-time order activity"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO realtime_order_activities
+                (activity_id, session_id, order_id, symbol, timestamp, order_type,
+                 side, size, price, status, message, execution_price, execution_size,
+                 commission, strategy_name, signal_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (activity_id, session_id, order_id, symbol, timestamp, order_type,
+                  side, size, price, status, message, execution_price, execution_size,
+                  commission, strategy_name, signal_id))
+            conn.commit()
+    
+    def get_realtime_order_activities(self, session_id: int = None, limit: int = 1000,
+                                     order_id: int = None, status: str = None) -> List[Dict]:
+        """Get real-time order activities with optional filtering"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            query = "SELECT * FROM realtime_order_activities"
+            params = []
+            conditions = []
+            
+            if session_id:
+                conditions.append("session_id = ?")
+                params.append(session_id)
+            
+            if order_id:
+                conditions.append("order_id = ?")
+                params.append(order_id)
+            
+            if status:
+                conditions.append("status = ?")
+                params.append(status)
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+            
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+    
+    # Real-time Broker Statistics Methods
+    def store_realtime_broker_stats(self, session_id: int, timestamp: datetime,
+                                   cash: float, portfolio_value: float,
+                                   total_signals: int = 0, total_orders: int = 0,
+                                   executions: int = 0, buy_signals: int = 0,
+                                   sell_signals: int = 0, completed_orders: int = 0,
+                                   rejected_orders: int = 0):
+        """Store real-time broker statistics"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO realtime_broker_stats
+                (session_id, timestamp, cash, portfolio_value, total_signals,
+                 total_orders, executions, buy_signals, sell_signals,
+                 completed_orders, rejected_orders)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (session_id, timestamp, cash, portfolio_value, total_signals,
+                  total_orders, executions, buy_signals, sell_signals,
+                  completed_orders, rejected_orders))
+            conn.commit()
+    
+    def get_realtime_broker_stats(self, session_id: int, limit: int = 1000) -> List[Dict]:
+        """Get real-time broker statistics"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM realtime_broker_stats
+                WHERE session_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (session_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_latest_broker_stats(self, session_id: int) -> Optional[Dict]:
+        """Get latest broker statistics for a session"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM realtime_broker_stats
+                WHERE session_id = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """, (session_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    
+    # Real-time Analytics Methods
+    def get_realtime_signal_analytics(self, session_id: int) -> Dict[str, Any]:
+        """Get real-time signal analytics for a session"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get signal counts by type
+            cursor.execute("""
+                SELECT signal_type, COUNT(*) as count
+                FROM realtime_signal_logs
+                WHERE session_id = ?
+                GROUP BY signal_type
+            """, (session_id,))
+            signal_counts = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            # Get execution rate
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total_signals,
+                    COUNT(CASE WHEN executed = 1 THEN 1 END) as executed_signals
+                FROM realtime_signal_logs
+                WHERE session_id = ?
+            """, (session_id,))
+            execution_stats = cursor.fetchone()
+            
+            # Get average signal strength by type
+            cursor.execute("""
+                SELECT signal_type, AVG(signal_strength) as avg_strength, AVG(confidence) as avg_confidence
+                FROM realtime_signal_logs
+                WHERE session_id = ?
+                GROUP BY signal_type
+            """, (session_id,))
+            strength_stats = {row[0]: {'avg_strength': row[1], 'avg_confidence': row[2]}
+                            for row in cursor.fetchall()}
+            
+            # Get priority distribution
+            cursor.execute("""
+                SELECT priority, COUNT(*) as count
+                FROM realtime_signal_logs
+                WHERE session_id = ?
+                GROUP BY priority
+            """, (session_id,))
+            priority_counts = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            return {
+                'signal_counts': signal_counts,
+                'total_signals': execution_stats[0] if execution_stats else 0,
+                'executed_signals': execution_stats[1] if execution_stats else 0,
+                'execution_rate': (execution_stats[1] / execution_stats[0] * 100) if execution_stats and execution_stats[0] > 0 else 0,
+                'strength_stats': strength_stats,
+                'priority_counts': priority_counts
+            }
+    
+    def get_realtime_order_analytics(self, session_id: int) -> Dict[str, Any]:
+        """Get real-time order analytics for a session"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Get order counts by status
+            cursor.execute("""
+                SELECT status, COUNT(*) as count
+                FROM realtime_order_activities
+                WHERE session_id = ?
+                GROUP BY status
+            """, (session_id,))
+            status_counts = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            # Get order counts by side
+            cursor.execute("""
+                SELECT side, COUNT(*) as count
+                FROM realtime_order_activities
+                WHERE session_id = ?
+                GROUP BY side
+            """, (session_id,))
+            side_counts = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            # Get average execution time (time between created and completed)
+            cursor.execute("""
+                SELECT AVG(
+                    CASE WHEN status = 'completed' THEN
+                        (julianday(timestamp) - julianday(
+                            (SELECT MIN(timestamp) FROM realtime_order_activities ra2
+                             WHERE ra2.order_id = realtime_order_activities.order_id
+                             AND ra2.status = 'created')
+                        )) * 24 * 3600
+                    END
+                ) as avg_execution_time_seconds
+                FROM realtime_order_activities
+                WHERE session_id = ?
+            """, (session_id,))
+            avg_execution_time = cursor.fetchone()[0] or 0
+            
+            return {
+                'status_counts': status_counts,
+                'side_counts': side_counts,
+                'avg_execution_time_seconds': avg_execution_time,
+                'total_activities': sum(status_counts.values())
+            }

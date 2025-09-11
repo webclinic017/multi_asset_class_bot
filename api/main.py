@@ -1183,3 +1183,240 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
+
+# Real-time Signal and Activity Endpoints
+
+@app.get("/api/realtime/signals/{session_id}")
+async def get_realtime_signals(
+    session_id: int,
+    limit: int = 100,
+    signal_type: Optional[str] = None,
+    priority: Optional[int] = None
+):
+    """Get real-time signals for a session"""
+    try:
+        signals = db_manager.get_realtime_signal_logs(
+            session_id=session_id,
+            limit=limit,
+            signal_type=signal_type,
+            priority=priority
+        )
+        return signals
+    except Exception as e:
+        logger.error(f"Error getting real-time signals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/realtime/activities/{session_id}")
+async def get_realtime_activities(
+    session_id: int,
+    limit: int = 100,
+    order_id: Optional[int] = None,
+    status: Optional[str] = None
+):
+    """Get real-time order activities for a session"""
+    try:
+        activities = db_manager.get_realtime_order_activities(
+            session_id=session_id,
+            limit=limit,
+            order_id=order_id,
+            status=status
+        )
+        return activities
+    except Exception as e:
+        logger.error(f"Error getting real-time activities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/realtime/broker-stats/{session_id}")
+async def get_realtime_broker_stats(session_id: int, limit: int = 100):
+    """Get real-time broker statistics for a session"""
+    try:
+        stats = db_manager.get_realtime_broker_stats(session_id=session_id, limit=limit)
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting real-time broker stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/realtime/broker-stats/{session_id}/latest")
+async def get_latest_broker_stats(session_id: int):
+    """Get latest broker statistics for a session"""
+    try:
+        stats = db_manager.get_latest_broker_stats(session_id=session_id)
+        if not stats:
+            raise HTTPException(status_code=404, detail="No broker stats found for session")
+        return stats
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting latest broker stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/realtime/analytics/signals/{session_id}")
+async def get_realtime_signal_analytics(session_id: int):
+    """Get real-time signal analytics for a session"""
+    try:
+        analytics = db_manager.get_realtime_signal_analytics(session_id=session_id)
+        return analytics
+    except Exception as e:
+        logger.error(f"Error getting real-time signal analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/realtime/analytics/orders/{session_id}")
+async def get_realtime_order_analytics(session_id: int):
+    """Get real-time order analytics for a session"""
+    try:
+        analytics = db_manager.get_realtime_order_analytics(session_id=session_id)
+        return analytics
+    except Exception as e:
+        logger.error(f"Error getting real-time order analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/realtime/dashboard/{session_id}")
+async def get_realtime_dashboard_data(session_id: int):
+    """Get comprehensive real-time dashboard data for a session"""
+    try:
+        # Get session info
+        sessions = db_manager.get_trading_sessions(limit=1000)
+        session = next((s for s in sessions if s['id'] == session_id), None)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get real-time data
+        signals = db_manager.get_realtime_signal_logs(session_id=session_id, limit=50)
+        activities = db_manager.get_realtime_order_activities(session_id=session_id, limit=50)
+        broker_stats = db_manager.get_latest_broker_stats(session_id=session_id)
+        signal_analytics = db_manager.get_realtime_signal_analytics(session_id=session_id)
+        order_analytics = db_manager.get_realtime_order_analytics(session_id=session_id)
+        
+        # Get portfolio snapshots for equity curve
+        portfolio_snapshots = db_manager.get_portfolio_snapshots(session_id=session_id)
+        
+        return {
+            "session": session,
+            "signals": signals,
+            "activities": activities,
+            "broker_stats": broker_stats,
+            "signal_analytics": signal_analytics,
+            "order_analytics": order_analytics,
+            "portfolio_snapshots": portfolio_snapshots,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting real-time dashboard data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Live Trading Endpoints
+
+@app.post("/api/live-trading/start")
+async def start_live_trading(session_data: Dict[str, Any]):
+    """Start a live trading session with real-time logging"""
+    try:
+        # Create live trading session
+        session_id = db_manager.create_trading_session(
+            session_type="live",
+            strategy_id=session_data["strategy_id"],
+            symbol=session_data["symbol"],
+            initial_capital=session_data.get("initial_capital", 10000.0)
+        )
+        
+        # Initialize real-time logging components
+        # This would typically start the trading bot with enhanced logging
+        
+        # Broadcast session start
+        await manager.broadcast(json.dumps({
+            "type": "live_trading_started",
+            "session_id": session_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": session_data
+        }))
+        
+        return {
+            "message": "Live trading session started",
+            "session_id": session_id,
+            "status": "active"
+        }
+    except Exception as e:
+        logger.error(f"Error starting live trading: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/live-trading/stop/{session_id}")
+async def stop_live_trading(session_id: int):
+    """Stop a live trading session"""
+    try:
+        # Update session status
+        db_manager.update_trading_session(
+            session_id,
+            end_time=datetime.utcnow(),
+            status="stopped"
+        )
+        
+        # Broadcast session stop
+        await manager.broadcast(json.dumps({
+            "type": "live_trading_stopped",
+            "session_id": session_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        return {
+            "message": "Live trading session stopped",
+            "session_id": session_id,
+            "status": "stopped"
+        }
+    except Exception as e:
+        logger.error(f"Error stopping live trading: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/live-trading/sessions")
+async def get_live_trading_sessions():
+    """Get all live trading sessions"""
+    try:
+        sessions = db_manager.get_trading_sessions(limit=100)
+        live_sessions = [s for s in sessions if s['session_type'] == 'live']
+        return live_sessions
+    except Exception as e:
+        logger.error(f"Error getting live trading sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Enhanced WebSocket endpoint with real-time signal broadcasting
+@app.websocket("/ws/realtime/{session_id}")
+async def websocket_realtime_endpoint(websocket: WebSocket, session_id: int):
+    """WebSocket endpoint for real-time updates for a specific session"""
+    await manager.connect(websocket)
+    try:
+        # Send initial data
+        dashboard_data = await get_realtime_dashboard_data(session_id)
+        await manager.send_personal_message(json.dumps({
+            "type": "initial_data",
+            "data": dashboard_data
+        }), websocket)
+        
+        while True:
+            # Keep connection alive and handle incoming messages
+            data = await websocket.receive_text()
+            
+            try:
+                message = json.loads(data)
+                if message.get("type") == "subscribe_signals":
+                    # Client wants to subscribe to signal updates
+                    await manager.send_personal_message(json.dumps({
+                        "type": "subscription_confirmed",
+                        "subscription": "signals",
+                        "session_id": session_id
+                    }), websocket)
+                elif message.get("type") == "get_latest_data":
+                    # Client requests latest data
+                    dashboard_data = await get_realtime_dashboard_data(session_id)
+                    await manager.send_personal_message(json.dumps({
+                        "type": "latest_data",
+                        "data": dashboard_data
+                    }), websocket)
+            except json.JSONDecodeError:
+                await manager.send_personal_message(json.dumps({
+                    "type": "error",
+                    "message": "Invalid JSON format"
+                }), websocket)
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)

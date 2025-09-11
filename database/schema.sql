@@ -207,6 +207,77 @@ CREATE TABLE IF NOT EXISTS user_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Real-time signal logs table (enhanced version of trading_signals)
+CREATE TABLE IF NOT EXISTS realtime_signal_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_id VARCHAR(100) NOT NULL UNIQUE,
+    session_id INTEGER NOT NULL,
+    symbol VARCHAR(20) NOT NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    signal_type VARCHAR(10) NOT NULL, -- 'BUY', 'SELL', 'HOLD'
+    signal_strength DECIMAL(4,3) NOT NULL,
+    confidence DECIMAL(4,3) NOT NULL,
+    price DECIMAL(12,6) NOT NULL,
+    source VARCHAR(20) NOT NULL, -- 'strategy', 'indicator', 'manual', 'system'
+    priority INTEGER NOT NULL, -- 1=LOW, 2=MEDIUM, 3=HIGH, 4=CRITICAL
+    strategy_name VARCHAR(100) NOT NULL,
+    indicators TEXT, -- JSON string of indicator values
+    market_conditions TEXT, -- JSON string of market conditions
+    risk_metrics TEXT, -- JSON string of risk metrics
+    execution_context TEXT, -- JSON string of execution context
+    executed BOOLEAN DEFAULT 0,
+    execution_time TIMESTAMP,
+    execution_price DECIMAL(12,6),
+    trade_id INTEGER,
+    pnl DECIMAL(15,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id),
+    FOREIGN KEY (trade_id) REFERENCES trades(id)
+);
+
+-- Real-time order activity logs table
+CREATE TABLE IF NOT EXISTS realtime_order_activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    activity_id VARCHAR(100) NOT NULL,
+    session_id INTEGER NOT NULL,
+    order_id INTEGER NOT NULL,
+    symbol VARCHAR(20) NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    order_type VARCHAR(20) NOT NULL, -- 'Market', 'Limit', 'Stop', etc.
+    side VARCHAR(10) NOT NULL, -- 'BUY', 'SELL'
+    size DECIMAL(15,6) NOT NULL,
+    price DECIMAL(12,6),
+    status VARCHAR(20) NOT NULL, -- 'created', 'submitted', 'accepted', 'completed', etc.
+    message TEXT NOT NULL,
+    execution_price DECIMAL(12,6),
+    execution_size DECIMAL(15,6),
+    commission DECIMAL(10,4),
+    strategy_name VARCHAR(100),
+    signal_id VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id),
+    FOREIGN KEY (signal_id) REFERENCES realtime_signal_logs(signal_id)
+);
+
+-- Real-time broker statistics table
+CREATE TABLE IF NOT EXISTS realtime_broker_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    cash DECIMAL(15,2) NOT NULL,
+    portfolio_value DECIMAL(15,2) NOT NULL,
+    total_signals INTEGER DEFAULT 0,
+    total_orders INTEGER DEFAULT 0,
+    executions INTEGER DEFAULT 0,
+    buy_signals INTEGER DEFAULT 0,
+    sell_signals INTEGER DEFAULT 0,
+    completed_orders INTEGER DEFAULT 0,
+    rejected_orders INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES trading_sessions(id)
+);
+
 -- Backtest results table (for historical analysis)
 CREATE TABLE IF NOT EXISTS backtest_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,6 +329,21 @@ CREATE INDEX IF NOT EXISTS idx_technical_indicators_timestamp ON technical_indic
 CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_system_logs_session_id ON system_logs(session_id);
 
+-- Indexes for real-time tables
+CREATE INDEX IF NOT EXISTS idx_realtime_signal_logs_session_id ON realtime_signal_logs(session_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_signal_logs_timestamp ON realtime_signal_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_realtime_signal_logs_signal_id ON realtime_signal_logs(signal_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_signal_logs_symbol ON realtime_signal_logs(symbol);
+CREATE INDEX IF NOT EXISTS idx_realtime_signal_logs_signal_type ON realtime_signal_logs(signal_type);
+
+CREATE INDEX IF NOT EXISTS idx_realtime_order_activities_session_id ON realtime_order_activities(session_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_order_activities_timestamp ON realtime_order_activities(timestamp);
+CREATE INDEX IF NOT EXISTS idx_realtime_order_activities_order_id ON realtime_order_activities(order_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_order_activities_signal_id ON realtime_order_activities(signal_id);
+
+CREATE INDEX IF NOT EXISTS idx_realtime_broker_stats_session_id ON realtime_broker_stats(session_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_broker_stats_timestamp ON realtime_broker_stats(timestamp);
+
 -- Insert default strategies
 INSERT OR IGNORE INTO strategies (name, description, strategy_type, asset_class, timeframe, parameters) VALUES
 -- EUR/USD Strategies
@@ -291,7 +377,27 @@ INSERT OR IGNORE INTO strategies (name, description, strategy_type, asset_class,
 
 ('Scalping SOL_USD 1M', 'High-frequency scalping strategy for SOL_USD on 1-minute timeframe', 'scalping', 'crypto', '1m', '{"fast_ema": 3, "slow_ema": 9, "rsi_period": 5, "stop_loss_percent": 0.03, "take_profit_percent": 0.06}'),
 ('Scalping SOL_USD 5M', 'High-frequency scalping strategy for SOL_USD on 5-minute timeframe', 'scalping', 'crypto', '5m', '{"fast_ema": 3, "slow_ema": 9, "rsi_period": 5, "stop_loss_percent": 0.04, "take_profit_percent": 0.08}'),
-('Enhanced SOL_USD Strategy', 'Advanced quantitative crypto strategy for SOL_USD with ecosystem analysis', 'trend', 'crypto', '1h', '{"fast_length": 6, "slow_length": 17, "rsi_period": 7, "dynamic_sizing": true}');
+('Enhanced SOL_USD Strategy', 'Advanced quantitative crypto strategy for SOL_USD with ecosystem analysis', 'trend', 'crypto', '1h', '{"fast_length": 6, "slow_length": 17, "rsi_period": 7, "dynamic_sizing": true}'),
+
+-- Enhanced Real-time Scalping Strategies with Comprehensive Logging
+('Enhanced Realtime Scalping EUR_USD 1M', 'Enhanced real-time scalping strategy for EUR_USD on 1-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '1m', '{"fast_length": 5, "slow_length": 13, "rsi_period": 7, "signal_strength_threshold": 0.1, "high_confidence_threshold": 0.7, "max_trades_per_hour": 15, "min_time_between_trades": 30, "quick_exit_threshold": 0.002, "dynamic_sizing": true, "volatility_adjustment": true}'),
+('Enhanced Realtime Scalping EUR_USD 5M', 'Enhanced real-time scalping strategy for EUR_USD on 5-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '5m', '{"fast_length": 5, "slow_length": 13, "rsi_period": 7, "signal_strength_threshold": 0.12, "high_confidence_threshold": 0.75, "max_trades_per_hour": 8, "min_time_between_trades": 120, "quick_exit_threshold": 0.003, "dynamic_sizing": true, "volatility_adjustment": true}'),
+
+('Enhanced Realtime Scalping GBP_USD 1M', 'Enhanced real-time scalping strategy for GBP_USD on 1-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '1m', '{"fast_length": 6, "slow_length": 14, "rsi_period": 8, "signal_strength_threshold": 0.1, "high_confidence_threshold": 0.7, "max_trades_per_hour": 12, "min_time_between_trades": 35, "quick_exit_threshold": 0.0025, "dynamic_sizing": true, "volatility_adjustment": true}'),
+('Enhanced Realtime Scalping GBP_USD 5M', 'Enhanced real-time scalping strategy for GBP_USD on 5-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '5m', '{"fast_length": 6, "slow_length": 14, "rsi_period": 8, "signal_strength_threshold": 0.12, "high_confidence_threshold": 0.75, "max_trades_per_hour": 6, "min_time_between_trades": 150, "quick_exit_threshold": 0.0035, "dynamic_sizing": true, "volatility_adjustment": true}'),
+
+('Enhanced Realtime Scalping USD_JPY 1M', 'Enhanced real-time scalping strategy for USD_JPY on 1-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '1m', '{"fast_length": 4, "slow_length": 12, "rsi_period": 6, "signal_strength_threshold": 0.1, "high_confidence_threshold": 0.7, "max_trades_per_hour": 18, "min_time_between_trades": 25, "quick_exit_threshold": 0.0015, "dynamic_sizing": true, "volatility_adjustment": true}'),
+('Enhanced Realtime Scalping USD_JPY 5M', 'Enhanced real-time scalping strategy for USD_JPY on 5-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '5m', '{"fast_length": 4, "slow_length": 12, "rsi_period": 6, "signal_strength_threshold": 0.12, "high_confidence_threshold": 0.75, "max_trades_per_hour": 10, "min_time_between_trades": 100, "quick_exit_threshold": 0.0025, "dynamic_sizing": true, "volatility_adjustment": true}'),
+
+('Enhanced Realtime Scalping AUD_USD 1M', 'Enhanced real-time scalping strategy for AUD_USD on 1-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '1m', '{"fast_length": 5, "slow_length": 13, "rsi_period": 7, "signal_strength_threshold": 0.1, "high_confidence_threshold": 0.7, "max_trades_per_hour": 14, "min_time_between_trades": 30, "quick_exit_threshold": 0.002, "dynamic_sizing": true, "volatility_adjustment": true}'),
+('Enhanced Realtime Scalping AUD_USD 5M', 'Enhanced real-time scalping strategy for AUD_USD on 5-minute timeframe with comprehensive signal logging', 'scalping', 'forex', '5m', '{"fast_length": 5, "slow_length": 13, "rsi_period": 7, "signal_strength_threshold": 0.12, "high_confidence_threshold": 0.75, "max_trades_per_hour": 7, "min_time_between_trades": 130, "quick_exit_threshold": 0.003, "dynamic_sizing": true, "volatility_adjustment": true}'),
+
+-- Enhanced Real-time Crypto Scalping Strategies
+('Enhanced Realtime Scalping BTC_USD 1M', 'Enhanced real-time scalping strategy for BTC_USD on 1-minute timeframe with comprehensive signal logging', 'scalping', 'crypto', '1m', '{"fast_length": 3, "slow_length": 10, "rsi_period": 5, "signal_strength_threshold": 0.15, "high_confidence_threshold": 0.8, "max_trades_per_hour": 20, "min_time_between_trades": 20, "quick_exit_threshold": 0.005, "dynamic_sizing": true, "volatility_adjustment": true}'),
+('Enhanced Realtime Scalping BTC_USD 5M', 'Enhanced real-time scalping strategy for BTC_USD on 5-minute timeframe with comprehensive signal logging', 'scalping', 'crypto', '5m', '{"fast_length": 3, "slow_length": 10, "rsi_period": 5, "signal_strength_threshold": 0.18, "high_confidence_threshold": 0.8, "max_trades_per_hour": 12, "min_time_between_trades": 80, "quick_exit_threshold": 0.008, "dynamic_sizing": true, "volatility_adjustment": true}'),
+
+('Enhanced Realtime Scalping ETH_USD 1M', 'Enhanced real-time scalping strategy for ETH_USD on 1-minute timeframe with comprehensive signal logging', 'scalping', 'crypto', '1m', '{"fast_length": 4, "slow_length": 11, "rsi_period": 6, "signal_strength_threshold": 0.15, "high_confidence_threshold": 0.8, "max_trades_per_hour": 18, "min_time_between_trades": 25, "quick_exit_threshold": 0.006, "dynamic_sizing": true, "volatility_adjustment": true}'),
+('Enhanced Realtime Scalping ETH_USD 5M', 'Enhanced real-time scalping strategy for ETH_USD on 5-minute timeframe with comprehensive signal logging', 'scalping', 'crypto', '5m', '{"fast_length": 4, "slow_length": 11, "rsi_period": 6, "signal_strength_threshold": 0.18, "high_confidence_threshold": 0.8, "max_trades_per_hour": 10, "min_time_between_trades": 90, "quick_exit_threshold": 0.009, "dynamic_sizing": true, "volatility_adjustment": true}');
 
 -- Insert default user settings
 INSERT OR IGNORE INTO user_settings (setting_key, setting_value, setting_type, description) VALUES
