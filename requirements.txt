@@ -71,9 +71,11 @@ pytz
 pywin32
 pyzmq
 requests
-scipy
+scipy>=1.9.0
 scikit-learn
 six
+# Additional dependencies for price action analysis
+scipy>=1.9.0  # For statistical analysis and peak detection
 
 # Sentiment Analysis Dependencies
 textblob

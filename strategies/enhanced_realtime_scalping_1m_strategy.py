@@ -13,6 +13,7 @@ from datetime import datetime
 # Import our real-time logging components
 from utils.realtime_signal_logger import get_signal_logger, SignalSource, SignalPriority
 from backtesting.enhanced_realtime_broker import SignalType
+from indicators.price_action_analyzer import PriceActionAnalyzer
 
 class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
     """Enhanced real-time compatible 1-minute scalping strategy with comprehensive logging"""
@@ -101,6 +102,10 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
         # Initialize indicators
         self._init_core_indicators()
         
+        # Initialize Price Action Analyzer (60% weight)
+        self.price_action_analyzer = PriceActionAnalyzer(self)
+        self.logger.info("Price Action Analyzer initialized for 1M scalping (60% weight)")
+        
         # Market regime tracking
         self.current_regime = 'neutral'
         self.regime_confidence = 0.0
@@ -163,40 +168,98 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
             self.logger.error(f"Error in regime detection: {e}")
             return 'neutral', 0.0
 
-    def calculate_dynamic_position_size(self, signal_strength: float, volatility: float) -> float:
-        """Calculate position size with enhanced risk management"""
+    def calculate_dynamic_position_size(self, signal_strength: float, volatility: float,
+                                      price_action_confidence: float = 0.5,
+                                      technical_confidence: float = 0.5) -> float:
+        """Calculate position size with hybrid confidence scores for 1M scalping"""
         if not self.p.dynamic_sizing:
             return 0.01
             
         try:
             base_size = self.p.position_size_percent
+            
+            # Hybrid confidence adjustment (60% PA + 40% Tech)
+            combined_confidence = (price_action_confidence * 0.6) + (technical_confidence * 0.4)
+            confidence_adjustment = 0.7 + (combined_confidence * 0.8)  # Range: 0.7 to 1.5
+            
+            # Signal strength adjustment
             signal_adjustment = signal_strength * 1.2
+            
+            # Volatility adjustment (more aggressive for 1M)
             vol_adjustment = 1.0 / (1.0 + volatility * 15)
             
-            final_size = base_size * signal_adjustment * vol_adjustment
+            # Price action quality bonus for 1M scalping
+            if price_action_confidence > 0.8:
+                pa_bonus = 1.3  # 30% bonus for excellent price action
+            elif price_action_confidence > 0.6:
+                pa_bonus = 1.15  # 15% bonus for good price action
+            else:
+                pa_bonus = 0.95  # 5% penalty for weak price action
+            
+            final_size = base_size * signal_adjustment * vol_adjustment * confidence_adjustment * pa_bonus
+            
+            self.logger.info(f"1M Hybrid Position Sizing:")
+            self.logger.info(f"  Base Size: {base_size:.4f}")
+            self.logger.info(f"  Combined Confidence: {combined_confidence:.4f}")
+            self.logger.info(f"  PA Confidence: {price_action_confidence:.4f}")
+            self.logger.info(f"  Tech Confidence: {technical_confidence:.4f}")
+            self.logger.info(f"  PA Bonus: {pa_bonus:.4f}")
+            self.logger.info(f"  Final Size: {final_size:.6f}")
+            
             return max(final_size, 0.005)
             
         except Exception as e:
-            self.logger.error(f"Error calculating position size: {e}")
+            self.logger.error(f"Error calculating 1M hybrid position size: {e}")
             return 0.01
 
-    def generate_enhanced_scalping_signals(self) -> Dict[str, Any]:
-        """Generate enhanced scalping signals with comprehensive logging"""
+    def generate_hybrid_scalping_signals(self) -> Dict[str, Any]:
+        """Generate hybrid 1M scalping signals: 60% price action + 40% technical indicators"""
         signals = {
             'buy_score': 0.0,
             'sell_score': 0.0,
             'signal_strength': 0.0,
+            'confidence': 0.0,
             'regime_filter': True,
             'volatility_filter': True,
+            'price_action_score': 0.0,
+            'technical_score': 0.0,
             'components': {},
             'indicators': {},
             'market_conditions': {},
-            'risk_metrics': {}
+            'risk_metrics': {},
+            'price_action_details': {},
+            'technical_details': {}
         }
         
         try:
             current_price = self.dataclose[0]
             current_rsi = self.rsi[0]
+            
+            self.logger.info("=== 1M HYBRID SCALPING SIGNAL GENERATION ===")
+            
+            # === PRICE ACTION ANALYSIS (60% WEIGHT) ===
+            self.logger.info("=== PRICE ACTION ANALYSIS (60% WEIGHT) ===")
+            
+            price_action_data = self.price_action_analyzer.calculate_price_action_score(lookback=20)  # Shorter for 1M
+            
+            pa_bullish = price_action_data['bullish_score']
+            pa_bearish = price_action_data['bearish_score']
+            pa_confidence = price_action_data['confidence']
+            
+            self.logger.info(f"1M Price Action Scores:")
+            self.logger.info(f"  Bullish: {pa_bullish:.4f}")
+            self.logger.info(f"  Bearish: {pa_bearish:.4f}")
+            self.logger.info(f"  Confidence: {pa_confidence:.4f}")
+            self.logger.info(f"  Patterns: {price_action_data.get('patterns_detected', [])}")
+            
+            signals['price_action_details'] = price_action_data
+            
+            # === TECHNICAL INDICATOR ANALYSIS (40% WEIGHT) ===
+            self.logger.info("=== TECHNICAL INDICATOR ANALYSIS (40% WEIGHT) ===")
+            
+            tech_bullish = 0.0
+            tech_bearish = 0.0
+            tech_components = {}
             
             # Collect all indicator values for logging
             signals['indicators'] = {
@@ -215,66 +278,152 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
                 'volume_ratio': float(self.volume_ratio[0]) if len(self.volume_ratio) > 0 else 1.0
             }
             
-            # Enhanced signal generation
-            buy_score = 0.0
-            sell_score = 0.0
+            # RSI Analysis (10% of total signal)
+            rsi_score = 0.0
+            self.logger.info(f"RSI Analysis: {current_rsi:.2f}")
             
-            # Trend signals
-            if self.ema_fast[0] > self.ema_slow[0]:
-                buy_score += 0.4
-                signals['components']['trend_bullish'] = True
-            else:
-                sell_score += 0.4
-                signals['components']['trend_bearish'] = True
-            
-            # RSI signals
             if current_rsi < self.p.rsi_oversold:
-                buy_score += 0.3
-                signals['components']['rsi_oversold'] = True
+                rsi_score = 0.4  # Strong bullish for 1M scalping
+                self.logger.info(f"  RSI Oversold: +0.4 bullish")
             elif current_rsi > self.p.rsi_overbought:
-                sell_score += 0.3
-                signals['components']['rsi_overbought'] = True
+                rsi_score = -0.4  # Strong bearish
+                self.logger.info(f"  RSI Overbought: +0.4 bearish")
+            elif current_rsi < 40:
+                rsi_score = 0.2  # Mild bullish
+                self.logger.info(f"  RSI Below 40: +0.2 bullish")
+            elif current_rsi > 60:
+                rsi_score = -0.2  # Mild bearish
+                self.logger.info(f"  RSI Above 60: +0.2 bearish")
             
-            # MACD signals
-            if self.macd.macd[0] > self.macd.signal[0]:
-                buy_score += 0.2
-                signals['components']['macd_bullish'] = True
+            tech_components['rsi'] = rsi_score
+            
+            # EMA Trend Analysis (15% of total signal)
+            ma_score = 0.0
+            ema_fast = float(self.ema_fast[0])
+            ema_slow = float(self.ema_slow[0])
+            
+            self.logger.info(f"EMA Trend Analysis:")
+            self.logger.info(f"  EMA Fast: {ema_fast:.5f}")
+            self.logger.info(f"  EMA Slow: {ema_slow:.5f}")
+            
+            if ema_fast > ema_slow:
+                ma_score = 0.4
+                self.logger.info(f"  EMA Fast > Slow: +0.4 bullish")
+                
+                # Price momentum with EMAs
+                if current_price > ema_fast:
+                    ma_score += 0.2
+                    self.logger.info(f"  Price > EMA Fast: +0.2 bullish")
             else:
-                sell_score += 0.2
-                signals['components']['macd_bearish'] = True
+                ma_score = -0.4
+                self.logger.info(f"  EMA Fast < Slow: +0.4 bearish")
+                
+                if current_price < ema_fast:
+                    ma_score -= 0.2
+                    self.logger.info(f"  Price < EMA Fast: +0.2 bearish")
             
-            # Volume confirmation
-            if self.p.volume_confirmation and len(self.volume_ratio) > 0:
-                if self.volume_ratio[0] > 1.5:
-                    buy_score += 0.1
-                    sell_score += 0.1
-                    signals['components']['high_volume'] = True
+            tech_components['ema_trend'] = ma_score
             
-            # Bollinger Bands
-            bb_position = (current_price - self.bb.lines.bot[0]) / (self.bb.lines.top[0] - self.bb.lines.bot[0])
-            if bb_position < 0.2:
-                buy_score += 0.2
-                signals['components']['bb_oversold'] = True
-            elif bb_position > 0.8:
-                sell_score += 0.2
-                signals['components']['bb_overbought'] = True
+            # MACD Analysis (10% of total signal)
+            macd_score = 0.0
+            macd_line = float(self.macd.macd[0])
+            macd_signal_line = float(self.macd.signal[0])
             
-            signals['buy_score'] = buy_score
-            signals['sell_score'] = sell_score
-            signals['signal_strength'] = max(buy_score, sell_score)
+            self.logger.info(f"MACD Analysis: Line={macd_line:.6f}, Signal={macd_signal_line:.6f}")
             
-            # Market conditions
+            if macd_line > macd_signal_line:
+                macd_score = 0.3
+                self.logger.info(f"  MACD Bullish: +0.3")
+            else:
+                macd_score = -0.3
+                self.logger.info(f"  MACD Bearish: +0.3 bearish")
+            
+            tech_components['macd'] = macd_score
+            
+            # Stochastic Analysis (5% of total signal) - Important for 1M scalping
+            stoch_score = 0.0
+            stoch_k = float(self.stoch.percK[0])
+            stoch_d = float(self.stoch.percD[0])
+            
+            self.logger.info(f"Stochastic Analysis: K={stoch_k:.2f}, D={stoch_d:.2f}")
+            
+            if stoch_k < 25 and stoch_k > stoch_d:
+                stoch_score = 0.2
+                self.logger.info(f"  Stoch Oversold Bullish: +0.2")
+            elif stoch_k > 75 and stoch_k < stoch_d:
+                stoch_score = -0.2
+                self.logger.info(f"  Stoch Overbought Bearish: +0.2 bearish")
+            
+            tech_components['stochastic'] = stoch_score
+            
+            # Calculate technical totals
+            tech_bullish = max(0, rsi_score) + max(0, ma_score) + max(0, macd_score) + max(0, stoch_score)
+            tech_bearish = abs(min(0, rsi_score)) + abs(min(0, ma_score)) + abs(min(0, macd_score)) + abs(min(0, stoch_score))
+            
+            self.logger.info(f"Technical Indicator Totals:")
+            self.logger.info(f"  Technical Bullish: {tech_bullish:.4f}")
+            self.logger.info(f"  Technical Bearish: {tech_bearish:.4f}")
+            
+            signals['technical_details'] = {
+                'bullish_score': tech_bullish,
+                'bearish_score': tech_bearish,
+                'components': tech_components
+            }
+            
+            # === HYBRID SIGNAL CALCULATION (60% PA + 40% TECH) ===
+            self.logger.info("=== 1M HYBRID SIGNAL CALCULATION ===")
+            
+            # Apply weights: 60% price action, 40% technical indicators
+            price_action_weight = 0.6
+            technical_weight = 0.4
+            
+            # Calculate weighted scores
+            weighted_pa_bullish = pa_bullish * price_action_weight
+            weighted_pa_bearish = pa_bearish * price_action_weight
+            weighted_tech_bullish = tech_bullish * technical_weight
+            weighted_tech_bearish = tech_bearish * technical_weight
+            
+            self.logger.info(f"1M Weighted Scores:")
+            self.logger.info(f"  Price Action Bullish (60%): {pa_bullish:.4f} * 0.6 = {weighted_pa_bullish:.4f}")
+            self.logger.info(f"  Price Action Bearish (60%): {pa_bearish:.4f} * 0.6 = {weighted_pa_bearish:.4f}")
+            self.logger.info(f"  Technical Bullish (40%): {tech_bullish:.4f} * 0.4 = {weighted_tech_bullish:.4f}")
+            self.logger.info(f"  Technical Bearish (40%): {tech_bearish:.4f} * 0.4 = {weighted_tech_bearish:.4f}")
+            
+            # Final hybrid scores
+            final_bullish = weighted_pa_bullish + weighted_tech_bullish
+            final_bearish = weighted_pa_bearish + weighted_tech_bearish
+            
+            signals['buy_score'] = final_bullish
+            signals['sell_score'] = final_bearish
+            signals['signal_strength'] = max(final_bullish, final_bearish)
+            signals['price_action_score'] = pa_bullish + pa_bearish
+            signals['technical_score'] = tech_bullish + tech_bearish
+            
+            # Calculate combined confidence
+            pa_weight_in_confidence = 0.6
+            tech_weight_in_confidence = 0.4
+            
+            # Technical confidence based on indicator agreement
+            tech_confidence = min(abs(tech_bullish - tech_bearish) / max(tech_bullish + tech_bearish, 0.1), 1.0)
+            
+            combined_confidence = (pa_confidence * pa_weight_in_confidence) + (tech_confidence * tech_weight_in_confidence)
+            signals['confidence'] = combined_confidence
+            
+            # Market conditions for 1M scalping
             current_vol = self.atr[0] / current_price if current_price > 0 else 0
+            bb_position = (current_price - self.bb.lines.bot[0]) / (self.bb.lines.top[0] - self.bb.lines.bot[0]) if self.bb.lines.top[0] != self.bb.lines.bot[0] else 0.5
+            
             signals['market_conditions'] = {
                 'price': float(current_price),
                 'volatility': float(current_vol),
                 'regime': self.current_regime,
                 'regime_confidence': float(self.regime_confidence),
                 'bb_position': float(bb_position),
-                'trend_strength': float(abs(self.ema_fast[0] - self.ema_slow[0]) / current_price) if current_price > 0 else 0
+                'trend_strength': float(abs(ema_fast - ema_slow) / current_price) if current_price > 0 else 0,
+                'timeframe': '1m'
             }
             
-            # Risk metrics
+            # Risk metrics for 1M scalping
             signals['risk_metrics'] = {
                 'atr_percent': float(current_vol),
                 'position_size': self.calculate_dynamic_position_size(signals['signal_strength'], current_vol),
@@ -283,10 +432,29 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
                 'max_trades_per_hour': self.p.max_trades_per_hour
             }
             
+            # Store component details
+            signals['components'] = {
+                'price_action_bullish': weighted_pa_bullish,
+                'price_action_bearish': weighted_pa_bearish,
+                'technical_bullish': weighted_tech_bullish,
+                'technical_bearish': weighted_tech_bearish,
+                'price_action_confidence': pa_confidence,
+                'technical_confidence': tech_confidence,
+                **tech_components
+            }
+            
+            self.logger.info(f"1M Hybrid Signal Summary:")
+            self.logger.info(f"  Final Buy Score: {signals['buy_score']:.4f}")
+            self.logger.info(f"  Final Sell Score: {signals['sell_score']:.4f}")
+            self.logger.info(f"  Signal Strength: {signals['signal_strength']:.4f}")
+            self.logger.info(f"  Combined Confidence: {signals['confidence']:.4f}")
+            self.logger.info(f"  Price Action Contribution: {signals['price_action_score']:.4f}")
+            self.logger.info(f"  Technical Contribution: {signals['technical_score']:.4f}")
+            
             return signals
             
         except Exception as e:
-            self.logger.error(f"Error generating signals: {e}")
+            self.logger.error(f"Error generating 1M hybrid signals: {e}")
             return signals
 
     def check_scalping_filters(self) -> bool:
@@ -330,8 +498,8 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
         # Update market regime
         self.current_regime, self.regime_confidence = self.detect_market_regime()
         
-        # Generate signals with comprehensive data
-        signals = self.generate_enhanced_scalping_signals()
+        # Generate hybrid signals with comprehensive data
+        signals = self.generate_hybrid_scalping_signals()
         
         current_price = self.dataclose[0]
         current_vol = self.atr[0] / current_price if current_price > 0 else 0
