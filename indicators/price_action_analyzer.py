@@ -7,7 +7,7 @@ import backtrader as bt
 import numpy as np
 import pandas as pd
 import logging
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 from scipy import stats
 from scipy.signal import find_peaks, find_peaks_cwt
 
