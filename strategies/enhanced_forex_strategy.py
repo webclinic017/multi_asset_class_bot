@@ -458,7 +458,7 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.info(f"  PA Bonus: {pa_bonus:.4f}")
             self.logger.info(f"  Final Size: {final_size:.6f}")
             
-            return max(final_size, 0.3)  # Minimum 0.5%
+            return max(final_size, 2)  # Minimum 0.5%
             
         except Exception as e:
             self.logger.error(f"Error calculating hybrid position size: {e}")
