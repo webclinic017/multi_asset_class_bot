@@ -144,6 +144,17 @@ class EnhancedForexStrategy(bt.Strategy):
         ('gpu_batch_size', 64),        # Larger batch for complex strategy
         ('gpu_lookback', 200),         # Larger buffer for advanced analysis
         
+        # Hybrid Signal Parameters
+        ('signal_strength_threshold', 0.15),  # Minimum signal strength for entry
+        ('high_confidence_threshold', 0.7),   # High confidence threshold
+        ('price_action_weight', 0.6),         # Price action weight in hybrid system
+        ('technical_weight', 0.4),            # Technical indicator weight
+        
+        # Scalping Compatibility Parameters
+        ('max_trades_per_hour', 10),          # Maximum trades per hour for forex
+        ('min_time_between_trades', 300),     # Minimum time between trades (5 minutes)
+        ('quick_exit_threshold', 0.005),     # Quick exit threshold for forex
+        
         # Logging
         ('printlog', False)
     )
@@ -956,8 +967,8 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.info("=== HYBRID SIGNAL CALCULATION ===")
             
             # Apply weights: 60% price action, 40% technical indicators
-            price_action_weight = 0.6
-            technical_weight = 0.4
+            price_action_weight = 0.75
+            technical_weight = 0.25
             
             # Calculate weighted scores
             weighted_pa_bullish = pa_bullish * price_action_weight
@@ -1190,35 +1201,52 @@ class EnhancedForexStrategy(bt.Strategy):
         if not self.position:  # No position
             self.logger.info("=== ENTRY LOGIC EVALUATION ===")
             
-            # Check buy conditions
-            buy_score_ok = signals['buy_score'] > 0.15
-            buy_vol_filter_ok = signals['volatility_filter']
-            buy_regime_filter_ok = signals['regime_filter']
+            # Check signal strength and direction
+            buy_score = signals['buy_score']
+            sell_score = signals['sell_score']
+            min_threshold = self.p.signal_strength_threshold
             
-            self.logger.info(f"Buy conditions check:")
-            self.logger.info(f"  Score > 0.15: {buy_score_ok} ({signals['buy_score']:.4f})")
-            self.logger.info(f"  Volatility filter: {buy_vol_filter_ok}")
-            self.logger.info(f"  Regime filter: {buy_regime_filter_ok}")
+            # CRITICAL FIX: Only trigger the stronger signal and ensure minimum threshold
+            signal_direction = None
+            signal_strength = 0.0
             
-            # Check sell conditions
-            sell_score_ok = signals['sell_score'] > 0.15
-            sell_vol_filter_ok = signals['volatility_filter']
-            sell_regime_filter_ok = signals['regime_filter']
+            self.logger.info(f"Signal Direction Analysis:")
+            self.logger.info(f"  Buy Score: {buy_score:.4f}")
+            self.logger.info(f"  Sell Score: {sell_score:.4f}")
+            self.logger.info(f"  Min Threshold: {min_threshold:.4f}")
+            self.logger.info(f"  Volatility Filter: {signals['volatility_filter']}")
+            self.logger.info(f"  Regime Filter: {signals['regime_filter']}")
             
-            self.logger.info(f"Sell conditions check:")
-            self.logger.info(f"  Score > 0.15: {sell_score_ok} ({signals['sell_score']:.4f})")
-            self.logger.info(f"  Volatility filter: {sell_vol_filter_ok}")
-            self.logger.info(f"  Regime filter: {sell_regime_filter_ok}")
+            # Determine signal direction based on stronger score
+            if buy_score > sell_score and buy_score > min_threshold:
+                signal_direction = 'BUY'
+                signal_strength = buy_score
+                self.logger.info(f"  DIRECTION: BUY (stronger score: {buy_score:.4f} > {sell_score:.4f})")
+            elif sell_score > buy_score and sell_score > min_threshold:
+                signal_direction = 'SELL'
+                signal_strength = sell_score
+                self.logger.info(f"  DIRECTION: SELL (stronger score: {sell_score:.4f} > {buy_score:.4f})")
+            else:
+                signal_direction = None
+                self.logger.info(f"  DIRECTION: NONE (insufficient signal strength or tie)")
+                self.logger.info(f"    Buy vs Sell: {buy_score:.4f} vs {sell_score:.4f}")
+                self.logger.info(f"    Max score: {max(buy_score, sell_score):.4f}")
+                self.logger.info(f"    Threshold: {min_threshold:.4f}")
             
-            # Entry logic (much lower threshold for 1-hour data)
-            if (buy_score_ok and buy_vol_filter_ok and buy_regime_filter_ok):
+            # Apply filters only if we have a valid signal direction
+            filters_pass = signals['volatility_filter'] and signals['regime_filter']
+            
+            # Entry logic with corrected signal direction logic
+            if (signal_direction == 'BUY' and filters_pass):
                 
                 self.buy_signal_count += 1
                 self.logger.info(f"BUY SIGNAL TRIGGERED #{self.buy_signal_count}")
                 
-                # Calculate position size
+                # Calculate position size with hybrid confidence
+                pa_confidence = signals.get('price_action_details', {}).get('confidence', 0.5)
+                tech_confidence = signals.get('confidence', 0.5)
                 position_size = self.calculate_dynamic_position_size(
-                    signals['signal_strength'], current_vol
+                    signal_strength, current_vol, pa_confidence, tech_confidence
                 )
                 
                 # Calculate stops and targets
@@ -1230,7 +1258,7 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.logger.info(f"  Stop distance: {stop_distance:.6f}")
                 self.logger.info(f"  Target distance: {target_distance:.6f}")
                 
-                self.log(f'BUY SIGNAL - Score: {signals["buy_score"]:.3f}, '
+                self.log(f'BUY SIGNAL - Buy: {buy_score:.3f}, Sell: {sell_score:.3f}, '
                         f'Regime: {self.current_regime}, Size: {position_size:.3f}')
                 
                 try:
@@ -1282,20 +1310,22 @@ class EnhancedForexStrategy(bt.Strategy):
                     import traceback
                     self.logger.error(f"  Traceback: {traceback.format_exc()}")
                 
-            elif (sell_score_ok and sell_vol_filter_ok and sell_regime_filter_ok):
+            elif (signal_direction == 'SELL' and filters_pass):
                 
                 self.sell_signal_count += 1
                 self.logger.info(f"SELL SIGNAL TRIGGERED #{self.sell_signal_count}")
                 
-                # Calculate position size
+                # Calculate position size with hybrid confidence
+                pa_confidence = signals.get('price_action_details', {}).get('confidence', 0.5)
+                tech_confidence = signals.get('confidence', 0.5)
                 position_size = self.calculate_dynamic_position_size(
-                    signals['signal_strength'], current_vol
+                    signal_strength, current_vol, pa_confidence, tech_confidence
                 )
                 
                 self.logger.info(f"Position sizing:")
                 self.logger.info(f"  Size: {position_size:.6f}")
                 
-                self.log(f'SELL SIGNAL - Score: {signals["sell_score"]:.3f}, '
+                self.log(f'SELL SIGNAL - Buy: {buy_score:.3f}, Sell: {sell_score:.3f}, '
                         f'Regime: {self.current_regime}, Size: {position_size:.3f}')
                 
                 try:
@@ -1352,10 +1382,11 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.filtered_signal_count += 1
                 if self.next_call_count <= 10 or self.filtered_signal_count % 50 == 0:
                     self.logger.info(f"NO SIGNAL #{self.filtered_signal_count} - Conditions not met")
-                    if not buy_score_ok and not sell_score_ok:
-                        self.logger.info(f"  Both scores too low: buy={signals['buy_score']:.4f}, sell={signals['sell_score']:.4f}")
+                    self.logger.info(f"  Buy score: {buy_score:.4f}, Sell score: {sell_score:.4f}")
+                    self.logger.info(f"  Signal direction: {signal_direction}")
+                    self.logger.info(f"  Filters pass: {filters_pass}")
                     if not signals['volatility_filter']:
-                        self.logger.info(f"  Volatility filter failed: current_vol={current_vol:.6f}, threshold={self.p.volatility_threshold}")
+                        self.logger.info(f"  Volatility filter failed: current_vol={current_vol:.6f}")
                     if not signals['regime_filter']:
                         self.logger.info(f"  Regime filter failed: regime={self.current_regime}")
                 
