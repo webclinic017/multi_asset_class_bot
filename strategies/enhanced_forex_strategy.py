@@ -13,7 +13,7 @@ import pandas as pd
 import sys
 from scipy import stats
 from sklearn.preprocessing import StandardScaler
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 
 # GPU acceleration imports
 try:
@@ -27,6 +27,7 @@ except ImportError:
 
 # Import custom indicators
 from indicators.custom_indicators import PivotHighLow, SupplyDemandZones, VolumeProfile
+from indicators.price_action_analyzer import PriceActionAnalyzer
 
 # Import sentiment analysis
 try:
@@ -148,11 +149,11 @@ class EnhancedForexStrategy(bt.Strategy):
     )
 
     def __init__(self):
-        """Initialize enhanced strategy with advanced indicators and GPU acceleration"""
+        """Initialize enhanced strategy with hybrid price action + technical indicator system"""
         self.logger = logging.getLogger(__name__)
         
         # === COMPREHENSIVE INITIALIZATION LOGGING ===
-        self.logger.info("=== ENHANCED FOREX STRATEGY INITIALIZATION ===")
+        self.logger.info("=== ENHANCED FOREX STRATEGY INITIALIZATION (HYBRID SYSTEM) ===")
         self.logger.info(f"Strategy parameters received: {dict(self.params._getitems())}")
         
         # Initialize portfolio value tracker for accurate portfolio tracking
@@ -167,6 +168,10 @@ class EnhancedForexStrategy(bt.Strategy):
         self.datavolume = self.datas[0].volume
         
         self.logger.info(f"Data feeds initialized: close={type(self.dataclose)}, high={type(self.datahigh)}, low={type(self.datalow)}, volume={type(self.datavolume)}")
+        
+        # Initialize Price Action Analyzer (60% weight)
+        self.price_action_analyzer = PriceActionAnalyzer(self)
+        self.logger.info("Price Action Analyzer initialized for 60% signal weighting")
         
         # Order management
         self.order = None
@@ -228,11 +233,11 @@ class EnhancedForexStrategy(bt.Strategy):
         self.sentiment_momentum = 0.0
         
         gpu_status = "with GPU acceleration" if self.use_gpu else "CPU mode"
-        self.logger.info(f"Enhanced Forex Strategy initialized with advanced quantitative features {gpu_status}")
+        self.logger.info(f"Enhanced Forex Strategy initialized with hybrid price action (60%) + technical indicators (40%) {gpu_status}")
         if self.use_gpu:
             self.logger.info(f"GPU Device: {torch.cuda.get_device_name(0)}")
         
-        self.logger.info("=== STRATEGY INITIALIZATION COMPLETE ===")
+        self.logger.info("=== HYBRID STRATEGY INITIALIZATION COMPLETE ===")
 
     def _init_core_indicators(self):
         """Initialize core technical indicators"""
@@ -380,9 +385,12 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.error(f"Error in regime detection: {e}")
             return 'neutral', 0.0
 
-    def calculate_dynamic_position_size(self, signal_strength: float, volatility: float) -> float:
+    def calculate_dynamic_position_size(self, signal_strength: float, volatility: float,
+                                      price_action_confidence: float = 0.5,
+                                      technical_confidence: float = 0.5) -> float:
         """
-        Calculate position size using Kelly Criterion and volatility adjustment
+        Calculate position size using hybrid confidence scores and Kelly Criterion
+        Incorporates both price action and technical indicator confidence
         """
         if not self.p.dynamic_sizing:
             return 1.0
@@ -399,6 +407,10 @@ class EnhancedForexStrategy(bt.Strategy):
             else:
                 kelly_fraction = 0.02  # Default 2%
                 
+            # Hybrid confidence adjustment (60% PA + 40% Tech)
+            combined_confidence = (price_action_confidence * 0.6) + (technical_confidence * 0.4)
+            confidence_adjustment = 0.5 + (combined_confidence * 1.5)  # Range: 0.5 to 2.0
+            
             # Adjust for signal strength
             signal_adjustment = signal_strength * 1.5
             
@@ -411,17 +423,34 @@ class EnhancedForexStrategy(bt.Strategy):
                 regime_adjustment = 0.5
             elif self.current_regime in ['bullish_trend', 'bearish_trend']:
                 regime_adjustment = 1.2
+            
+            # Price action quality bonus
+            if price_action_confidence > 0.7:
+                pa_bonus = 1.2  # 20% bonus for high-quality price action
+            elif price_action_confidence > 0.5:
+                pa_bonus = 1.1  # 10% bonus for good price action
+            else:
+                pa_bonus = 0.9  # 10% penalty for weak price action
                 
-            final_size = kelly_fraction * signal_adjustment * vol_adjustment * regime_adjustment
+            final_size = kelly_fraction * signal_adjustment * vol_adjustment * regime_adjustment * confidence_adjustment * pa_bonus
             
             # Ensure within risk limits
             max_size = self.p.max_risk_per_trade / max(volatility, 0.005)
             final_size = min(final_size, max_size)
             
+            self.logger.info(f"Hybrid Position Sizing:")
+            self.logger.info(f"  Kelly Fraction: {kelly_fraction:.4f}")
+            self.logger.info(f"  Signal Adjustment: {signal_adjustment:.4f}")
+            self.logger.info(f"  Confidence Adjustment: {confidence_adjustment:.4f}")
+            self.logger.info(f"  PA Confidence: {price_action_confidence:.4f}")
+            self.logger.info(f"  Tech Confidence: {technical_confidence:.4f}")
+            self.logger.info(f"  PA Bonus: {pa_bonus:.4f}")
+            self.logger.info(f"  Final Size: {final_size:.6f}")
+            
             return max(final_size, 0.005)  # Minimum 0.5%
             
         except Exception as e:
-            self.logger.error(f"Error calculating position size: {e}")
+            self.logger.error(f"Error calculating hybrid position size: {e}")
             return 0.01
 
     def generate_advanced_signals(self) -> Dict[str, Any]:
@@ -737,6 +766,289 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return signals
 
+    def generate_hybrid_signals(self) -> Dict[str, Any]:
+        """
+        Generate hybrid trading signals: 60% price action + 40% technical indicators
+        Combines candlestick patterns, S/R levels, trend lines with traditional indicators
+        """
+        signals = {
+            'buy_score': 0.0,
+            'sell_score': 0.0,
+            'signal_strength': 0.0,
+            'confidence': 0.0,
+            'regime_filter': True,
+            'volatility_filter': True,
+            'price_action_score': 0.0,
+            'technical_score': 0.0,
+            'components': {},
+            'price_action_details': {},
+            'technical_details': {}
+        }
+        
+        try:
+            self.logger.info("=== HYBRID SIGNAL GENERATION (60% Price Action + 40% Technical) ===")
+            
+            # === PRICE ACTION ANALYSIS (60% WEIGHT) ===
+            self.logger.info("=== PRICE ACTION ANALYSIS (60% WEIGHT) ===")
+            
+            price_action_data = self.price_action_analyzer.calculate_price_action_score(lookback=30)
+            
+            # Extract price action scores
+            pa_bullish = price_action_data['bullish_score']
+            pa_bearish = price_action_data['bearish_score']
+            pa_confidence = price_action_data['confidence']
+            
+            self.logger.info(f"Price Action Scores:")
+            self.logger.info(f"  Bullish: {pa_bullish:.4f}")
+            self.logger.info(f"  Bearish: {pa_bearish:.4f}")
+            self.logger.info(f"  Confidence: {pa_confidence:.4f}")
+            self.logger.info(f"  Patterns: {price_action_data.get('patterns_detected', [])}")
+            
+            # Log price action components
+            if 'components' in price_action_data:
+                self.logger.info("Price Action Components:")
+                for component, value in price_action_data['components'].items():
+                    self.logger.info(f"  {component}: {value:.4f}")
+            
+            signals['price_action_details'] = price_action_data
+            
+            # === TECHNICAL INDICATOR ANALYSIS (40% WEIGHT) ===
+            self.logger.info("=== TECHNICAL INDICATOR ANALYSIS (40% WEIGHT) ===")
+            
+            tech_bullish = 0.0
+            tech_bearish = 0.0
+            tech_components = {}
+            
+            # RSI Analysis (10% of total signal)
+            rsi_score = 0.0
+            current_rsi = float(self.rsi[0])
+            self.logger.info(f"RSI Analysis: {current_rsi:.2f}")
+            
+            if current_rsi < self.p.rsi_oversold:
+                rsi_score = 0.4  # Strong bullish
+                self.logger.info(f"  RSI Oversold: +0.4 bullish")
+            elif current_rsi > self.p.rsi_overbought:
+                rsi_score = -0.4  # Strong bearish
+                self.logger.info(f"  RSI Overbought: +0.4 bearish")
+            elif current_rsi < 45:
+                rsi_score = 0.2  # Mild bullish
+                self.logger.info(f"  RSI Below 45: +0.2 bullish")
+            elif current_rsi > 55:
+                rsi_score = -0.2  # Mild bearish
+                self.logger.info(f"  RSI Above 55: +0.2 bearish")
+            
+            tech_components['rsi'] = rsi_score
+            
+            # MACD Analysis (10% of total signal)
+            macd_score = 0.0
+            macd_line = float(self.macd.macd[0])
+            macd_signal = float(self.macd.signal[0])
+            self.logger.info(f"MACD Analysis: Line={macd_line:.6f}, Signal={macd_signal:.6f}")
+            
+            if macd_line > macd_signal:
+                macd_score = 0.3
+                self.logger.info(f"  MACD Bullish: +0.3")
+                
+                # Check for histogram momentum
+                if hasattr(self.macd, 'histo') and len(self.macd.histo) > 1:
+                    if self.macd.histo[0] > self.macd.histo[-1]:
+                        macd_score += 0.1
+                        self.logger.info(f"  MACD Histogram Momentum: +0.1")
+            else:
+                macd_score = -0.3
+                self.logger.info(f"  MACD Bearish: +0.3 bearish")
+                
+                if hasattr(self.macd, 'histo') and len(self.macd.histo) > 1:
+                    if self.macd.histo[0] < self.macd.histo[-1]:
+                        macd_score -= 0.1
+                        self.logger.info(f"  MACD Histogram Momentum: +0.1 bearish")
+            
+            tech_components['macd'] = macd_score
+            
+            # Moving Average Analysis (10% of total signal)
+            ma_score = 0.0
+            ema_fast = float(self.ema_fast[0])
+            ema_slow = float(self.ema_slow[0])
+            current_price = float(self.dataclose[0])
+            
+            self.logger.info(f"Moving Average Analysis:")
+            self.logger.info(f"  EMA Fast: {ema_fast:.5f}")
+            self.logger.info(f"  EMA Slow: {ema_slow:.5f}")
+            self.logger.info(f"  Current Price: {current_price:.5f}")
+            
+            if ema_fast > ema_slow:
+                ma_score = 0.3
+                self.logger.info(f"  EMA Fast > Slow: +0.3 bullish")
+                
+                # Price above both EMAs
+                if current_price > ema_fast:
+                    ma_score += 0.1
+                    self.logger.info(f"  Price > EMA Fast: +0.1 bullish")
+            else:
+                ma_score = -0.3
+                self.logger.info(f"  EMA Fast < Slow: +0.3 bearish")
+                
+                # Price below both EMAs
+                if current_price < ema_fast:
+                    ma_score -= 0.1
+                    self.logger.info(f"  Price < EMA Fast: +0.1 bearish")
+            
+            tech_components['moving_averages'] = ma_score
+            
+            # Bollinger Bands Analysis (10% of total signal)
+            bb_score = 0.0
+            bb_upper = float(self.bb.lines.top[0])
+            bb_middle = float(self.bb.lines.mid[0])
+            bb_lower = float(self.bb.lines.bot[0])
+            
+            bb_position = (current_price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5
+            
+            self.logger.info(f"Bollinger Bands Analysis:")
+            self.logger.info(f"  BB Position: {bb_position:.4f}")
+            self.logger.info(f"  Price: {current_price:.5f}")
+            self.logger.info(f"  BB Upper: {bb_upper:.5f}")
+            self.logger.info(f"  BB Middle: {bb_middle:.5f}")
+            self.logger.info(f"  BB Lower: {bb_lower:.5f}")
+            
+            if bb_position < 0.2:
+                bb_score = 0.3  # Near lower band - bullish
+                self.logger.info(f"  Near Lower Band: +0.3 bullish")
+            elif bb_position > 0.8:
+                bb_score = -0.3  # Near upper band - bearish
+                self.logger.info(f"  Near Upper Band: +0.3 bearish")
+            elif bb_position < 0.4:
+                bb_score = 0.1  # Below middle - mild bullish
+                self.logger.info(f"  Below Middle: +0.1 bullish")
+            elif bb_position > 0.6:
+                bb_score = -0.1  # Above middle - mild bearish
+                self.logger.info(f"  Above Middle: +0.1 bearish")
+            
+            tech_components['bollinger_bands'] = bb_score
+            
+            # Calculate technical indicator totals
+            if rsi_score > 0 or macd_score > 0 or ma_score > 0 or bb_score > 0:
+                tech_bullish = max(0, rsi_score) + max(0, macd_score) + max(0, ma_score) + max(0, bb_score)
+            else:
+                tech_bullish = 0.0
+                
+            if rsi_score < 0 or macd_score < 0 or ma_score < 0 or bb_score < 0:
+                tech_bearish = abs(min(0, rsi_score)) + abs(min(0, macd_score)) + abs(min(0, ma_score)) + abs(min(0, bb_score))
+            else:
+                tech_bearish = 0.0
+            
+            self.logger.info(f"Technical Indicator Totals:")
+            self.logger.info(f"  Technical Bullish: {tech_bullish:.4f}")
+            self.logger.info(f"  Technical Bearish: {tech_bearish:.4f}")
+            
+            signals['technical_details'] = {
+                'bullish_score': tech_bullish,
+                'bearish_score': tech_bearish,
+                'components': tech_components,
+                'rsi': current_rsi,
+                'macd_line': macd_line,
+                'macd_signal': macd_signal,
+                'ema_fast': ema_fast,
+                'ema_slow': ema_slow,
+                'bb_position': bb_position
+            }
+            
+            # === HYBRID SIGNAL CALCULATION (60% PA + 40% TECH) ===
+            self.logger.info("=== HYBRID SIGNAL CALCULATION ===")
+            
+            # Apply weights: 60% price action, 40% technical indicators
+            price_action_weight = 0.6
+            technical_weight = 0.4
+            
+            # Calculate weighted scores
+            weighted_pa_bullish = pa_bullish * price_action_weight
+            weighted_pa_bearish = pa_bearish * price_action_weight
+            weighted_tech_bullish = tech_bullish * technical_weight
+            weighted_tech_bearish = tech_bearish * technical_weight
+            
+            self.logger.info(f"Weighted Scores:")
+            self.logger.info(f"  Price Action Bullish (60%): {pa_bullish:.4f} * 0.6 = {weighted_pa_bullish:.4f}")
+            self.logger.info(f"  Price Action Bearish (60%): {pa_bearish:.4f} * 0.6 = {weighted_pa_bearish:.4f}")
+            self.logger.info(f"  Technical Bullish (40%): {tech_bullish:.4f} * 0.4 = {weighted_tech_bullish:.4f}")
+            self.logger.info(f"  Technical Bearish (40%): {tech_bearish:.4f} * 0.4 = {weighted_tech_bearish:.4f}")
+            
+            # Final hybrid scores
+            final_bullish = weighted_pa_bullish + weighted_tech_bullish
+            final_bearish = weighted_pa_bearish + weighted_tech_bearish
+            
+            signals['buy_score'] = final_bullish
+            signals['sell_score'] = final_bearish
+            signals['signal_strength'] = max(final_bullish, final_bearish)
+            signals['price_action_score'] = pa_bullish + pa_bearish
+            signals['technical_score'] = tech_bullish + tech_bearish
+            
+            # Calculate combined confidence
+            pa_weight_in_confidence = 0.6
+            tech_weight_in_confidence = 0.4
+            
+            # Technical confidence based on indicator agreement
+            tech_confidence = min(abs(tech_bullish - tech_bearish) / max(tech_bullish + tech_bearish, 0.1), 1.0)
+            
+            combined_confidence = (pa_confidence * pa_weight_in_confidence) + (tech_confidence * tech_weight_in_confidence)
+            signals['confidence'] = combined_confidence
+            
+            self.logger.info(f"Final Hybrid Scores:")
+            self.logger.info(f"  Buy Score: {signals['buy_score']:.4f}")
+            self.logger.info(f"  Sell Score: {signals['sell_score']:.4f}")
+            self.logger.info(f"  Signal Strength: {signals['signal_strength']:.4f}")
+            self.logger.info(f"  Combined Confidence: {signals['confidence']:.4f}")
+            self.logger.info(f"  Price Action Contribution: {signals['price_action_score']:.4f}")
+            self.logger.info(f"  Technical Contribution: {signals['technical_score']:.4f}")
+            
+            # Enhanced filters
+            self.logger.info("=== FILTER EVALUATION ===")
+            
+            # Volatility filter
+            if self.p.use_volatility_filter:
+                current_vol = self.atr[0] / self.dataclose[0] if self.dataclose[0] > 0 else 0
+                vol_threshold = self.p.volatility_threshold * 3.0
+                vol_filter_pass = current_vol <= vol_threshold
+                
+                self.logger.info(f"Volatility filter:")
+                self.logger.info(f"  Current vol: {current_vol:.6f}")
+                self.logger.info(f"  Threshold: {vol_threshold:.6f}")
+                self.logger.info(f"  Filter pass: {vol_filter_pass}")
+                
+                signals['volatility_filter'] = vol_filter_pass
+                if not vol_filter_pass:
+                    self.logger.info("  VOLATILITY FILTER FAILED")
+            
+            # Regime filter
+            if self.p.use_regime_filter:
+                regime_filter_pass = self.regime_confidence > 0.3
+                signals['regime_filter'] = regime_filter_pass
+                self.logger.info(f"Regime filter: {regime_filter_pass} (confidence: {self.regime_confidence:.3f})")
+            
+            # Store component details for analysis
+            signals['components'] = {
+                'price_action_bullish': weighted_pa_bullish,
+                'price_action_bearish': weighted_pa_bearish,
+                'technical_bullish': weighted_tech_bullish,
+                'technical_bearish': weighted_tech_bearish,
+                'price_action_confidence': pa_confidence,
+                'technical_confidence': tech_confidence,
+                **tech_components
+            }
+            
+            self.logger.info(f"Hybrid Signal Summary:")
+            self.logger.info(f"  Final Decision: {'BUY' if final_bullish > final_bearish else 'SELL'}")
+            self.logger.info(f"  Signal Strength: {signals['signal_strength']:.4f}")
+            self.logger.info(f"  Confidence: {signals['confidence']:.4f}")
+            self.logger.info(f"  Price Action Weight: 60%")
+            self.logger.info(f"  Technical Weight: 40%")
+            
+            return signals
+            
+        except Exception as e:
+            import traceback
+            self.logger.error(f"Error generating hybrid signals: {str(e)}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return signals
+
     def next(self):
         """Main strategy logic with advanced quantitative analysis"""
         self.next_call_count += 1
@@ -847,10 +1159,10 @@ class EnhancedForexStrategy(bt.Strategy):
         if self.next_call_count <= 10 or self.next_call_count % 100 == 0:
             self.logger.info(f"Market regime: {self.current_regime} (confidence: {self.regime_confidence:.3f})")
         
-        # Generate signals
-        self.logger.info("Generating trading signals...")
+        # Generate hybrid signals (60% price action + 40% technical indicators)
+        self.logger.info("Generating hybrid trading signals...")
         self.signal_generation_count += 1
-        signals = self.generate_advanced_signals()
+        signals = self.generate_hybrid_signals()
         
         # === DETAILED SIGNAL ANALYSIS ===
         self.logger.info(f"=== SIGNAL ANALYSIS #{self.signal_generation_count} ===")
