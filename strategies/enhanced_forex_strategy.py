@@ -197,6 +197,7 @@ class EnhancedForexStrategy(bt.Strategy):
         self.max_drawdown = 0.0
         self.peak_value = self.broker.get_cash()
         self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
+        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         self.logger.info(f"Initial broker cash: {self.peak_value}")
         self.logger.info(f"Initial capital stored: {self.initial_capital}")
@@ -1294,7 +1295,7 @@ class EnhancedForexStrategy(bt.Strategy):
                     current_portfolio_value = self.broker.get_value()
                     
                     # Use the most recent reference capital (updated after last completed order)
-                    reference_capital = getattr(self, 'last_completed_portfolio_value', self.initial_capital)
+                    reference_capital = self.last_completed_portfolio_value
                     portfolio_change = current_portfolio_value - reference_capital
                     portfolio_change_pct = (portfolio_change / reference_capital) * 100 if reference_capital > 0 else 0
                     
@@ -1383,7 +1384,7 @@ class EnhancedForexStrategy(bt.Strategy):
                     current_portfolio_value = self.broker.get_value()
                     
                     # Use the most recent reference capital (updated after last completed order)
-                    reference_capital = getattr(self, 'last_completed_portfolio_value', self.initial_capital)
+                    reference_capital = self.last_completed_portfolio_value
                     portfolio_change = current_portfolio_value - reference_capital
                     portfolio_change_pct = (portfolio_change / reference_capital) * 100 if reference_capital > 0 else 0
                     
@@ -1676,7 +1677,7 @@ class EnhancedForexStrategy(bt.Strategy):
             portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
             
             # Calculate portfolio change since last completed trade
-            reference_capital = getattr(self, 'last_completed_portfolio_value', self.initial_capital)
+            reference_capital = self.last_completed_portfolio_value
             portfolio_change = correct_portfolio_value - reference_capital
             portfolio_change_pct = (portfolio_change / reference_capital) * 100 if reference_capital > 0 else 0
             

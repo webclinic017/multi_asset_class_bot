@@ -133,6 +133,7 @@ class ScalpingForexStrategy(bt.Strategy):
         self.trades_this_hour = 0
         self.last_hour = None
         self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
+        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         # GPU Setup
         self.use_gpu = self.p.use_gpu and GPU_AVAILABLE and torch is not None

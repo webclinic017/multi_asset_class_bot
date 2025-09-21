@@ -297,6 +297,7 @@ class GPUScalpingForexStrategy(bt.Strategy):
         self.trade_count = 0
         self.winning_trades = 0
         self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
+        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         # GPU setup
         self.device = 'cuda' if (GPU_AVAILABLE and self.p.use_gpu) else 'cpu'

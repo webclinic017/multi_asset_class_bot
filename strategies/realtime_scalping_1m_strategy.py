@@ -72,6 +72,8 @@ class RealtimeScalping1MStrategy(bt.Strategy):
         self.winning_trades = 0
         self.total_pnl = 0.0
         self.peak_value = self.broker.get_cash()
+        self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
+        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         self.last_trade_time = None
         self.trades_this_hour = 0

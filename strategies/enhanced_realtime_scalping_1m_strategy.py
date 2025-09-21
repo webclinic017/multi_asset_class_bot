@@ -89,6 +89,7 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
         self.total_pnl = 0.0
         self.peak_value = self.broker.get_cash()
         self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
+        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         # Scalping specific tracking
         self.last_trade_time = None
