@@ -564,14 +564,17 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
                     
                     # Add portfolio value change and profit/loss information
                     current_portfolio_value = self.broker.get_value()
-                    portfolio_change = current_portfolio_value - self.initial_capital
-                    portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                    
+                    # Use the most recent reference capital (updated after last completed order)
+                    reference_capital = getattr(self, 'last_completed_portfolio_value', self.initial_capital)
+                    portfolio_change = current_portfolio_value - reference_capital
+                    portfolio_change_pct = (portfolio_change / reference_capital) * 100 if reference_capital > 0 else 0
                     
                     # Get portfolio summary from tracker
                     portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
                     
                     self.logger.info(f"*** 1M SCALPING PORTFOLIO VALUE AFTER BUY ORDER ***")
-                    self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                    self.logger.info(f"  Reference Capital (Last Trade): ${reference_capital:.2f}")
                     self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
                     self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
                     self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
@@ -747,16 +750,17 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
                     commission=order.executed.comm
                 )
             
-            # Calculate portfolio change since start
+            # Calculate portfolio change since last completed trade
             current_portfolio_value = self.broker.get_value()
-            portfolio_change = current_portfolio_value - self.initial_capital
-            portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+            reference_capital = getattr(self, 'last_completed_portfolio_value', self.initial_capital)
+            portfolio_change = current_portfolio_value - reference_capital
+            portfolio_change_pct = (portfolio_change / reference_capital) * 100 if reference_capital > 0 else 0
             
             # Get portfolio summary from tracker
             portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
             
             self.logger.info(f"*** 1M SCALPING FINAL PORTFOLIO VALUE CHANGE AFTER ORDER EXECUTION ***")
-            self.logger.info(f"  Previous Reference Capital: ${self.initial_capital:.2f}")
+            self.logger.info(f"  Previous Reference Capital: ${reference_capital:.2f}")
             self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
             self.logger.info(f"  Trade P&L: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
             self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
