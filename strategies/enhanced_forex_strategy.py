@@ -1067,6 +1067,16 @@ class EnhancedForexStrategy(bt.Strategy):
         """Main strategy logic with advanced quantitative analysis"""
         self.next_call_count += 1
         
+        # Update reference capital if portfolio value has changed significantly
+        current_portfolio_value = self.broker.get_value()
+        if abs(current_portfolio_value - self.last_completed_portfolio_value) > 1.0:  # $1 threshold
+            old_reference = self.last_completed_portfolio_value
+            self.last_completed_portfolio_value = current_portfolio_value
+            self.logger.info(f"*** REAL-TIME REFERENCE CAPITAL UPDATE ***")
+            self.logger.info(f"  Old Reference: ${old_reference:.2f}")
+            self.logger.info(f"  New Reference: ${self.last_completed_portfolio_value:.2f}")
+            self.logger.info(f"  Portfolio Change: ${self.last_completed_portfolio_value - old_reference:.2f}")
+        
         # === COMPREHENSIVE NEXT() METHOD LOGGING ===
         if self.next_call_count <= 10 or self.next_call_count % 100 == 0:
             self.logger.info(f"=== NEXT() CALL #{self.next_call_count} ===")
@@ -1701,7 +1711,12 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.logger.info(f"*** TRADE RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
             
             # Update reference capital for next trade
+            old_reference = self.last_completed_portfolio_value
             self.last_completed_portfolio_value = correct_portfolio_value
+            self.logger.info(f"*** REFERENCE CAPITAL UPDATE ***")
+            self.logger.info(f"  Old Reference: ${old_reference:.2f}")
+            self.logger.info(f"  New Reference: ${self.last_completed_portfolio_value:.2f}")
+            self.logger.info(f"  Change: ${self.last_completed_portfolio_value - old_reference:.2f}")
             self.logger.info(f"*** UPDATED REFERENCE CAPITAL FOR NEXT TRADE: ${self.last_completed_portfolio_value:.2f} ***")
             
             # Force broker value correction if there's a discrepancy

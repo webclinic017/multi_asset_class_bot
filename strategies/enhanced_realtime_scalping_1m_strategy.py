@@ -487,6 +487,16 @@ class EnhancedRealtimeScalping1MStrategy(bt.Strategy):
 
     def next(self):
         """Main scalping logic with enhanced real-time logging"""
+        # Update reference capital if portfolio value has changed significantly
+        current_portfolio_value = self.broker.get_value()
+        if abs(current_portfolio_value - self.last_completed_portfolio_value) > 1.0:  # $1 threshold
+            old_reference = self.last_completed_portfolio_value
+            self.last_completed_portfolio_value = current_portfolio_value
+            self.logger.info(f"*** 1M SCALPING REAL-TIME REFERENCE CAPITAL UPDATE ***")
+            self.logger.info(f"  Old Reference: ${old_reference:.2f}")
+            self.logger.info(f"  New Reference: ${self.last_completed_portfolio_value:.2f}")
+            self.logger.info(f"  Portfolio Change: ${self.last_completed_portfolio_value - old_reference:.2f}")
+        
         if self.order:
             return
         
