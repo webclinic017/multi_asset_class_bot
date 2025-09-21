@@ -109,6 +109,10 @@ class ScalpingForexStrategy(bt.Strategy):
         """Initialize scalping strategy with ultra-fast indicators and GPU acceleration"""
         self.logger = logging.getLogger(__name__)
         
+        # Initialize portfolio value tracker for accurate portfolio tracking
+        from execution.portfolio_value_tracker import get_portfolio_tracker
+        self.portfolio_tracker = get_portfolio_tracker(10000.0)
+        
         # Basic price data
         self.dataclose = self.datas[0].close
         self.datahigh = self.datas[0].high
@@ -128,6 +132,7 @@ class ScalpingForexStrategy(bt.Strategy):
         self.daily_pnl = 0.0
         self.trades_this_hour = 0
         self.last_hour = None
+        self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
         
         # GPU Setup
         self.use_gpu = self.p.use_gpu and GPU_AVAILABLE and torch is not None
@@ -663,6 +668,29 @@ class ScalpingForexStrategy(bt.Strategy):
                 self.last_trade_time = self.datas[0].datetime.datetime(0)
                 self.trades_this_hour += 1
                 
+                # Add portfolio value change and profit/loss information
+                current_portfolio_value = self.broker.get_value()
+                portfolio_change = current_portfolio_value - self.initial_capital
+                portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                
+                # Get portfolio summary from tracker
+                portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                
+                self.logger.info(f"*** SCALPING FOREX PORTFOLIO VALUE AFTER BUY ORDER ***")
+                self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                
+                if portfolio_change > 0:
+                    self.logger.info(f"*** SCALPING FOREX PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                elif portfolio_change < 0:
+                    self.logger.info(f"*** SCALPING FOREX LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                else:
+                    self.logger.info(f"*** SCALPING FOREX BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
+                
             elif signals['entry_type'] == 'SELL':
                 # Calculate position size
                 position_size = self.calculate_position_size(signals['signal_strength'])
@@ -680,6 +708,29 @@ class ScalpingForexStrategy(bt.Strategy):
                 self.entry_bar = len(self)
                 self.last_trade_time = self.datas[0].datetime.datetime(0)
                 self.trades_this_hour += 1
+                
+                # Add portfolio value change and profit/loss information
+                current_portfolio_value = self.broker.get_value()
+                portfolio_change = current_portfolio_value - self.initial_capital
+                portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                
+                # Get portfolio summary from tracker
+                portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                
+                self.logger.info(f"*** SCALPING FOREX PORTFOLIO VALUE AFTER SELL ORDER ***")
+                self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                
+                if portfolio_change > 0:
+                    self.logger.info(f"*** SCALPING FOREX PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                elif portfolio_change < 0:
+                    self.logger.info(f"*** SCALPING FOREX LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                else:
+                    self.logger.info(f"*** SCALPING FOREX BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
                 
         else:  # In position
             self._manage_scalping_position()
@@ -741,6 +792,60 @@ class ScalpingForexStrategy(bt.Strategy):
                 self.log(f'TRAILING STOP (SHORT) - Price: {current_price:.5f}')
                 self.close()
                 self.lowest_price_short = None
+    def notify_order(self, order):
+        """Enhanced order notification with portfolio tracking"""
+        if order.status in [order.Submitted, order.Accepted]:
+            return
+
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.buyprice = order.executed.price
+                self.buycomm = order.executed.comm
+            
+            # Update portfolio tracker
+            if order.isbuy():
+                self.portfolio_tracker.update_cash(self.broker.get_cash())
+                self.portfolio_tracker.add_position(
+                    symbol="EUR_USD",
+                    size=order.executed.size,
+                    entry_price=order.executed.price,
+                    commission=order.executed.comm
+                )
+            else:
+                self.portfolio_tracker.close_position(
+                    symbol="EUR_USD",
+                    exit_price=order.executed.price,
+                    commission=order.executed.comm
+                )
+            
+            # Calculate portfolio change since start
+            current_portfolio_value = self.broker.get_value()
+            portfolio_change = current_portfolio_value - self.initial_capital
+            portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+            
+            # Get portfolio summary from tracker
+            portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+            
+            self.logger.info(f"*** SCALPING FOREX FINAL PORTFOLIO VALUE CHANGE AFTER ORDER EXECUTION ***")
+            self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+            self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+            self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+            self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+            
+            if portfolio_change > 0:
+                self.logger.info(f"*** SCALPING FOREX FINAL RESULT: PROFIT ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+            elif portfolio_change < 0:
+                self.logger.info(f"*** SCALPING FOREX FINAL RESULT: LOSS ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+            else:
+                self.logger.info(f"*** SCALPING FOREX FINAL RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
+            
+            self.log(f'SCALPING ORDER EXECUTED - {order.getstatusname()} at {order.executed.price:.5f}')
+            self.order = None
+            
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log(f'SCALPING ORDER FAILED - {order.getstatusname()}')
+            self.order = None
+
 
     def log(self, txt, dt=None):
         """Enhanced logging for scalping"""

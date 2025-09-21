@@ -196,8 +196,10 @@ class EnhancedForexStrategy(bt.Strategy):
         self.total_pnl = 0.0
         self.max_drawdown = 0.0
         self.peak_value = self.broker.get_cash()
+        self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
         
         self.logger.info(f"Initial broker cash: {self.peak_value}")
+        self.logger.info(f"Initial capital stored: {self.initial_capital}")
         
         # GPU Setup
         self.use_gpu = self.p.use_gpu and GPU_AVAILABLE and torch is not None
@@ -1287,10 +1289,29 @@ class EnhancedForexStrategy(bt.Strategy):
                     self.logger.info(f"*** BUY ORDER SUBMITTED ***")
                     self.logger.info(f"  Order reference: {self.order.ref if self.order else 'None'}")
                     self.logger.info(f"  Order object: {self.order}")
-                    self.logger.info(f"  Order exectype: Market")
-                    self.logger.info(f"  Order status: {self.order.getstatusname() if self.order else 'None'}")
-                    self.logger.info(f"  Order alive: {self.order.alive() if self.order else 'None'}")
-                    self.logger.info(f"  Submitted at bar: {self.order_submitted_bar}")
+                    
+                    # Add portfolio value change and profit/loss information
+                    current_portfolio_value = self.broker.get_value()
+                    portfolio_change = current_portfolio_value - self.initial_capital
+                    portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                    
+                    # Get portfolio summary from tracker
+                    portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                    
+                    self.logger.info(f"*** PORTFOLIO VALUE AFTER BUY ORDER ***")
+                    self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                    self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                    self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                    self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                    self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                    self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                    
+                    if portfolio_change > 0:
+                        self.logger.info(f"*** PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                    elif portfolio_change < 0:
+                        self.logger.info(f"*** LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                    else:
+                        self.logger.info(f"*** BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
                     
                     # CRITICAL: Check if notify_order callback will be triggered
                     self.logger.info(f"*** CHECKING ORDER PROCESSING ***")
@@ -1354,10 +1375,29 @@ class EnhancedForexStrategy(bt.Strategy):
                     self.logger.info(f"*** SELL ORDER SUBMITTED ***")
                     self.logger.info(f"  Order reference: {self.order.ref if self.order else 'None'}")
                     self.logger.info(f"  Order object: {self.order}")
-                    self.logger.info(f"  Order exectype: Market")
-                    self.logger.info(f"  Order status: {self.order.getstatusname() if self.order else 'None'}")
-                    self.logger.info(f"  Order alive: {self.order.alive() if self.order else 'None'}")
-                    self.logger.info(f"  Submitted at bar: {self.order_submitted_bar}")
+                    
+                    # Add portfolio value change and profit/loss information
+                    current_portfolio_value = self.broker.get_value()
+                    portfolio_change = current_portfolio_value - self.initial_capital
+                    portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                    
+                    # Get portfolio summary from tracker
+                    portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                    
+                    self.logger.info(f"*** PORTFOLIO VALUE AFTER SELL ORDER ***")
+                    self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                    self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                    self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                    self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                    self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                    self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                    
+                    if portfolio_change > 0:
+                        self.logger.info(f"*** PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                    elif portfolio_change < 0:
+                        self.logger.info(f"*** LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                    else:
+                        self.logger.info(f"*** BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
                     
                     # CRITICAL: Check if notify_order callback will be triggered
                     self.logger.info(f"*** CHECKING ORDER PROCESSING ***")
@@ -1629,11 +1669,28 @@ class EnhancedForexStrategy(bt.Strategy):
             correct_portfolio_value = self.portfolio_tracker.get_total_portfolio_value()
             portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
             
+            # Calculate portfolio change since start
+            portfolio_change = correct_portfolio_value - self.initial_capital
+            portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+            
             self.logger.info(f"*** PORTFOLIO VALUE TRACKER RESULTS ***")
             self.logger.info(f"  Tracker portfolio value: ${correct_portfolio_value:.2f}")
             self.logger.info(f"  Tracker total return: {portfolio_summary['total_return']:.2f}%")
             self.logger.info(f"  Tracker unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
             self.logger.info(f"  Tracker realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+            
+            self.logger.info(f"*** FINAL PORTFOLIO VALUE CHANGE AFTER ORDER EXECUTION ***")
+            self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+            self.logger.info(f"  Current Portfolio Value: ${correct_portfolio_value:.2f}")
+            self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+            self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+            
+            if portfolio_change > 0:
+                self.logger.info(f"*** FINAL RESULT: PROFIT ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+            elif portfolio_change < 0:
+                self.logger.info(f"*** FINAL RESULT: LOSS ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+            else:
+                self.logger.info(f"*** FINAL RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
             
             # Force broker value correction if there's a discrepancy
             if abs(correct_portfolio_value - new_value) > 0.01:
