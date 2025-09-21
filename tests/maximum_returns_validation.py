@@ -19,6 +19,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import backtrader as bt
 from strategies.enhanced_forex_strategy import EnhancedForexStrategy
 from strategies.enhanced_realtime_scalping_1m_strategy import EnhancedRealtimeScalping1MStrategy
+from strategies.ultra_aggressive_maximum_returns_strategy import UltraAggressiveMaximumReturnsStrategy
 
 class MaximumReturnsValidator:
     """Comprehensive validation framework for 2-3% daily returns"""
@@ -296,7 +297,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description='Maximum Returns Validation')
-    parser.add_argument('--strategy', choices=['forex', 'scalping'], required=True,
+    parser.add_argument('--strategy', choices=['forex', 'scalping', 'ultra_aggressive'], required=True,
                        help='Strategy to validate')
     parser.add_argument('--days', type=int, default=30, help='Test period in days')
     parser.add_argument('--target-min', type=float, default=2.0, help='Minimum daily return target')
@@ -314,6 +315,9 @@ def main():
     elif args.strategy == 'scalping':
         strategy_class = EnhancedRealtimeScalping1MStrategy
         strategy_name = "Enhanced Scalping Strategy"
+    elif args.strategy == 'ultra_aggressive':
+        strategy_class = UltraAggressiveMaximumReturnsStrategy
+        strategy_name = "Ultra-Aggressive Maximum Returns Strategy"
     else:
         print("❌ Invalid strategy")
         sys.exit(1)

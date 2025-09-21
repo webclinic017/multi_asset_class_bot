@@ -78,17 +78,17 @@ class EnhancedForexStrategy(bt.Strategy):
         ('volatility_lookback', 35), # Shorter lookback
         ('volatility_threshold', 0.015), # More sensitive threshold
         
-        # Aggressive Risk Management for Maximum Returns
-        ('base_stop_loss', 0.025),     # Aggressive 2.5% stop loss for higher returns
-        ('base_take_profit', 0.08),    # Aggressive 8% take profit (3.2:1 ratio)
+        # ULTRA-ULTRA-AGGRESSIVE Risk Management for 2-3% Daily Returns
+        ('base_stop_loss', 0.002),     # Ultra-ultra-tight 0.2% stop loss for micro-scalping
+        ('base_take_profit', 0.08),    # Ultra-aggressive 8% take profit for quick profits
         ('dynamic_sizing', True),      # Enable dynamic position sizing
-        ('max_risk_per_trade', 0.05),  # Higher risk per trade for maximum returns
+        ('max_risk_per_trade', 0.20),  # Ultra-high risk per trade for maximum returns
         ('volatility_adjustment', True), # Adjust for volatility
-        ('stop_loss_percent', 0.025),  # Aggressive stop loss
-        ('take_profit_percent', 0.08), # Aggressive take profit
-        ('trailing_stop_percent', 0.015), # Looser trailing stop for profit capture
-        ('position_size_percent', 0.03), # 3% per trade for 2-3% daily target
-        ('max_position_size', 0.15),   # Higher maximum position size
+        ('stop_loss_percent', 0.002),  # Ultra-ultra-tight stop loss
+        ('take_profit_percent', 0.08), # Ultra-high take profit target for quick exits
+        ('trailing_stop_percent', 0.001), # Ultra-tight trailing stop for quick profits
+        ('position_size_percent', 0.40), # 40% per trade for 2-3% daily target
+        ('max_position_size', 0.80),   # Ultra-ultra-high maximum position size
         ('min_volatility', 0.00008),   # Lower minimum volatility
         ('max_volatility', 0.012),     # Higher maximum volatility
         ('trend_strength_threshold', 0.4), # Lower threshold for more trades
@@ -125,10 +125,10 @@ class EnhancedForexStrategy(bt.Strategy):
         ('use_correlation_filter', False), # Disable for more trades
         ('use_momentum_filter', False),   # Disable for higher frequency
         
-        # Maximum Returns Performance Optimization
-        ('min_sharpe_threshold', -0.5), # Much lower threshold for maximum returns focus
-        ('max_drawdown_threshold', 0.25), # Allow 25% drawdown for higher returns
-        ('profit_factor_threshold', 0.5), # Lower threshold for more aggressive trading
+        # ULTRA-AGGRESSIVE Performance Optimization for 2-3% Daily Returns
+        ('min_sharpe_threshold', -10.0), # Ultra-low threshold for maximum returns
+        ('max_drawdown_threshold', 0.80), # Allow 80% drawdown for ultra-high returns
+        ('profit_factor_threshold', 0.1), # Ultra-low threshold for constant trading
         
         # Enhanced Sentiment Integration
         ('sentiment_weight', 0.35),    # Higher sentiment weight
@@ -147,16 +147,16 @@ class EnhancedForexStrategy(bt.Strategy):
         ('gpu_batch_size', 64),        # Larger batch for complex strategy
         ('gpu_lookback', 200),         # Larger buffer for advanced analysis
         
-        # Hybrid Signal Parameters
-        ('signal_strength_threshold', 0.15),  # Minimum signal strength for entry
-        ('high_confidence_threshold', 0.7),   # High confidence threshold
+        # ULTRA-ULTRA-AGGRESSIVE Signal Parameters for Maximum Trading Frequency
+        ('signal_strength_threshold', 0.005), # Ultra-ultra-low threshold for constant trading
+        ('high_confidence_threshold', 0.05),  # Ultra-ultra-low confidence threshold
         ('price_action_weight', 0.6),         # Price action weight in hybrid system
         ('technical_weight', 0.4),            # Technical indicator weight
         
-        # High-Frequency Trading Parameters for Maximum Returns
-        ('max_trades_per_hour', 20),          # Increased trades per hour for higher returns
-        ('min_time_between_trades', 180),     # Reduced time between trades (3 minutes)
-        ('quick_exit_threshold', 0.01),      # Higher quick exit threshold for faster profits
+        # ULTRA-ULTRA-HIGH-FREQUENCY Trading Parameters for 2-3% Daily Returns
+        ('max_trades_per_hour', 240),         # Ultra-ultra-high frequency trading (4 trades per minute)
+        ('min_time_between_trades', 15),      # Ultra-ultra-short time between trades (15 seconds)
+        ('quick_exit_threshold', 0.05),       # Ultra-high quick exit threshold for fastest profits
         
         # Logging
         ('printlog', False)
@@ -845,29 +845,44 @@ class EnhancedForexStrategy(bt.Strategy):
             return 1.0
 
         try:
-            # Use the new portfolio-aware sizing system
-            final_size = self.calculate_portfolio_optimized_position_size(
-                signal_strength, volatility, self.current_regime
-            )
+            # ULTRA-ULTRA-AGGRESSIVE POSITION SIZING FOR 2-3% DAILY RETURNS
+            # Base size is now 40% of capital per trade
+            base_size = self.p.position_size_percent
+
+            # Signal strength adjustment (ultra-ultra-aggressive)
+            signal_multiplier = signal_strength * 10.0  # Increased to 10.0 for maximum size
+
+            # Volatility adjustment (ultra-aggressive - no penalty)
+            vol_adjustment = 1.0 / (1.0 + volatility * 1)  # Ultra-minimal volatility penalty
+
+            # Price action quality bonus for maximum returns
+            if price_action_confidence > 0.5:
+                pa_bonus = 5.0  # 400% bonus for decent price action
+            elif price_action_confidence > 0.3:
+                pa_bonus = 3.0  # 200% bonus for weak price action
+            else:
+                pa_bonus = 2.0  # 100% bonus even for poor price action
 
             # Apply additional confidence adjustments
             combined_confidence = (price_action_confidence * 0.6) + (technical_confidence * 0.4)
-            confidence_adjustment = 0.8 + (combined_confidence * 0.4)  # Range: 0.8 to 1.2
+            confidence_adjustment = 2.0 + (combined_confidence * 2.0)  # Range: 2.0 to 4.0
 
-            final_size *= confidence_adjustment
+            final_size = base_size * signal_multiplier * vol_adjustment * confidence_adjustment * pa_bonus
 
-            # Ensure within risk limits
-            max_size = self.p.max_risk_per_trade / max(volatility, 0.005)
+            # Ultra-ultra-high risk limits for maximum returns
+            max_size = self.p.max_risk_per_trade * 3.0  # Triple the risk limit
             final_size = min(final_size, max_size)
 
-            self.logger.info(f"Portfolio-Optimized Position Sizing:")
-            self.logger.info(f"  Base Size: {final_size/confidence_adjustment:.6f}")
+            self.logger.info(f"ULTRA-AGGRESSIVE Position Sizing for 2-3% Daily Returns:")
+            self.logger.info(f"  Base Size (25%): {base_size:.4f}")
+            self.logger.info(f"  Signal Multiplier: {signal_multiplier:.3f}")
             self.logger.info(f"  Confidence Adjustment: {confidence_adjustment:.4f}")
+            self.logger.info(f"  PA Bonus: {pa_bonus:.3f}")
             self.logger.info(f"  Final Size: {final_size:.6f}")
             self.logger.info(f"  Portfolio Health: {self._calculate_portfolio_health_factor():.4f}")
             self.logger.info(f"  Current Exposure: {self._calculate_current_portfolio_exposure():.4f}")
 
-            return max(final_size, 0.005)  # Minimum 0.5%
+            return max(final_size, 0.01)  # Minimum 1%
 
         except Exception as e:
             self.logger.error(f"Error calculating portfolio-optimized position size: {e}")
@@ -1932,7 +1947,10 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.logger.info(f"Current position size: {self.position.size}")
                 self.logger.info(f"Entry price: {self.buyprice}")
                 self.logger.info(f"Current P&L: {(current_price - self.buyprice) * self.position.size if self.buyprice else 0:.2f}")
-            
+
+            # Update position price in portfolio tracker for accurate unrealized P&L
+            self.portfolio_tracker.update_position_price("EUR_USD", current_price)
+
             self._manage_position_advanced(current_vol, signals)
 
     def calculate_dynamic_risk_reward(self, signal_strength, volatility, regime):
@@ -2202,6 +2220,8 @@ class EnhancedForexStrategy(bt.Strategy):
                     entry_price=order.executed.price,
                     commission=order.executed.comm
                 )
+                # Update position price for unrealized P&L calculation
+                self.portfolio_tracker.update_position_price("EUR_USD", order.executed.price)
             else:  # sell order
                 self.portfolio_tracker.close_position(
                     symbol="EUR_USD",
