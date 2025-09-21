@@ -202,6 +202,7 @@ class EnhancedForexStrategy(bt.Strategy):
         self.peak_value = self.p.initial_capital
         self.initial_capital = self.p.initial_capital  # Use parameter for consistent reference
         self.last_completed_portfolio_value = self.p.initial_capital  # Initialize reference capital
+        self.portfolio_value_history = [self.p.initial_capital]  # Track portfolio value after each completed trade
         
         self.logger.info(f"Initial broker cash: {self.peak_value}")
         self.logger.info(f"Initial capital stored: {self.initial_capital}")
@@ -1790,28 +1791,24 @@ class EnhancedForexStrategy(bt.Strategy):
                     # Add portfolio value change and profit/loss information
                     current_portfolio_value = self.broker.get_value()
                     
-                    # Use the most recent reference capital (updated after last completed order)
+                    # Use the last completed portfolio value as reference (before this trade)
                     reference_capital = self.last_completed_portfolio_value
-                    portfolio_change = current_portfolio_value - reference_capital
-                    portfolio_change_pct = (portfolio_change / reference_capital) * 100 if reference_capital > 0 else 0
+                    # Calculate expected P&L (this will be realized when trade completes)
+                    expected_portfolio_value = reference_capital  # No change yet until trade executes
+                    portfolio_change = 0.0  # No realized change until trade completes
+                    portfolio_change_pct = 0.0
                     
                     # Get portfolio summary from tracker
                     portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
                     
-                    self.logger.info(f"*** PORTFOLIO VALUE AFTER BUY ORDER ***")
-                    self.logger.info(f"  Reference Capital (Last Trade): ${reference_capital:.2f}")
-                    self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
-                    self.logger.info(f"  Expected Trade P&L: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
-                    self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
-                    self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
-                    self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
-                    
-                    if portfolio_change > 0:
-                        self.logger.info(f"*** EXPECTED PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
-                    elif portfolio_change < 0:
-                        self.logger.info(f"*** EXPECTED LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
-                    else:
-                        self.logger.info(f"*** EXPECTED BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
+                    self.logger.info(f"*** PORTFOLIO STATE BEFORE BUY ORDER EXECUTION ***")
+                    self.logger.info(f"  Reference Capital (After Last Completed Trade): ${reference_capital:.2f}")
+                    self.logger.info(f"  Current Broker Value: ${current_portfolio_value:.2f}")
+                    self.logger.info(f"  Portfolio Tracker Value: ${portfolio_summary.get('total_value', current_portfolio_value):.2f}")
+                    self.logger.info(f"  Realized P&L (All Completed Trades): ${portfolio_summary['realized_pnl']:.2f}")
+                    self.logger.info(f"  Unrealized P&L (Open Positions): ${portfolio_summary['unrealized_pnl']:.2f}")
+                    self.logger.info(f"  Net P&L (Total): ${portfolio_summary['net_pnl']:.2f}")
+                    self.logger.info(f"  Trade P&L will be calculated after order execution")
                     
                     # CRITICAL: Check if notify_order callback will be triggered
                     self.logger.info(f"*** CHECKING ORDER PROCESSING ***")
@@ -1879,28 +1876,24 @@ class EnhancedForexStrategy(bt.Strategy):
                     # Add portfolio value change and profit/loss information
                     current_portfolio_value = self.broker.get_value()
                     
-                    # Use the most recent reference capital (updated after last completed order)
+                    # Use the last completed portfolio value as reference (before this trade)
                     reference_capital = self.last_completed_portfolio_value
-                    portfolio_change = current_portfolio_value - reference_capital
-                    portfolio_change_pct = (portfolio_change / reference_capital) * 100 if reference_capital > 0 else 0
+                    # Calculate expected P&L (this will be realized when trade completes)
+                    expected_portfolio_value = reference_capital  # No change yet until trade executes
+                    portfolio_change = 0.0  # No realized change until trade completes
+                    portfolio_change_pct = 0.0
                     
                     # Get portfolio summary from tracker
                     portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
                     
-                    self.logger.info(f"*** PORTFOLIO VALUE AFTER SELL ORDER ***")
-                    self.logger.info(f"  Reference Capital (Last Trade): ${reference_capital:.2f}")
-                    self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
-                    self.logger.info(f"  Expected Trade P&L: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
-                    self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
-                    self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
-                    self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
-                    
-                    if portfolio_change > 0:
-                        self.logger.info(f"*** EXPECTED PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
-                    elif portfolio_change < 0:
-                        self.logger.info(f"*** EXPECTED LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
-                    else:
-                        self.logger.info(f"*** EXPECTED BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
+                    self.logger.info(f"*** PORTFOLIO STATE BEFORE SELL ORDER EXECUTION ***")
+                    self.logger.info(f"  Reference Capital (After Last Completed Trade): ${reference_capital:.2f}")
+                    self.logger.info(f"  Current Broker Value: ${current_portfolio_value:.2f}")
+                    self.logger.info(f"  Portfolio Tracker Value: ${portfolio_summary.get('total_value', current_portfolio_value):.2f}")
+                    self.logger.info(f"  Realized P&L (All Completed Trades): ${portfolio_summary['realized_pnl']:.2f}")
+                    self.logger.info(f"  Unrealized P&L (Open Positions): ${portfolio_summary['unrealized_pnl']:.2f}")
+                    self.logger.info(f"  Net P&L (Total): ${portfolio_summary['net_pnl']:.2f}")
+                    self.logger.info(f"  Trade P&L will be calculated after order execution")
                     
                     # CRITICAL: Check if notify_order callback will be triggered
                     self.logger.info(f"*** CHECKING ORDER PROCESSING ***")
@@ -2244,13 +2237,16 @@ class EnhancedForexStrategy(bt.Strategy):
             else:
                 self.logger.info(f"*** TRADE RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
             
-            # Update reference capital for next trade
+            # Update reference capital and portfolio history for next trade
             old_reference = self.last_completed_portfolio_value
             self.last_completed_portfolio_value = correct_portfolio_value
+            self.portfolio_value_history.append(correct_portfolio_value)
+
             self.logger.info(f"*** REFERENCE CAPITAL UPDATE ***")
             self.logger.info(f"  Old Reference: ${old_reference:.2f}")
             self.logger.info(f"  New Reference: ${self.last_completed_portfolio_value:.2f}")
             self.logger.info(f"  Change: ${self.last_completed_portfolio_value - old_reference:.2f}")
+            self.logger.info(f"  Portfolio History Length: {len(self.portfolio_value_history)}")
             self.logger.info(f"*** UPDATED REFERENCE CAPITAL FOR NEXT TRADE: ${self.last_completed_portfolio_value:.2f} ***")
             
             # Force broker value correction if there's a discrepancy
