@@ -51,7 +51,12 @@ class RealTimeBacktestEngine(BacktestEngine):
             commission=self.commission
         )
         self.cerebro.broker = realtime_broker
+
+        # Ensure cerebro has correct initial capital for analyzers
+        self.cerebro.broker.setcash(self.initial_capital)
+
         self.logger.info(f"Real-time broker installed for immediate order execution")
+        self.logger.info(f"Cerebro initial capital set to: ${self.initial_capital:,.2f}")
         
         # Real-time tracking
         self.portfolio_snapshots = []

@@ -686,7 +686,12 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                             strategy_params[param] = value
                     
                     logger.info(f"Converted scalping parameters: {strategy_params}")
-                
+
+                # Add initial capital parameter for consistent reference
+                logger.info("=== ADDING INITIAL CAPITAL PARAMETER ===")
+                strategy_params['initial_capital'] = backtest_request.initial_capital
+                logger.info(f"Added initial_capital: {backtest_request.initial_capital}")
+
                 # Add printlog parameter
                 logger.info("=== MODIFYING STRATEGY PARAMETERS ===")
                 logger.info(f"Setting printlog=False (was: {strategy_params.get('printlog', 'not set')})")
@@ -861,15 +866,41 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
 
                 if results and isinstance(results, dict):
                     logger.info(f"Real-time backtest completed with results: {results}")
-                    
-                    # Extract real results
-                    final_capital = results.get('final_value', backtest_request.initial_capital)
-                    total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital)
+
+                    # Extract results from portfolio snapshots for accurate calculations
+                    portfolio_snapshots = results.get('portfolio_snapshots', [])
+                    if portfolio_snapshots:
+                        # Use the last snapshot for final values - snapshots already have correct calculations
+                        final_snapshot = portfolio_snapshots[-1]
+                        final_capital = final_snapshot.get('total_value', backtest_request.initial_capital)
+                        total_return = final_snapshot.get('total_return', 0.0)
+
+                        # Convert total_return from decimal to percentage if needed
+                        if abs(total_return) < 1:  # Already in decimal form (e.g., -0.90)
+                            pass  # Keep as is
+                        elif abs(total_return) > 10:  # In percentage form (e.g., -90.0)
+                            total_return = total_return / 100.0
+
+                        # Get max drawdown from snapshots (already calculated correctly)
+                        max_drawdown = 0.0
+                        for snapshot in portfolio_snapshots:
+                            drawdown = snapshot.get('drawdown', 0.0)
+                            # Drawdown in snapshots is as percentage (0-100), convert to decimal
+                            if isinstance(drawdown, (int, float)) and drawdown > 1:
+                                drawdown = drawdown / 100.0
+                            max_drawdown = max(max_drawdown, drawdown)
+
+                        logger.info(f"Using snapshot calculations: final_capital=${final_capital:.2f}, total_return={total_return:.6f}, max_drawdown={max_drawdown:.6f}")
+                    else:
+                        # Fallback to backtrader results if no snapshots
+                        final_capital = results.get('final_value', backtest_request.initial_capital)
+                        total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital)
+                        max_drawdown = results.get('max_drawdown', 0.0) / 100.0 if results.get('max_drawdown', 0.0) > 1 else results.get('max_drawdown', 0.0)
+
                     total_trades = results.get('total_trades', 0)
                     winning_trades = results.get('winning_trades', 0)
                     losing_trades = results.get('losing_trades', 0)
                     win_rate = (winning_trades / total_trades) if total_trades > 0 else 0.0
-                    max_drawdown = results.get('max_drawdown', 0.0) / 100.0 if results.get('max_drawdown', 0.0) > 1 else results.get('max_drawdown', 0.0)
                     sharpe_ratio = results.get('sharpe_ratio', 0.0)
                     
                     # Update session with real backtest results

@@ -49,6 +49,9 @@ class EnhancedForexStrategy(bt.Strategy):
     """
     
     params = (
+        # Initial Capital Parameter
+        ('initial_capital', 100000.0),  # Explicit initial capital parameter
+
         # Optimized Core Moving Average Parameters
         ('fast_length', 8),   # Faster for quicker signals
         ('slow_length', 21),  # Fibonacci number for better market resonance
@@ -168,10 +171,10 @@ class EnhancedForexStrategy(bt.Strategy):
         self.logger.info(f"Strategy parameters received: {dict(self.params._getitems())}")
         
         # Initialize portfolio value tracker for accurate portfolio tracking
-        from execution.portfolio_value_tracker import get_portfolio_tracker, force_reset_portfolio_tracker_to_100k
-        # Force reset to ensure $100,000 initial capital
-        self.portfolio_tracker = force_reset_portfolio_tracker_to_100k()
-        self.logger.info(f"Portfolio value tracker force reset to ${self.portfolio_tracker.initial_capital:,.2f}")
+        from execution.portfolio_value_tracker import PortfolioValueTracker
+        # Use the same initial capital as the strategy parameter
+        self.portfolio_tracker = PortfolioValueTracker(self.p.initial_capital)
+        self.logger.info(f"Portfolio value tracker initialized with ${self.portfolio_tracker.initial_capital:,.2f}")
         
         # Basic price data
         self.dataclose = self.datas[0].close
@@ -196,9 +199,9 @@ class EnhancedForexStrategy(bt.Strategy):
         self.winning_trades = 0
         self.total_pnl = 0.0
         self.max_drawdown = 0.0
-        self.peak_value = self.broker.get_cash()
-        self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
-        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
+        self.peak_value = self.p.initial_capital
+        self.initial_capital = self.p.initial_capital  # Use parameter for consistent reference
+        self.last_completed_portfolio_value = self.p.initial_capital  # Initialize reference capital
         
         self.logger.info(f"Initial broker cash: {self.peak_value}")
         self.logger.info(f"Initial capital stored: {self.initial_capital}")
