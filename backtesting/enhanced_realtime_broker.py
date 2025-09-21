@@ -82,8 +82,8 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
         self.logger.info("EnhancedRealTimeBroker initialized with comprehensive logging")
         
         # Initialize cash and value
-        self.cash = 10000.0
-        self.value = 10000.0
+        self.cash = 100000.0
+        self.value = 100000.0
         
         # Tracking collections
         self.trading_signals: List[TradingSignal] = []
@@ -431,7 +431,7 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
             "rejected_orders": len([a for a in self.order_activities if a.status == OrderStatus.REJECTED])
         }
 
-def create_enhanced_realtime_broker(initial_cash=10000.0, commission=0.001):
+def create_enhanced_realtime_broker(initial_cash=100000.0, commission=0.001):
     """
     Factory function to create an enhanced real-time broker
     

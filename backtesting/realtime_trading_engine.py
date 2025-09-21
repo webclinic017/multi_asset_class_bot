@@ -58,7 +58,7 @@ class RealTimeTradingEngine:
         self.logger.info(f"RealTimeTradingEngine initialized for session {session_id}")
     
     def setup_engine(self, strategy_class_name: str, strategy_params: Dict[str, Any],
-                    initial_capital: float = 10000.0, commission: float = 0.001):
+                    initial_capital: float = 100000.0, commission: float = 0.001):
         """Setup the trading engine with strategy and broker"""
         try:
             # Create Cerebro engine

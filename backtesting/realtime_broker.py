@@ -19,8 +19,8 @@ class RealTimeBroker(bt.brokers.BackBroker):
         self.logger.info("RealTimeBroker initialized for immediate order execution")
         
         # Initialize cash and value properly - use the parent class method
-        self.cash = 10000.0  # Set initial cash
-        self.value = 10000.0  # Set initial portfolio value
+        self.cash = 100000.0  # Set initial cash
+        self.value = 100000.0  # Set initial portfolio value
         
         # Track execution for debugging
         self.execution_count = 0
@@ -185,7 +185,7 @@ class RealTimeBroker(bt.brokers.BackBroker):
         self.value = self.cash  # Reset value when cash is set
         self.logger.info(f"Cash set to: ${self.cash:.2f}")
 
-def create_realtime_broker(initial_cash=10000.0, commission=0.001):
+def create_realtime_broker(initial_cash=100000.0, commission=0.001):
     """
     Factory function to create a real-time broker with immediate execution
     

@@ -238,7 +238,7 @@ def run_live_trading_with_dashboard(config_path: str, web_server: TradingBotWebS
         session_type="live",
         strategy_id=scalping_strategy['id'],
         symbol="EUR_USD",
-        initial_capital=10000.0
+        initial_capital=100000.0
     )
     
     logger.info(f"Created live trading session {session_id}")
@@ -253,7 +253,7 @@ def run_live_trading_with_dashboard(config_path: str, web_server: TradingBotWebS
             
             # Store portfolio snapshot every minute
             if iteration % 12 == 0:  # Every 60 seconds (5 second intervals)
-                portfolio_value = 10000 + (iteration * 0.5)  # Simulate growth
+                portfolio_value = 100000 + (iteration * 0.5)  # Simulate growth
                 
                 db_manager.store_portfolio_snapshot(
                     session_id=session_id,

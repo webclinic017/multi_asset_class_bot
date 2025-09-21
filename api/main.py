@@ -91,7 +91,7 @@ class BacktestRequest(BaseModel):
     symbol: str
     start_date: str
     end_date: str
-    initial_capital: float = 10000.0
+    initial_capital: float = 100000.0
     timeframe: str = "1m"
 
 class MarketDataResponse(BaseModel):
@@ -1318,7 +1318,7 @@ async def start_live_trading(session_data: Dict[str, Any]):
             session_type="live",
             strategy_id=session_data["strategy_id"],
             symbol=session_data["symbol"],
-            initial_capital=session_data.get("initial_capital", 10000.0)
+            initial_capital=session_data.get("initial_capital", 100000.0)
         )
         
         # Initialize real-time logging components
