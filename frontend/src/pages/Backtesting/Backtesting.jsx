@@ -365,7 +365,7 @@ const Backtesting = () => {
       </Header>
 
       <Card>
-        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines)</CardTitle>
+        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines) - <span style={{color: '#22c55e', fontWeight: 'bold'}}>$100,000 Initial Capital</span></CardTitle>
         <FormGrid>
           <FormGroup>
             <Label>Strategy</Label>
