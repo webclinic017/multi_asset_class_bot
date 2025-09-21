@@ -78,17 +78,17 @@ class EnhancedForexStrategy(bt.Strategy):
         ('volatility_lookback', 35), # Shorter lookback
         ('volatility_threshold', 0.015), # More sensitive threshold
         
-        # Enhanced Risk Management for Higher Returns
-        ('base_stop_loss', 0.008),     # Tighter base stop loss
-        ('base_take_profit', 0.035),   # Higher take profit target
+        # Aggressive Risk Management for Maximum Returns
+        ('base_stop_loss', 0.025),     # Aggressive 2.5% stop loss for higher returns
+        ('base_take_profit', 0.08),    # Aggressive 8% take profit (3.2:1 ratio)
         ('dynamic_sizing', True),      # Enable dynamic position sizing
-        ('max_risk_per_trade', 0.025), # Slightly higher risk per trade
+        ('max_risk_per_trade', 0.05),  # Higher risk per trade for maximum returns
         ('volatility_adjustment', True), # Adjust for volatility
-        ('stop_loss_percent', 0.008),  # Tighter stop loss
-        ('take_profit_percent', 0.04), # Higher take profit
-        ('trailing_stop_percent', 0.004), # Tighter trailing stop
-        ('position_size_percent', 0.04), # Larger position size
-        ('max_position_size', 0.08),   # Higher maximum position size
+        ('stop_loss_percent', 0.025),  # Aggressive stop loss
+        ('take_profit_percent', 0.08), # Aggressive take profit
+        ('trailing_stop_percent', 0.015), # Looser trailing stop for profit capture
+        ('position_size_percent', 0.03), # 3% per trade for 2-3% daily target
+        ('max_position_size', 0.15),   # Higher maximum position size
         ('min_volatility', 0.00008),   # Lower minimum volatility
         ('max_volatility', 0.012),     # Higher maximum volatility
         ('trend_strength_threshold', 0.4), # Lower threshold for more trades
@@ -119,16 +119,16 @@ class EnhancedForexStrategy(bt.Strategy):
         ('feature_lookback', 35),      # Shorter feature lookback
         ('momentum_periods', [3, 8, 13, 34]), # Fibonacci-based periods
         
-        # Optimized Filters
-        ('use_regime_filter', True),
-        ('use_volatility_filter', True),
+        # Aggressive Filters for Maximum Trade Frequency
+        ('use_regime_filter', True),      # Keep regime filter for trend alignment
+        ('use_volatility_filter', False), # Disable for more trades in all conditions
         ('use_correlation_filter', False), # Disable for more trades
-        ('use_momentum_filter', True),
+        ('use_momentum_filter', False),   # Disable for higher frequency
         
-        # Enhanced Performance Optimization for 1-hour data
-        ('min_sharpe_threshold', 0.1), # Much lower threshold for 1-hour data
-        ('max_drawdown_threshold', 0.35), # Allow higher drawdown for 1-hour data
-        ('profit_factor_threshold', 0.8), # Lower threshold for more trades
+        # Maximum Returns Performance Optimization
+        ('min_sharpe_threshold', -0.5), # Much lower threshold for maximum returns focus
+        ('max_drawdown_threshold', 0.25), # Allow 25% drawdown for higher returns
+        ('profit_factor_threshold', 0.5), # Lower threshold for more aggressive trading
         
         # Enhanced Sentiment Integration
         ('sentiment_weight', 0.35),    # Higher sentiment weight
@@ -153,10 +153,10 @@ class EnhancedForexStrategy(bt.Strategy):
         ('price_action_weight', 0.6),         # Price action weight in hybrid system
         ('technical_weight', 0.4),            # Technical indicator weight
         
-        # Scalping Compatibility Parameters
-        ('max_trades_per_hour', 10),          # Maximum trades per hour for forex
-        ('min_time_between_trades', 300),     # Minimum time between trades (5 minutes)
-        ('quick_exit_threshold', 0.005),     # Quick exit threshold for forex
+        # High-Frequency Trading Parameters for Maximum Returns
+        ('max_trades_per_hour', 20),          # Increased trades per hour for higher returns
+        ('min_time_between_trades', 180),     # Reduced time between trades (3 minutes)
+        ('quick_exit_threshold', 0.01),      # Higher quick exit threshold for faster profits
         
         # Logging
         ('printlog', False)
@@ -572,6 +572,47 @@ class EnhancedForexStrategy(bt.Strategy):
             return self.total_pnl / self.initial_capital
         return 0.0
 
+    def calculate_momentum_acceleration(self):
+        """Calculate momentum acceleration for entry timing"""
+        # Multi-timeframe momentum
+        mom_1m = self.momentum_features.get('mom_3', bt.indicators.Momentum(period=3))[0] if 'mom_3' in self.momentum_features else 0
+        mom_5m = self.momentum_features.get('mom_8', bt.indicators.Momentum(period=8))[0] if 'mom_8' in self.momentum_features else 0
+        mom_15m = self.momentum_features.get('mom_13', bt.indicators.Momentum(period=13))[0] if 'mom_13' in self.momentum_features else 0
+
+        # Acceleration detection
+        acceleration = (mom_1m - mom_5m) + (mom_5m - mom_15m)
+
+        # Boost signals in acceleration periods
+        if acceleration > 0.001:  # Positive acceleration threshold
+            return self.p.momentum_acceleration  # 1.4x signal strength
+        elif acceleration < -0.001:  # Negative acceleration
+            return 0.7  # Reduce signal strength
+        else:
+            return 1.0  # No acceleration boost
+
+    def detect_breakout_signals(self):
+        """Enhanced breakout detection for maximum returns"""
+        # Volume + price breakout
+        volume_breakout = self.volume_ratio[0] > 2.0 if len(self.volume_ratio) > 0 else False
+        price_breakout = self.dataclose[0] > self.bb.lines.top[0] if len(self.bb.lines.top) > 0 else False
+
+        # Consolidation breakout
+        consolidation_period = 20  # bars
+        if len(self.data) > consolidation_period:
+            recent_highs = [self.datahigh[-i] for i in range(1, consolidation_period + 1)]
+            recent_lows = [self.datalow[-i] for i in range(1, consolidation_period + 1)]
+            consolidation_range = (max(recent_highs) - min(recent_lows)) / self.dataclose[0]
+            consolidation_breakout = consolidation_range < 0.005  # Tight consolidation
+        else:
+            consolidation_breakout = False
+
+        if volume_breakout and price_breakout and consolidation_breakout:
+            return self.p.breakout_multiplier  # 1.5x signal strength
+        elif volume_breakout or price_breakout:
+            return 1.2  # Moderate breakout boost
+        else:
+            return 1.0  # No breakout
+
     def _adjust_all_position_sizes(self, reduction_factor):
         """Adjust all position sizes proportionally"""
         if self.position and reduction_factor < 1.0:
@@ -874,16 +915,16 @@ class EnhancedForexStrategy(bt.Strategy):
                 self.logger.info(f"  ATR: {self.atr[0]}")
                 self.logger.info(f"  Current Price: {self.dataclose[0]}")
             
-            # Enhanced Trend signals with acceleration
-            self.logger.info("=== TREND ANALYSIS ===")
+            # Enhanced Trend signals with acceleration and momentum boost
+            self.logger.info("=== TREND ANALYSIS WITH MOMENTUM ACCELERATION ===")
             trend_score = 0.0
-            
+
             ema_condition = self.ema_fast[0] > self.ema_slow[0]
             self.logger.info(f"EMA Fast > Slow: {ema_condition} ({self.ema_fast[0]:.5f} > {self.ema_slow[0]:.5f})")
             if ema_condition:
                 trend_score += 1.2
                 self.logger.info("  Added 1.2 to trend_score")
-            
+
             tema_condition = self.tema[0] > self.tema[-1] if len(self.tema) > 1 else False
             # Safe formatting for TEMA momentum comparison
             if len(self.tema) > 1:
@@ -894,13 +935,13 @@ class EnhancedForexStrategy(bt.Strategy):
             if tema_condition:
                 trend_score += 0.8
                 self.logger.info("  Added 0.8 to trend_score")
-            
+
             bb_condition = self.dataclose[0] > self.bb.lines.mid[0]
             self.logger.info(f"Price > BB Mid: {bb_condition} ({self.dataclose[0]:.5f} > {self.bb.lines.mid[0]:.5f})")
             if bb_condition:
                 trend_score += 0.6
                 self.logger.info("  Added 0.6 to trend_score")
-            
+
             # Add trend acceleration detection
             if len(self.ema_fast) > 2:
                 fast_acceleration = (self.ema_fast[0] - self.ema_fast[-1]) - (self.ema_fast[-1] - self.ema_fast[-2])
@@ -909,7 +950,15 @@ class EnhancedForexStrategy(bt.Strategy):
                     old_trend_score = trend_score
                     trend_score *= self.p.trend_following_boost
                     self.logger.info(f"  Applied trend boost: {old_trend_score:.3f} * {self.p.trend_following_boost} = {trend_score:.3f}")
-                    
+
+            # Apply momentum acceleration boost
+            momentum_boost = self.calculate_momentum_acceleration()
+            self.logger.info(f"Momentum acceleration boost: {momentum_boost:.3f}")
+            if momentum_boost > 1.0:
+                old_trend_score = trend_score
+                trend_score *= momentum_boost
+                self.logger.info(f"  Applied momentum boost: {old_trend_score:.3f} * {momentum_boost:.3f} = {trend_score:.3f}")
+
             trend_component = min(trend_score / 2.6, 1.0)
             signals['components']['trend'] = trend_component
             self.logger.info(f"Final trend component: {trend_component:.4f} (raw: {trend_score:.3f})")
@@ -1010,28 +1059,32 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.info(f"Final reversion component: {reversion_component:.4f} (raw: {reversion_score:.3f})")
             
             # Enhanced Volume confirmation with breakout detection
-            self.logger.info("=== VOLUME ANALYSIS ===")
+            self.logger.info("=== VOLUME ANALYSIS WITH BREAKOUT DETECTION ===")
             volume_score = 0.0
+            breakout_boost = self.detect_breakout_signals()
+            self.logger.info(f"Breakout detection boost: {breakout_boost:.3f}")
+
             if self.p.volume_confirmation and len(self.volume_ratio) > 0:
                 volume_ratio_val = self.volume_ratio[0]
                 self.logger.info(f"Volume ratio: {volume_ratio_val:.3f}")
                 self.logger.info(f"Current volume: {self.datavolume[0]}")
                 self.logger.info(f"Volume SMA: {self.volume_sma[0]}")
-                
+
                 if volume_ratio_val > 1.5:  # Strong volume breakout
-                    volume_score = 1.2 * self.p.breakout_multiplier
-                    self.logger.info(f"  Strong volume breakout: 1.2 * {self.p.breakout_multiplier} = {volume_score:.3f}")
+                    volume_score = 1.2 * breakout_boost  # Apply breakout boost
+                    self.logger.info(f"  Strong volume breakout with boost: 1.2 * {breakout_boost:.3f} = {volume_score:.3f}")
                 elif volume_ratio_val > 1.2:
-                    volume_score = 0.8
-                    self.logger.info("  Added 0.8 to volume_score (moderate volume)")
+                    volume_score = 0.8 * breakout_boost  # Apply breakout boost
+                    self.logger.info(f"  Moderate volume with boost: 0.8 * {breakout_boost:.3f} = {volume_score:.3f}")
                 elif volume_ratio_val < 0.7:
                     volume_score = -0.6
-                    self.logger.info("  Subtracted 0.6 from volume_score (low volume)")
+                    self.logger.info("  Subtracted 0.6 to volume_score (low volume)")
             else:
                 self.logger.info("Volume confirmation disabled or no volume data")
-                    
+
             volume_component = max(-1.0, min(volume_score, 1.0))
             signals['components']['volume'] = volume_component
+            signals['components']['breakout_boost'] = breakout_boost
             self.logger.info(f"Final volume component: {volume_component:.4f} (raw: {volume_score:.3f})")
             
             # Volatility expansion signal
