@@ -18,10 +18,6 @@ class RealTimeBroker(bt.brokers.BackBroker):
         self.logger = logging.getLogger(__name__)
         self.logger.info("RealTimeBroker initialized for immediate order execution")
 
-        # Initialize cash and value - will be set by set_cash
-        self.cash = 0.0  # Initialize to 0, will be set properly
-        self.value = 0.0  # Initialize to 0, will be set properly
-
         # Track execution for debugging
         self.execution_count = 0
         self.pending_orders = []
@@ -188,6 +184,7 @@ class RealTimeBroker(bt.brokers.BackBroker):
 
     def setcash(self, cash):
         """Backtrader compatibility method"""
+        super().setcash(cash)  # Call parent setcash first
         return self.set_cash(cash)
 
 def create_realtime_broker(initial_cash=100000.0, commission=0.001):
