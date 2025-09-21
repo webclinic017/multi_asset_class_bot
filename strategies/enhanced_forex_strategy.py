@@ -169,7 +169,7 @@ class EnhancedForexStrategy(bt.Strategy):
         
         # Initialize portfolio value tracker for accurate portfolio tracking
         from execution.portfolio_value_tracker import get_portfolio_tracker
-        self.portfolio_tracker = get_portfolio_tracker(10000.0)
+        self.portfolio_tracker = get_portfolio_tracker(100000.0)
         self.logger.info("Portfolio value tracker initialized")
         
         # Basic price data

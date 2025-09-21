@@ -194,7 +194,7 @@ class EnhancedCryptoStrategy(bt.Strategy):
         
         # Initialize portfolio value tracker for accurate portfolio tracking
         from execution.portfolio_value_tracker import get_portfolio_tracker
-        self.portfolio_tracker = get_portfolio_tracker(10000.0)
+        self.portfolio_tracker = get_portfolio_tracker(100000.0)
         self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         # Market regime tracking

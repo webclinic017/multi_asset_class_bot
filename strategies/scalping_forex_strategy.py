@@ -111,7 +111,7 @@ class ScalpingForexStrategy(bt.Strategy):
         
         # Initialize portfolio value tracker for accurate portfolio tracking
         from execution.portfolio_value_tracker import get_portfolio_tracker
-        self.portfolio_tracker = get_portfolio_tracker(10000.0)
+        self.portfolio_tracker = get_portfolio_tracker(100000.0)
         
         # Basic price data
         self.dataclose = self.datas[0].close
