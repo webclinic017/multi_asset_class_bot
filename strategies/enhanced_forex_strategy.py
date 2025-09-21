@@ -168,9 +168,10 @@ class EnhancedForexStrategy(bt.Strategy):
         self.logger.info(f"Strategy parameters received: {dict(self.params._getitems())}")
         
         # Initialize portfolio value tracker for accurate portfolio tracking
-        from execution.portfolio_value_tracker import get_portfolio_tracker
-        self.portfolio_tracker = get_portfolio_tracker(100000.0)
-        self.logger.info("Portfolio value tracker initialized")
+        from execution.portfolio_value_tracker import get_portfolio_tracker, force_reset_portfolio_tracker_to_100k
+        # Force reset to ensure $100,000 initial capital
+        self.portfolio_tracker = force_reset_portfolio_tracker_to_100k()
+        self.logger.info(f"Portfolio value tracker force reset to ${self.portfolio_tracker.initial_capital:,.2f}")
         
         # Basic price data
         self.dataclose = self.datas[0].close

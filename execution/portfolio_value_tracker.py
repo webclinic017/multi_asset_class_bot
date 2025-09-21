@@ -168,6 +168,12 @@ def reset_portfolio_tracker():
     global _global_portfolio_tracker
     _global_portfolio_tracker = None
 
+def force_reset_portfolio_tracker_to_100k():
+    """Force reset portfolio tracker to use $100,000"""
+    global _global_portfolio_tracker
+    _global_portfolio_tracker = PortfolioValueTracker(100000.0)
+    return _global_portfolio_tracker
+
 if __name__ == "__main__":
     # Test portfolio value tracker
     logging.basicConfig(level=logging.INFO)
