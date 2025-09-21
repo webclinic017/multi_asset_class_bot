@@ -620,17 +620,21 @@ class GPUScalpingForexStrategy(bt.Strategy):
             portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
             
             self.logger.info(f"*** GPU SCALPING FINAL PORTFOLIO VALUE CHANGE AFTER ORDER EXECUTION ***")
-            self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+            self.logger.info(f"  Previous Reference Capital: ${self.initial_capital:.2f}")
             self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
-            self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+            self.logger.info(f"  Trade P&L: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
             self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
             
             if portfolio_change > 0:
-                self.logger.info(f"*** GPU SCALPING FINAL RESULT: PROFIT ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                self.logger.info(f"*** GPU SCALPING TRADE RESULT: PROFIT ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
             elif portfolio_change < 0:
-                self.logger.info(f"*** GPU SCALPING FINAL RESULT: LOSS ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                self.logger.info(f"*** GPU SCALPING TRADE RESULT: LOSS ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
             else:
-                self.logger.info(f"*** GPU SCALPING FINAL RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
+                self.logger.info(f"*** GPU SCALPING TRADE RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
+            
+            # Update reference capital for next trade
+            self.initial_capital = current_portfolio_value
+            self.logger.info(f"*** UPDATED REFERENCE CAPITAL FOR NEXT TRADE: ${self.initial_capital:.2f} ***")
             
             self.log(f'GPU SCALPING ORDER EXECUTED - {order.getstatusname()} at {order.executed.price:.5f}')
             self.order = None
