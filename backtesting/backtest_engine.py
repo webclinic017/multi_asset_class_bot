@@ -86,7 +86,7 @@ class BacktestEngine:
 
         # Get backtesting config with defaults
         backtest_config = self.config.get('backtesting', {})
-        self.initial_capital = backtest_config.get('initial_capital', 10000)
+        self.initial_capital = backtest_config.get('initial_capital', 100000)
         self.commission = backtest_config.get('commission', 0.001)
         self.slippage = backtest_config.get('slippage', 0.0005)
         
@@ -636,7 +636,7 @@ if __name__ == '__main__':
     # or load it from a file as main.py does.
     dummy_config = {
         'backtesting': {
-            'initial_capital': 10000,
+            'initial_capital': 100000,
             'commission': 0.001,
             'slippage': 0.0005,
             'start_date': "2023-01-01",

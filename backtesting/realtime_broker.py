@@ -106,9 +106,10 @@ class RealTimeBroker(bt.brokers.BackBroker):
                     self.logger.error(f"Insufficient cash for buy order: {value + order.executed.comm:.2f} > {self.cash:.2f}")
                     return
             else:
-                # Sell order: increase cash, reduce position
-                self.cash += (value - order.executed.comm)
-                self.logger.info(f"Sell execution: Cash increased by {value - order.executed.comm:.2f}")
+                # Sell order: increase cash, reduce position (value is negative for sell orders)
+                cash_change = abs(value) - order.executed.comm
+                self.cash += cash_change
+                self.logger.info(f"Sell execution: Cash increased by {cash_change:.2f}")
             
             # Update portfolio value
             self._update_value()
@@ -209,6 +210,6 @@ if __name__ == "__main__":
     # Test the real-time broker
     logging.basicConfig(level=logging.INFO)
     
-    broker = create_realtime_broker(10000.0, 0.001)
+    broker = create_realtime_broker(100000.0, 0.001)
     print(f"Broker created with cash: ${broker.get_cash():.2f}")
     print(f"Broker value: ${broker.get_value():.2f}")

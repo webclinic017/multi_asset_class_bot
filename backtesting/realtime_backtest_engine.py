@@ -358,7 +358,7 @@ if __name__ == "__main__":
     # Mock configuration
     config = {
         'backtesting': {
-            'initial_capital': 10000,
+            'initial_capital': 100000,
             'commission': 0.001,
             'slippage': 0.0005,
             'start_date': '2023-01-01',

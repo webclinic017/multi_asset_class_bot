@@ -227,7 +227,7 @@ class GPUBacktestEngine:
                         symbol: str,
                         start_date: str,
                         end_date: str,
-                        initial_capital: float = 10000.0,
+                        initial_capital: float = 100000.0,
                         timeframe: str = '1m',
                         strategy_name: str = None,
                         strategy_type: str = None) -> Dict[str, Any]:
@@ -729,7 +729,7 @@ class GPUBacktestEngine:
         symbol = "EUR_USD"
         start_date = "2024-01-01"
         end_date = "2024-01-31"
-        initial_capital = 10000.0
+        initial_capital = 100000.0
         
         results = {}
         

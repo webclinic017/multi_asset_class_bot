@@ -200,7 +200,7 @@ class RealTimeTradingEngine:
             
             # Update session status
             final_value = self.broker.get_value() if self.broker else 0
-            initial_capital = self.config.get('initial_capital', 10000)
+            initial_capital = self.config.get('initial_capital', 100000)
             total_return = (final_value - initial_capital) / initial_capital if initial_capital > 0 else 0
             
             self.db_manager.update_trading_session(
@@ -336,7 +336,7 @@ class RealTimeTradingEngine:
             broker_stats = self.broker.get_broker_stats() if self.broker else {}
             
             # Calculate performance metrics
-            initial_capital = self.config.get('initial_capital', 10000)
+            initial_capital = self.config.get('initial_capital', 100000)
             current_value = self.broker.get_value() if self.broker else initial_capital
             total_return = (current_value - initial_capital) / initial_capital if initial_capital > 0 else 0
             
@@ -365,7 +365,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     config = {
-        "initial_capital": 10000.0,
+        "initial_capital": 100000.0,
         "commission": 0.001,
         "strategy": "EnhancedRealtimeScalping1MStrategy",
         "symbol": "EUR_USD",
