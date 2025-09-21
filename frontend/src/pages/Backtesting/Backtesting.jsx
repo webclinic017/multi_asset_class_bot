@@ -197,7 +197,7 @@ const Backtesting = () => {
     symbol: 'EUR_USD',
     start_date: '2024-01-01',
     end_date: '2024-12-31',
-    initial_capital: 10000,
+    initial_capital: 100000,
     timeframe: '1m'
   });
 
