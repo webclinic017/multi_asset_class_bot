@@ -45,9 +45,9 @@ export const PortfolioSummary = () => (
   <PlaceholderContainer>
     <h4>Portfolio Summary</h4>
     <div style={{ marginTop: '10px' }}>
-      <div>Total Value: $10,250.00</div>
-      <div>Cash: $2,500.00</div>
-      <div>P&L: +$250.00</div>
+      <div>Total Value: $102,500.00</div>
+      <div>Cash: $25,000.00</div>
+      <div>P&L: +$2,500.00</div>
       <div>Open Positions: 3</div>
     </div>
   </PlaceholderContainer>
