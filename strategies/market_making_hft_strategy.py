@@ -33,8 +33,12 @@ class MarketMakingHFTStrategy(bt.Strategy):
         ('printlog', False)
     )
 
-    def __init__(self):
-        """Initialize market making strategy"""
+    def __init__(self, initial_capital=None):
+        """Initialize market making strategy
+        
+        Args:
+            initial_capital: Optional initial capital (ignored, kept for compatibility)
+        """
         self.logger = logging.getLogger(__name__)
 
         # Basic data feeds

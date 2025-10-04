@@ -37,8 +37,12 @@ class LatencyArbitrageHFTStrategy(bt.Strategy):
         ('printlog', False)
     )
 
-    def __init__(self):
-        """Initialize latency arbitrage strategy"""
+    def __init__(self, initial_capital=None):
+        """Initialize latency arbitrage strategy
+        
+        Args:
+            initial_capital: Optional initial capital (ignored, kept for compatibility)
+        """
         self.logger = logging.getLogger(__name__)
 
         # For latency arbitrage, we need multiple data feeds from different exchanges

@@ -38,8 +38,12 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
         ('printlog', False)
     )
 
-    def __init__(self):
-        """Initialize momentum ignition strategy"""
+    def __init__(self, initial_capital=None):
+        """Initialize momentum ignition strategy
+        
+        Args:
+            initial_capital: Optional initial capital (ignored, kept for compatibility)
+        """
         self.logger = logging.getLogger(__name__)
 
         # Basic data feeds
