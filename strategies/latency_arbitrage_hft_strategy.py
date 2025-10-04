@@ -19,15 +19,21 @@ class LatencyArbitrageHFTStrategy(bt.Strategy):
     """
 
     params = (
-        ('latency_threshold', 0.0001),    # Minimum price discrepancy to trigger (0.01%)
-        ('max_holding_time', 60),         # Maximum holding time in seconds
-        ('min_profit_threshold', 0.00005), # Minimum profit target (0.005%)
-        ('risk_limit', 0.005),            # Maximum risk per trade (0.5%)
-        ('max_position_size', 3),         # Maximum position size
-        ('order_refresh_time', 1),        # Order refresh interval in seconds
+        ('max_position_size', 10),         # Maximum position size
+        ('min_profit_threshold', 0.0001),  # Minimum profit target (0.01%)
+        ('max_holding_time', 60),          # Maximum holding time in seconds
+        ('latency_threshold', 0.5),        # Latency threshold in seconds
+        ('price_tolerance', 0.0002),       # Price tolerance for arbitrage (0.02%)
+        ('risk_limit', 0.005),             # Maximum risk per trade (0.5%)
+        ('exchange_count', 2),             # Number of exchanges to monitor
+        ('arbitrage_window', 5),           # Time window for arbitrage opportunity
+        ('volume_threshold', 100),         # Minimum volume threshold
+        ('spread_threshold', 0.001),       # Maximum acceptable spread (0.1%)
+        ('adaptive_position_sizing', True), # Use adaptive position sizing
+        ('order_refresh_time', 1),         # Order refresh interval in seconds
         ('exchange_comparison_window', 10), # Window for comparing exchange prices
         ('profit_taking_threshold', 0.0002), # Profit taking threshold (0.02%)
-        ('stop_loss_multiplier', 2.0),    # Stop loss multiplier relative to profit target
+        ('stop_loss_multiplier', 2.0),     # Stop loss multiplier relative to profit target
         ('printlog', False)
     )
 

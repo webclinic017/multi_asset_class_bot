@@ -19,14 +19,20 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
     """
 
     params = (
+        ('ignition_volume', 50),          # Number of trades in ignition sequence
+        ('trade_interval', 0.1),          # Time between ignition trades (seconds)
         ('momentum_threshold', 0.001),    # Minimum momentum to ignite (0.1%)
-        ('ignition_volume', 5),           # Number of ignition trades
+        ('profit_target', 0.005),         # Profit target per trade (0.5%)
+        ('stop_loss', 0.002),             # Stop loss per trade (0.2%)
+        ('max_ignition_trades', 10),      # Maximum trades in one ignition sequence
+        ('cooldown_period', 300),         # Cooldown period between sequences (seconds)
+        ('volume_multiplier', 2.0),       # Volume surge multiplier
+        ('adaptive_ignition', True),      # Use adaptive ignition sizing
+        ('risk_limit', 0.01),             # Maximum risk per ignition sequence (1%)
+        ('min_market_volume', 1000),      # Minimum market volume required
         ('max_holding_time', 30),         # Maximum holding time in seconds
-        ('profit_target', 0.0005),        # Profit target per trade (0.05%)
-        ('stop_loss', 0.0002),            # Stop loss per trade (0.02%)
         ('volume_surge_threshold', 2.0),  # Volume surge multiplier
         ('momentum_decay_time', 15),      # Momentum decay time in seconds
-        ('risk_limit', 0.01),             # Maximum risk per ignition sequence (1%)
         ('max_trades_per_minute', 10),    # Maximum trades per minute
         ('ignition_interval', 60),        # Minimum time between ignition sequences
         ('printlog', False)
