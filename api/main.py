@@ -925,35 +925,38 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     win_rate = (winning_trades / total_trades) if total_trades > 0 else 0.0
                     sharpe_ratio = results.get('sharpe_ratio', 0.0)
                     
+                    # Extract final portfolio value from results
+                    final_capital = results.get('final_value', backtest_request.initial_capital)
+                    total_return = results.get('total_return', 0.0)
+                    sharpe_ratio = results.get('sharpe_ratio', 0.0)
+                    max_drawdown = results.get('max_drawdown', 0.0)
+                    total_trades = results.get('total_trades', 0)
+                    winning_trades = results.get('winning_trades', 0)
+                    losing_trades = results.get('losing_trades', 0)
+                    win_rate = results.get('win_rate', 0.0)
+                    
+                    logger.info(f"SAVING SESSION RESULTS TO DATABASE:")
+                    logger.info(f"  Session ID: {session_id}")
+                    logger.info(f"  Final Capital: {final_capital}")
+                    logger.info(f"  Total Return: {total_return}%")
+                    logger.info(f"  Sharpe Ratio: {sharpe_ratio}")
+                    logger.info(f"  Max Drawdown: {max_drawdown}%")
+                    
                     # Update session with real backtest results
                     end_date_dt = datetime.fromisoformat(backtest_request.end_date)
-                    
-                    # Log what we're about to save
-                    logger.info("=== SAVING SESSION RESULTS TO DATABASE ===")
-                    logger.info(f"Session ID: {session_id}")
-                    logger.info(f"Final Capital to save: ${final_capital:.2f}")
-                    logger.info(f"Total Return to save: {total_return:.6f}")
-                    logger.info(f"Total Trades to save: {total_trades}")
-                    logger.info(f"Winning Trades to save: {winning_trades}")
-                    logger.info(f"Losing Trades to save: {losing_trades}")
-                    logger.info(f"Win Rate to save: {win_rate:.6f}")
-                    logger.info(f"Max Drawdown to save: {max_drawdown:.6f}")
-                    logger.info(f"Sharpe Ratio to save: {sharpe_ratio:.6f}")
-                    
                     db_manager.update_trading_session(
                         session_id,
                         end_time=end_date_dt,
-                        final_capital=final_capital,
-                        total_return=total_return,
+                        final_capital=final_capital,  # This should now be 97357.87
+                        total_return=(total_return / 100.0 if abs(total_return) > 1.0 else total_return), # Ensure it is a decimal
                         total_trades=total_trades,
                         winning_trades=winning_trades,
                         losing_trades=losing_trades,
                         win_rate=win_rate,
                         max_drawdown=max_drawdown,
                         sharpe_ratio=sharpe_ratio,
-                        status="completed"
+                        status='completed'
                     )
-                    
                     logger.info(f"Session {session_id} updated in database successfully")
                     
                     # Broadcast completion with real-time tracking metrics
