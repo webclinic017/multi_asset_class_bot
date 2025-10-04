@@ -363,10 +363,15 @@ const Backtesting = () => {
   return (
     <BacktestingContainer>
       <Header>
-        <Title>Backtesting</Title>
-        <div style={{ fontSize: '12px', color: wsConnected ? '#22c55e' : '#ef4444' }}>
-          WebSocket: {wsConnected ? 'Connected' : 'Disconnected'}
+        <div>
+          <Title>Backtesting</Title>
+          <div style={{ fontSize: '12px', color: wsConnected ? '#22c55e' : '#ef4444', marginTop: '8px' }}>
+            WebSocket: {wsConnected ? 'Connected' : 'Disconnected'}
+          </div>
         </div>
+        <Button onClick={fetchSessions} style={{ padding: '8px 16px', fontSize: '13px' }}>
+          🔄 Refresh Results
+        </Button>
       </Header>
 
       <Card>
