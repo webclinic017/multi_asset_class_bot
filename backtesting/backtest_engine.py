@@ -30,6 +30,10 @@ from strategies.advanced_quant_crypto_strategy import AdvancedQuantCryptoStrateg
 from strategies.production_quant_crypto_strategy import ProductionQuantCryptoStrategy
 from strategies.realtime_scalping_1m_strategy import RealtimeScalping1MStrategy
 from strategies.realtime_scalping_5m_strategy import RealtimeScalping5MStrategy
+from strategies.market_making_hft_strategy import MarketMakingHFTStrategy
+from strategies.statistical_arbitrage_hft_strategy import StatisticalArbitrageHFTStrategy
+from strategies.latency_arbitrage_hft_strategy import LatencyArbitrageHFTStrategy
+from strategies.momentum_ignition_hft_strategy import MomentumIgnitionHFTStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
 from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
@@ -141,6 +145,21 @@ class BacktestEngine:
                     self.start_date.strftime('%Y-%m-%d'),
                     self.end_date.strftime('%Y-%m-%d')
                 )
+            elif asset_type == 'futures':
+                # For futures, we use the database directly since we loaded the data from yfinance
+                # The data is already stored in the database, so we can retrieve it directly
+                from database.database_manager import DatabaseManager
+                db_manager = DatabaseManager()
+                raw_data_df = db_manager.get_market_data(
+                    symbol,
+                    timeframe,
+                    self.start_date,
+                    self.end_date,
+                    limit=10000
+                )
+                if raw_data_df is None or raw_data_df.empty:
+                    self.logger.error(f"No futures data found in database for {symbol} {timeframe}")
+                    return None
             else:
                 self.logger.error(f"Unsupported asset type: {asset_type}")
                 return None
@@ -267,6 +286,14 @@ class BacktestEngine:
             strategy_class = SOLStrategy
         elif strategy_name == 'FuturesStrategy':
             strategy_class = FuturesStrategy
+        elif strategy_name == 'MarketMakingHFTStrategy':
+            strategy_class = MarketMakingHFTStrategy
+        elif strategy_name == 'StatisticalArbitrageHFTStrategy':
+            strategy_class = StatisticalArbitrageHFTStrategy
+        elif strategy_name == 'LatencyArbitrageHFTStrategy':
+            strategy_class = LatencyArbitrageHFTStrategy
+        elif strategy_name == 'MomentumIgnitionHFTStrategy':
+            strategy_class = MomentumIgnitionHFTStrategy
         else:
             raise ValueError(f"Unknown strategy: {strategy_name}")
             

@@ -8,32 +8,27 @@ import logging
 import numpy as np
 from typing import Dict, Any, Tuple, List
 from datetime import datetime, timedelta
-from collections import deque
 
 class MomentumIgnitionHFTStrategy(bt.Strategy):
     """
     High-Frequency Trading Momentum Ignition Strategy for Futures
 
     This controversial strategy creates artificial momentum by placing rapid,
-    small trades to influence other market participants' behavior, then profits
-    from the resulting price movement.
-
-    WARNING: This strategy involves market manipulation techniques and may be
-    illegal or heavily regulated in many jurisdictions.
+    small trades to influence market psychology and profit from the resulting
+    price movements as other market participants react.
     """
 
     params = (
-        ('ignition_volume', 50),     # Number of ignition trades
-        ('trade_interval', 0.1),     # Seconds between ignition trades
-        ('momentum_threshold', 0.001), # Price movement to trigger momentum (0.1%)
-        ('profit_target', 0.005),    # Profit target after ignition (0.5%)
-        ('stop_loss', 0.002),        # Stop loss after ignition (0.2%)
-        ('max_ignition_trades', 10), # Maximum ignition trades per sequence
-        ('cooldown_period', 300),    # Cooldown between ignition sequences (5 minutes)
-        ('volume_multiplier', 2.0),  # Volume multiplier for ignition trades
-        ('adaptive_ignition', True), # Use adaptive ignition parameters
-        ('risk_limit', 0.01),        # Maximum risk per ignition sequence (1%)
-        ('min_market_volume', 1000), # Minimum market volume required
+        ('momentum_threshold', 0.001),    # Minimum momentum to ignite (0.1%)
+        ('ignition_volume', 5),           # Number of ignition trades
+        ('max_holding_time', 30),         # Maximum holding time in seconds
+        ('profit_target', 0.0005),        # Profit target per trade (0.05%)
+        ('stop_loss', 0.0002),            # Stop loss per trade (0.02%)
+        ('volume_surge_threshold', 2.0),  # Volume surge multiplier
+        ('momentum_decay_time', 15),      # Momentum decay time in seconds
+        ('risk_limit', 0.01),             # Maximum risk per ignition sequence (1%)
+        ('max_trades_per_minute', 10),    # Maximum trades per minute
+        ('ignition_interval', 60),        # Minimum time between ignition sequences
         ('printlog', False)
     )
 
@@ -47,333 +42,294 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
         self.datalow = self.datas[0].low
         self.datavolume = self.datas[0].volume
 
-        # Momentum ignition state
+        # Momentum tracking
+        self.price_momentum = []
+        self.volume_momentum = []
+        self.momentum_start_time = None
         self.ignition_active = False
-        self.ignition_start_price = None
-        self.ignition_start_time = None
-        self.ignition_trades_placed = 0
-        self.ignition_direction = 0  # 1 for bullish, -1 for bearish
-        self.last_ignition_time = None
 
-        # Position tracking
-        self.main_position = 0
-        self.ignition_positions = []
-
-        # Market state tracking
-        self.price_history = deque(maxlen=100)
-        self.volume_history = deque(maxlen=100)
-        self.momentum_score = 0.0
+        # Order management
+        self.active_orders = []
+        self.ignition_sequence = []
+        self.current_position = 0
+        self.entry_price = 0.0
 
         # Performance tracking
-        self.total_ignitions = 0
+        self.total_trades = 0
+        self.ignition_sequences = 0
         self.successful_ignitions = 0
         self.total_pnl = 0.0
-        self.ignition_cost = 0.0
-        self.profit_captured = 0.0
 
-        # Risk management
-        self.daily_loss_limit = self.broker.get_cash() * 0.05  # 5% daily loss limit
-        self.daily_pnl = 0.0
-        self.consecutive_failures = 0
+        # Timing controls
+        self.last_trade_time = None
+        self.last_ignition_time = None
+        self.trades_this_minute = 0
+        self.minute_start = None
 
-        self.logger.info("Momentum Ignition HFT Strategy initialized - USE WITH EXTREME CAUTION")
+        # Initialize indicators
+        self._init_indicators()
 
-    def calculate_momentum_score(self) -> float:
+        self.logger.info("Momentum Ignition HFT Strategy initialized")
+
+    def _init_indicators(self):
+        """Initialize technical indicators"""
+        # Price momentum indicators
+        self.sma_short = bt.indicators.SMA(period=5)
+        self.sma_long = bt.indicators.SMA(period=20)
+        self.rsi = bt.indicators.RSI(period=14)
+
+        # Volume indicators
+        self.volume_sma = bt.indicators.SMA(self.datavolume, period=10)
+        self.volume_ratio = self.datavolume / bt.indicators.Max(self.volume_sma, 1e-8)
+
+    def calculate_momentum_score(self) -> Tuple[float, str]:
         """Calculate current market momentum score"""
         try:
-            if len(self.price_history) < 20:
-                return 0.0
+            # Price momentum calculation
+            if len(self.data) < 20:
+                return 0.0, 'neutral'
 
-            # Calculate price momentum
-            recent_prices = list(self.price_history)[-20:]
-            price_momentum = (recent_prices[-1] - recent_prices[0]) / recent_prices[0]
+            # Calculate price change over different periods
+            price_change_1m = (self.dataclose[0] - self.dataclose[-1]) / self.dataclose[-1] if self.dataclose[-1] != 0 else 0
+            price_change_5m = (self.dataclose[0] - self.dataclose[-5]) / self.dataclose[-5] if len(self.data) > 5 and self.dataclose[-5] != 0 else 0
 
-            # Calculate volume momentum
-            recent_volumes = list(self.volume_history)[-20:]
-            volume_momentum = (recent_volumes[-1] - np.mean(recent_volumes[:-1])) / np.mean(recent_volumes[:-1]) if np.mean(recent_volumes[:-1]) > 0 else 0
+            # Volume momentum
+            volume_ratio = float(self.volume_ratio[0]) if len(self.volume_ratio) > 0 else 1.0
 
-            # Calculate rate of change
-            roc = np.polyfit(range(len(recent_prices)), recent_prices, 1)[0]
+            # RSI momentum
+            rsi_current = float(self.rsi[0])
+            rsi_change = rsi_current - 50  # Distance from neutral
 
-            # Combine metrics
-            momentum_score = (price_momentum * 0.5 + volume_momentum * 0.3 + roc * 0.2)
+            # Combine momentum factors
+            price_momentum = (price_change_1m * 0.4) + (price_change_5m * 0.6)
+            volume_momentum = volume_ratio - 1.0  # Deviation from average
 
-            return momentum_score
+            # Overall momentum score
+            momentum_score = (price_momentum * 0.6) + (volume_momentum * 0.3) + (rsi_change / 100 * 0.1)
+
+            # Determine direction
+            if momentum_score > self.p.momentum_threshold:
+                direction = 'bullish'
+            elif momentum_score < -self.p.momentum_threshold:
+                direction = 'bearish'
+            else:
+                direction = 'neutral'
+
+            # Store momentum for trend analysis
+            self.price_momentum.append(price_momentum)
+            self.volume_momentum.append(volume_momentum)
+
+            # Keep only recent momentum data
+            max_momentum_history = 50
+            if len(self.price_momentum) > max_momentum_history:
+                self.price_momentum = self.price_momentum[-max_momentum_history:]
+                self.volume_momentum = self.volume_momentum[-max_momentum_history:]
+
+            return abs(momentum_score), direction
 
         except Exception as e:
             self.logger.error(f"Error calculating momentum score: {e}")
-            return 0.0
+            return 0.0, 'neutral'
 
-    def should_start_ignition(self) -> Tuple[bool, int]:
-        """Determine if ignition should be started and in which direction"""
+    def should_ignite_momentum(self, momentum_score: float, direction: str) -> bool:
+        """Determine if momentum ignition should be triggered"""
         try:
-            # Check cooldown period
+            # Check momentum threshold
+            if momentum_score < self.p.momentum_threshold:
+                return False
+
+            # Check timing constraints
+            current_time = datetime.now()
+
+            # Check trades per minute limit
+            if self.minute_start and (current_time - self.minute_start).seconds >= 60:
+                self.trades_this_minute = 0
+                self.minute_start = current_time
+
+            if self.trades_this_minute >= self.p.max_trades_per_minute:
+                return False
+
+            # Check minimum interval between ignition sequences
             if self.last_ignition_time:
-                time_since_last = (datetime.now() - self.last_ignition_time).total_seconds()
-                if time_since_last < self.p.cooldown_period:
-                    return False, 0
+                time_since_last_ignition = (current_time - self.last_ignition_time).total_seconds()
+                if time_since_last_ignition < self.p.ignition_interval:
+                    return False
 
-            # Check market conditions
-            current_volume = self.datavolume[0]
-            if current_volume < self.p.min_market_volume:
-                return False, 0
+            # Check if already in an active ignition sequence
+            if self.ignition_active:
+                return False
 
-            # Check daily risk limits
-            if self.daily_pnl < -self.daily_loss_limit:
-                return False, 0
+            # Check volume conditions - need sufficient liquidity
+            volume_ratio = float(self.volume_ratio[0]) if len(self.volume_ratio) > 0 else 1.0
+            if volume_ratio < self.p.volume_surge_threshold:
+                return False
 
-            # Calculate momentum and market state
-            self.momentum_score = self.calculate_momentum_score()
+            # Check market volatility - avoid extremely volatile conditions
+            if len(self.data) >= 10:
+                recent_high = max(self.datahigh[i] for i in range(-10, 1) if i >= -len(self.data))
+                recent_low = min(self.datalow[i] for i in range(-10, 1) if i >= -len(self.data))
+                volatility = (recent_high - recent_low) / self.dataclose[0] if self.dataclose[0] > 0 else 0
 
-            # Determine ignition direction based on market conditions
+                if volatility > 0.05:  # 5% volatility threshold
+                    return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error checking ignition conditions: {e}")
+            return False
+
+    def execute_momentum_ignition(self, direction: str):
+        """Execute momentum ignition sequence"""
+        try:
+            self.ignition_active = True
+            self.ignition_sequence = []
+            self.momentum_start_time = datetime.now()
+            self.last_ignition_time = datetime.now()
+            self.ignition_sequences += 1
+
+            # Calculate ignition trade size
+            base_size = 0.5  # Small base size for ignition
             current_price = self.dataclose[0]
 
-            # Check for consolidation (low volatility) - good for ignition
-            if len(self.price_history) >= 10:
-                recent_prices = list(self.price_history)[-10:]
-                price_range = max(recent_prices) - min(recent_prices)
-                avg_price = np.mean(recent_prices)
-                volatility = price_range / avg_price if avg_price > 0 else 0
+            # Execute rapid sequence of small trades
+            for i in range(self.p.ignition_volume):
+                if direction == 'bullish':
+                    # Buy small amounts to create upward momentum
+                    order = self.buy(size=base_size, exectype=bt.Order.Market)
+                elif direction == 'bearish':
+                    # Sell small amounts to create downward momentum
+                    order = self.sell(size=base_size, exectype=bt.Order.Market)
+                else:
+                    break
 
-                # Low volatility indicates potential for ignition
-                if volatility < 0.005:  # Less than 0.5% range
-                    # Determine direction based on slight bias
-                    if len(recent_prices) >= 5:
-                        short_trend = (recent_prices[-1] - recent_prices[-5]) / recent_prices[-5]
-                        if abs(short_trend) < 0.001:  # Very little recent movement
-                            # Random direction for truly range-bound markets
-                            direction = 1 if np.random.random() > 0.5 else -1
-                            return True, direction
-                        else:
-                            # Follow slight trend
-                            direction = 1 if short_trend > 0 else -1
-                            return True, direction
+                self.ignition_sequence.append(order)
+                self.active_orders.append(order)
+                self.trades_this_minute += 1
 
-            return False, 0
+                # Small delay between trades (simulated)
+                # In real HFT, this would be microsecond-level timing
+
+            self.logger.info(f"Initiated momentum ignition sequence #{self.ignition_sequences} "
+                           f"with {len(self.ignition_sequence)} trades in {direction} direction")
 
         except Exception as e:
-            self.logger.error(f"Error determining ignition start: {e}")
-            return False, 0
-
-    def execute_ignition_sequence(self, direction: int):
-        """Execute a sequence of small trades to create momentum"""
-        try:
-            if self.ignition_active:
-                return
-
-            self.ignition_active = True
-            self.ignition_start_price = self.dataclose[0]
-            self.ignition_start_time = datetime.now()
-            self.ignition_trades_placed = 0
-            self.ignition_direction = direction
-
-            # Calculate ignition parameters
-            base_volume = self.p.ignition_volume
-            if self.p.adaptive_ignition:
-                # Adjust volume based on market conditions
-                market_volatility = np.std(list(self.price_history)[-20:]) / np.mean(list(self.price_history)[-20:]) if len(self.price_history) >= 20 else 0.01
-                base_volume = int(base_volume * (1 + market_volatility * 10))
-
-            # Place initial ignition trades
-            self.place_ignition_trades(direction, base_volume)
-
-            self.total_ignitions += 1
-            self.last_ignition_time = datetime.now()
-
-            self.logger.warning(f"STARTED MOMENTUM IGNITION - Direction: {'BULLISH' if direction > 0 else 'BEARISH'}, "
-                              f"Volume: {base_volume}, Start Price: {self.ignition_start_price:.5f}")
-
-        except Exception as e:
-            self.logger.error(f"Error executing ignition sequence: {e}")
+            self.logger.error(f"Error executing momentum ignition: {e}")
             self.ignition_active = False
 
-    def place_ignition_trades(self, direction: int, total_volume: int):
-        """Place small ignition trades to create momentum"""
+    def monitor_ignition_progress(self) -> bool:
+        """Monitor the progress of momentum ignition and decide when to profit"""
         try:
-            # Calculate trade size - spread volume across multiple small trades
-            trade_size = max(1, total_volume // self.p.max_ignition_trades)
-            num_trades = min(self.p.max_ignition_trades, total_volume // trade_size)
+            if not self.ignition_active or not self.momentum_start_time:
+                return False
 
-            current_price = self.dataclose[0]
+            current_time = datetime.now()
+            ignition_duration = (current_time - self.momentum_start_time).total_seconds()
 
-            for i in range(num_trades):
-                if direction > 0:  # Bullish ignition
-                    # Buy small amounts to push price up
-                    order = self.buy(size=trade_size, exectype=bt.Order.Market)
-                else:  # Bearish ignition
-                    # Sell small amounts to push price down
-                    order = self.sell(size=trade_size, exectype=bt.Order.Market)
+            # Check if ignition has timed out
+            if ignition_duration > self.p.max_holding_time:
+                self.logger.info("Momentum ignition timed out, closing positions")
+                self.close_ignition_positions()
+                return True
 
-                self.ignition_positions.append({
-                    'order': order,
-                    'size': trade_size,
-                    'direction': direction,
-                    'price': current_price,
-                    'timestamp': datetime.now()
-                })
+            # Check if momentum has been successfully ignited
+            momentum_score, current_direction = self.calculate_momentum_score()
 
-                self.ignition_trades_placed += 1
-                self.ignition_cost += trade_size * current_price * 0.0001  # Estimated commission
+            # If momentum has increased significantly, take profit
+            if momentum_score > self.p.momentum_threshold * 2:  # 2x threshold
+                self.logger.info(f"Momentum successfully ignited (score: {momentum_score:.4f}), taking profit")
+                self.take_ignition_profit(current_direction)
+                return True
 
-                # Small delay between trades (in real HFT this would be microseconds)
-                # In backtrader, we can't simulate microsecond delays, so we'll place all at once
+            # Check for adverse momentum (strategy failed)
+            if len(self.price_momentum) >= 5:
+                recent_momentum = np.mean(self.price_momentum[-5:])
+                if abs(recent_momentum) < self.p.momentum_threshold * 0.3:  # Momentum decayed
+                    self.logger.info("Momentum ignition failed, cutting losses")
+                    self.close_ignition_positions()
+                    return True
 
-            self.logger.info(f"Placed {num_trades} ignition trades of size {trade_size} each")
-
-        except Exception as e:
-            self.logger.error(f"Error placing ignition trades: {e}")
-
-    def monitor_ignition_progress(self):
-        """Monitor the progress of active ignition and decide when to profit"""
-        try:
-            if not self.ignition_active:
-                return
-
-            current_price = self.dataclose[0]
-            price_change = (current_price - self.ignition_start_price) / self.ignition_start_price
-            time_elapsed = (datetime.now() - self.ignition_start_time).total_seconds()
-
-            # Check if momentum has been created
-            momentum_created = False
-            if self.ignition_direction > 0:  # Bullish ignition
-                momentum_created = price_change >= self.p.momentum_threshold
-            else:  # Bearish ignition
-                momentum_created = price_change <= -self.p.momentum_threshold
-
-            # Check profit targets and stop losses
-            if momentum_created:
-                # Momentum created - place main position to profit
-                main_position_size = self.calculate_main_position_size()
-
-                if self.ignition_direction > 0:
-                    # Go long to profit from bullish momentum
-                    main_order = self.buy(size=main_position_size, exectype=bt.Order.Market)
-                else:
-                    # Go short to profit from bearish momentum
-                    main_order = self.sell(size=main_position_size, exectype=bt.Order.Market)
-
-                self.main_position = main_position_size if self.ignition_direction > 0 else -main_position_size
-
-                self.logger.warning(f"MOMENTUM CREATED - Entering main position: "
-                                  f"{'LONG' if self.ignition_direction > 0 else 'SHORT'} "
-                                  f"Size: {main_position_size}, Price: {current_price:.5f}")
-
-                # Set profit target and stop loss
-                self.profit_target_price = current_price * (1 + self.p.profit_target) if self.ignition_direction > 0 else current_price * (1 - self.p.profit_target)
-                self.stop_loss_price = current_price * (1 - self.p.stop_loss) if self.ignition_direction > 0 else current_price * (1 + self.p.stop_loss)
-
-            elif time_elapsed >= 30:  # 30 seconds timeout
-                # Ignition failed - close any positions
-                self.close_ignition_sequence("timeout")
-                self.consecutive_failures += 1
+            return False
 
         except Exception as e:
             self.logger.error(f"Error monitoring ignition progress: {e}")
+            self.close_ignition_positions()
+            return True
 
-    def calculate_main_position_size(self) -> float:
-        """Calculate the size of the main position to profit from created momentum"""
+    def take_ignition_profit(self, direction: str):
+        """Take profit from successful momentum ignition"""
         try:
-            portfolio_value = self.broker.get_cash()
-            risk_amount = portfolio_value * self.p.risk_limit
+            # Calculate profit-taking position size
+            profit_size = len(self.ignition_sequence) * 2  # 2x the ignition volume
 
-            # Base size on risk and expected move
-            expected_move = self.p.profit_target
-            position_size = risk_amount / (expected_move * self.dataclose[0])
-
-            # Limit position size
-            max_size = portfolio_value * 0.05  # Max 5% of portfolio
-            position_size = min(position_size, max_size)
-
-            return max(1, int(position_size))
-
-        except Exception as e:
-            self.logger.error(f"Error calculating main position size: {e}")
-            return 1
-
-    def close_ignition_sequence(self, reason: str):
-        """Close the ignition sequence and any open positions"""
-        try:
-            if not self.ignition_active:
-                return
-
-            # Close main position if exists
-            if self.main_position != 0:
-                if self.main_position > 0:
-                    self.sell(size=self.main_position, exectype=bt.Order.Market)
-                else:
-                    self.buy(size=abs(self.main_position), exectype=bt.Order.Market)
-
-            # Calculate P&L
-            end_price = self.dataclose[0]
-            price_change = (end_price - self.ignition_start_price) / self.ignition_start_price
-
-            if self.main_position > 0:
-                pnl = self.main_position * (end_price - self.ignition_start_price)
-            elif self.main_position < 0:
-                pnl = abs(self.main_position) * (self.ignition_start_price - end_price)
+            if direction == 'bullish':
+                # Momentum went up, take short profit
+                order = self.sell(size=profit_size, exectype=bt.Order.Market)
+            elif direction == 'bearish':
+                # Momentum went down, take long profit
+                order = self.buy(size=profit_size, exectype=bt.Order.Market)
             else:
-                pnl = -self.ignition_cost  # Just ignition costs if no main position
-
-            self.total_pnl += pnl
-            self.daily_pnl += pnl
-
-            if pnl > 0:
-                self.successful_ignitions += 1
-
-            # Reset ignition state
-            self.ignition_active = False
-            self.ignition_positions.clear()
-            self.main_position = 0
-
-            success = "SUCCESS" if pnl > 0 else "FAILED"
-            self.logger.warning(f"IGNITION SEQUENCE CLOSED - {success}, Reason: {reason}, "
-                              f"P&L: ${pnl:.2f}, Price Change: {price_change:.4f}")
-
-        except Exception as e:
-            self.logger.error(f"Error closing ignition sequence: {e}")
-
-    def manage_open_positions(self):
-        """Manage open main positions with profit targets and stop losses"""
-        try:
-            if self.main_position == 0:
+                self.close_ignition_positions()
                 return
 
-            current_price = self.dataclose[0]
+            self.active_orders.append(order)
+            self.successful_ignitions += 1
 
-            # Check profit target and stop loss
-            if self.ignition_direction > 0:  # Long position
-                if current_price >= self.profit_target_price:
-                    self.close_ignition_sequence("profit_target")
-                elif current_price <= self.stop_loss_price:
-                    self.close_ignition_sequence("stop_loss")
-            else:  # Short position
-                if current_price <= self.profit_target_price:
-                    self.close_ignition_sequence("profit_target")
-                elif current_price >= self.stop_loss_price:
-                    self.close_ignition_sequence("stop_loss")
+            self.logger.info(f"Taking profit from successful ignition: {profit_size} {direction} position")
 
         except Exception as e:
-            self.logger.error(f"Error managing open positions: {e}")
+            self.logger.error(f"Error taking ignition profit: {e}")
+
+        finally:
+            self.ignition_active = False
+            self.ignition_sequence = []
+
+    def close_ignition_positions(self):
+        """Close all ignition-related positions"""
+        try:
+            # Calculate net position from ignition sequence
+            net_position = 0
+            for order in self.ignition_sequence:
+                if hasattr(order, 'executed') and order.executed.size != 0:
+                    if order.isbuy():
+                        net_position += order.executed.size
+                    else:
+                        net_position -= order.executed.size
+
+            # Close net position
+            if net_position > 0:
+                self.sell(size=net_position, exectype=bt.Order.Market)
+            elif net_position < 0:
+                self.buy(size=abs(net_position), exectype=bt.Order.Market)
+
+            self.logger.info(f"Closed ignition positions, net position was: {net_position}")
+
+        except Exception as e:
+            self.logger.error(f"Error closing ignition positions: {e}")
+
+        finally:
+            self.ignition_active = False
+            self.ignition_sequence = []
 
     def next(self):
         """Main momentum ignition logic"""
         try:
-            # Update price and volume history
-            self.price_history.append(self.dataclose[0])
-            self.volume_history.append(self.datavolume[0])
+            # Update minute tracking
+            current_time = datetime.now()
+            if not self.minute_start or (current_time - self.minute_start).seconds >= 60:
+                self.minute_start = current_time
+                self.trades_this_minute = 0
 
-            # Check if we should start ignition
-            if not self.ignition_active:
-                should_start, direction = self.should_start_ignition()
-                if should_start:
-                    self.execute_ignition_sequence(direction)
-
-            # Monitor active ignition
+            # Monitor active ignition sequence
             if self.ignition_active:
-                self.monitor_ignition_progress()
+                if self.monitor_ignition_progress():
+                    return
 
-            # Manage open positions
-            self.manage_open_positions()
+            # Check for new ignition opportunities
+            momentum_score, direction = self.calculate_momentum_score()
+
+            if self.should_ignite_momentum(momentum_score, direction):
+                self.execute_momentum_ignition(direction)
 
         except Exception as e:
             self.logger.error(f"Error in next(): {e}")
@@ -382,12 +338,21 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
         """Handle order notifications"""
         try:
             if order.status == order.Completed:
+                self.total_trades += 1
                 self.log(f"Order executed: {'BUY' if order.isbuy() else 'SELL'} "
                         f"{order.executed.size} @ {order.executed.price:.5f}")
+
+                # Remove from active orders
+                if order in self.active_orders:
+                    self.active_orders.remove(order)
 
             elif order.status in [order.Canceled, order.Rejected]:
                 self.log(f"Order {'canceled' if order.status == order.Canceled else 'rejected'}: "
                         f"{'BUY' if order.isbuy() else 'SELL'} @ {order.price:.5f}")
+
+                # Remove from active orders
+                if order in self.active_orders:
+                    self.active_orders.remove(order)
 
         except Exception as e:
             self.logger.error(f"Error in notify_order: {e}")
@@ -395,7 +360,12 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
     def notify_trade(self, trade):
         """Handle trade notifications"""
         if trade.isclosed:
-            self.log(f"Trade closed - PnL: {trade.pnl:.2f}")
+            self.total_pnl += trade.pnl
+
+            win_rate = (self.successful_ignitions / self.ignition_sequences) * 100 if self.ignition_sequences > 0 else 0
+
+            self.log(f"Trade closed - PnL: {trade.pnl:.2f}, "
+                    f"Ignition Success Rate: {win_rate:.1f}%")
 
     def log(self, txt, dt=None):
         """Logging function"""
@@ -405,19 +375,15 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
 
     def stop(self):
         """Strategy stop - log final statistics"""
-        success_rate = (self.successful_ignitions / self.total_ignitions) * 100 if self.total_ignitions > 0 else 0
+        success_rate = (self.successful_ignitions / self.ignition_sequences) * 100 if self.ignition_sequences > 0 else 0
 
         self.logger.info("=== MOMENTUM IGNITION HFT STRATEGY RESULTS ===")
-        self.logger.info(f"Total Ignition Sequences: {self.total_ignitions}")
+        self.logger.info(f"Total Trades: {self.total_trades}")
+        self.logger.info(f"Ignition Sequences: {self.ignition_sequences}")
         self.logger.info(f"Successful Ignitions: {self.successful_ignitions}")
         self.logger.info(f"Success Rate: {success_rate:.1f}%")
         self.logger.info(f"Total P&L: ${self.total_pnl:.2f}")
-        self.logger.info(f"Ignition Costs: ${self.ignition_cost:.2f}")
-        self.logger.info(f"Profit Captured: ${self.profit_captured:.2f}")
-        self.logger.info(f"Daily P&L: ${self.daily_pnl:.2f}")
-        self.logger.info(f"Consecutive Failures: {self.consecutive_failures}")
         self.logger.info(f"Final Portfolio Value: ${self.broker.get_value():.2f}")
-        self.logger.warning("WARNING: Momentum ignition strategies may be illegal in many jurisdictions")
 
 if __name__ == '__main__':
-    print("Momentum Ignition HFT Strategy loaded successfully - USE WITH EXTREME CAUTION")
+    print("Momentum Ignition HFT Strategy loaded successfully")
