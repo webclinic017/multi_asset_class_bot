@@ -187,8 +187,22 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# Serve static files (React build)
-app.mount("/static", StaticFiles(directory="frontend/build/static"), name="static")
+# Serve static files (React build) with cache control
+from fastapi.responses import FileResponse
+from starlette.staticfiles import StaticFiles as StarletteStaticFiles
+
+class NoCacheStaticFiles(StarletteStaticFiles):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+app.mount("/static", NoCacheStaticFiles(directory="frontend/build/static"), name="static")
 
 # API Routes - REAL DATA ONLY
 
@@ -1174,7 +1188,11 @@ async def serve_react_root():
     """Serve React app at root"""
     try:
         with open("frontend/build/index.html", "r") as f:
-            return HTMLResponse(content=f.read())
+            response = HTMLResponse(content=f.read())
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
@@ -1198,7 +1216,11 @@ async def serve_react_app(full_path: str):
     
     try:
         with open("frontend/build/index.html", "r") as f:
-            return HTMLResponse(content=f.read())
+            response = HTMLResponse(content=f.read())
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
