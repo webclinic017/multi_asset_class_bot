@@ -258,7 +258,20 @@ const Backtesting = () => {
   const fetchSessions = async () => {
     try {
       const response = await axios.get('/api/sessions');
+      console.log('=== API RESPONSE DEBUG ===');
+      console.log('Full response data:', response.data);
       const backtestSessions = response.data.filter((session) => session.session_type === 'backtest');
+      console.log('Filtered backtest sessions:', backtestSessions);
+      backtestSessions.forEach((session, index) => {
+        console.log(`Session ${index}:`, {
+          id: session.id,
+          strategy_name: session.strategy_name,
+          initial_capital: session.initial_capital,
+          final_capital: session.final_capital,
+          total_return: session.total_return,
+          total_trades: session.total_trades
+        });
+      });
       setSessions(backtestSessions);
     } catch (error) {
       console.error('Error fetching sessions:', error);
