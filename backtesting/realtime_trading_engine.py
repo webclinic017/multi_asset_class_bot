@@ -98,7 +98,19 @@ class RealTimeTradingEngine:
     def _get_strategy_class(self, strategy_class_name: str):
         """Dynamically import strategy class"""
         try:
-            if strategy_class_name == 'EnhancedRealtimeScalping1MStrategy':
+            if strategy_class_name == 'MarketMakingHFTStrategy':
+                from strategies.market_making_hft_strategy import MarketMakingHFTStrategy
+                return MarketMakingHFTStrategy
+            elif strategy_class_name == 'StatisticalArbitrageHFTStrategy':
+                from strategies.statistical_arbitrage_hft_strategy import StatisticalArbitrageHFTStrategy
+                return StatisticalArbitrageHFTStrategy
+            elif strategy_class_name == 'LatencyArbitrageHFTStrategy':
+                from strategies.latency_arbitrage_hft_strategy import LatencyArbitrageHFTStrategy
+                return LatencyArbitrageHFTStrategy
+            elif strategy_class_name == 'MomentumIgnitionHFTStrategy':
+                from strategies.momentum_ignition_hft_strategy import MomentumIgnitionHFTStrategy
+                return MomentumIgnitionHFTStrategy
+            elif strategy_class_name == 'EnhancedRealtimeScalping1MStrategy':
                 from strategies.enhanced_realtime_scalping_1m_strategy import EnhancedRealtimeScalping1MStrategy
                 return EnhancedRealtimeScalping1MStrategy
             elif strategy_class_name == 'EnhancedRealtimeScalping5MStrategy':
@@ -113,13 +125,13 @@ class RealTimeTradingEngine:
             elif strategy_class_name == 'RealtimeScalping5MStrategy':
                 from strategies.realtime_scalping_5m_strategy import RealtimeScalping5MStrategy
                 return RealtimeScalping5MStrategy
+
             else:
                 self.logger.error(f"Unknown strategy class: {strategy_class_name}")
                 return None
         except ImportError as e:
             self.logger.error(f"Error importing strategy {strategy_class_name}: {e}")
             return None
-    
     def add_data_feed(self, symbol: str, timeframe: str, data_source):
         """Add data feed to the engine"""
         try:
