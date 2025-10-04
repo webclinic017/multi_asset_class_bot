@@ -395,13 +395,63 @@ const Backtesting = () => {
               value={formData.symbol}
               onChange={handleInputChange}
             >
-              <option value="EUR_USD">EUR/USD</option>
-              <option value="GBP_USD">GBP/USD</option>
-              <option value="USD_JPY">USD/JPY</option>
-              <option value="AUD_USD">AUD/USD</option>
-              <option value="BTC_USD">BTC/USD</option>
-              <option value="ETH_USD">ETH/USD</option>
-              <option value="SOL_USD">SOL/USD</option>
+              {/* Forex Pairs */}
+              <option value="EUR_USD">EUR/USD (Forex)</option>
+              <option value="GBP_USD">GBP/USD (Forex)</option>
+              <option value="USD_JPY">USD/JPY (Forex)</option>
+              <option value="AUD_USD">AUD/USD (Forex)</option>
+              <option value="USDCAD">USD/CAD (Forex)</option>
+              <option value="USDCHF">USD/CHF (Forex)</option>
+              <option value="NZDUSD">NZD/USD (Forex)</option>
+
+              {/* Crypto */}
+              <option value="BTC_USD">BTC/USD (Crypto)</option>
+              <option value="ETH_USD">ETH/USD (Crypto)</option>
+              <option value="SOL_USD">SOL/USD (Crypto)</option>
+
+              {/* Futures - Energy */}
+              <option value="WTI_CRUDE_OIL">WTI Crude Oil (Futures)</option>
+              <option value="BRENT_CRUDE_OIL">Brent Crude Oil (Futures)</option>
+              <option value="NATURAL_GAS">Natural Gas (Futures)</option>
+
+              {/* Futures - Metals */}
+              <option value="GOLD">Gold (Futures)</option>
+              <option value="SILVER">Silver (Futures)</option>
+              <option value="COPPER">Copper (Futures)</option>
+              <option value="PLATINUM">Platinum (Futures)</option>
+              <option value="PALLADIUM">Palladium (Futures)</option>
+
+              {/* Futures - Agriculture */}
+              <option value="CORN">Corn (Futures)</option>
+              <option value="WHEAT">Wheat (Futures)</option>
+              <option value="SOYBEANS">Soybeans (Futures)</option>
+              <option value="COFFEE">Coffee (Futures)</option>
+              <option value="COTTON">Cotton (Futures)</option>
+              <option value="SUGAR">Sugar (Futures)</option>
+
+              {/* Futures - Livestock */}
+              <option value="LIVE_CATTLE">Live Cattle (Futures)</option>
+              <option value="FEEDER_CATTLE">Feeder Cattle (Futures)</option>
+              <option value="LEAN_HOGS">Lean Hogs (Futures)</option>
+
+              {/* Futures - Financial */}
+              <option value="E_MINI_S&P">E-mini S&P 500 (Futures)</option>
+              <option value="E_MINI_NASDAQ">E-mini Nasdaq-100 (Futures)</option>
+              <option value="E_MINI_RUSSELL">E-mini Russell 2000 (Futures)</option>
+              <option value="E_MINI_DOW">E-mini Dow Jones (Futures)</option>
+              <option value="T_BOND">30-Year T-Bond (Futures)</option>
+              <option value="T_NOTE">10-Year T-Note (Futures)</option>
+              <option value="FIVE_YEAR">5-Year T-Note (Futures)</option>
+              <option value="TWO_YEAR">2-Year T-Note (Futures)</option>
+
+              {/* Currency Futures */}
+              <option value="EURO_FX">Euro FX (Futures)</option>
+              <option value="BRITISH_POUND">British Pound (Futures)</option>
+              <option value="JAPANESE_YEN">Japanese Yen (Futures)</option>
+              <option value="AUSTRALIAN_DOLLAR">Australian Dollar (Futures)</option>
+              <option value="CANADIAN_DOLLAR">Canadian Dollar (Futures)</option>
+              <option value="NEW_ZEALAND_DOLLAR">New Zealand Dollar (Futures)</option>
+              <option value="SWISS_FRANC">Swiss Franc (Futures)</option>
             </Select>
           </FormGroup>
           
