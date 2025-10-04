@@ -292,12 +292,17 @@ const Backtesting = () => {
 
   const getCompatibleStrategies = () => {
     const selectedSymbol = formData.symbol;
-    
+
     return strategies.filter(strategy => {
       const strategyName = strategy.name.toLowerCase();
       const selectedSymbolFormatted = selectedSymbol.replace('_', '/').toLowerCase();
       const selectedSymbolUnderscore = selectedSymbol.toLowerCase();
-      
+
+      // HFT strategies are compatible with all symbols
+      if (strategy.strategy_type === 'hft') {
+        return true;
+      }
+
       // Check if strategy name contains the selected symbol
       return strategyName.includes(selectedSymbolFormatted) ||
              strategyName.includes(selectedSymbolUnderscore) ||
