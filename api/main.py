@@ -927,6 +927,19 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     
                     # Update session with real backtest results
                     end_date_dt = datetime.fromisoformat(backtest_request.end_date)
+                    
+                    # Log what we're about to save
+                    logger.info("=== SAVING SESSION RESULTS TO DATABASE ===")
+                    logger.info(f"Session ID: {session_id}")
+                    logger.info(f"Final Capital to save: ${final_capital:.2f}")
+                    logger.info(f"Total Return to save: {total_return:.6f}")
+                    logger.info(f"Total Trades to save: {total_trades}")
+                    logger.info(f"Winning Trades to save: {winning_trades}")
+                    logger.info(f"Losing Trades to save: {losing_trades}")
+                    logger.info(f"Win Rate to save: {win_rate:.6f}")
+                    logger.info(f"Max Drawdown to save: {max_drawdown:.6f}")
+                    logger.info(f"Sharpe Ratio to save: {sharpe_ratio:.6f}")
+                    
                     db_manager.update_trading_session(
                         session_id,
                         end_time=end_date_dt,
@@ -940,6 +953,8 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                         sharpe_ratio=sharpe_ratio,
                         status="completed"
                     )
+                    
+                    logger.info(f"Session {session_id} updated in database successfully")
                     
                     # Broadcast completion with real-time tracking metrics
                     await manager.broadcast(json.dumps({
