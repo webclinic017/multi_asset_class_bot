@@ -91,7 +91,7 @@ class BacktestRequest(BaseModel):
     symbol: str
     start_date: str
     end_date: str
-    initial_capital: float = 10000.0
+    initial_capital: float = 100000.0
     timeframe: str = "1m"
 
 class MarketDataResponse(BaseModel):
@@ -187,8 +187,22 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# Serve static files (React build)
-app.mount("/static", StaticFiles(directory="frontend/build/static"), name="static")
+# Serve static files (React build) with cache control
+from fastapi.responses import FileResponse
+from starlette.staticfiles import StaticFiles as StarletteStaticFiles
+
+class NoCacheStaticFiles(StarletteStaticFiles):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+app.mount("/static", NoCacheStaticFiles(directory="frontend/build/static"), name="static")
 
 # API Routes - REAL DATA ONLY
 
@@ -600,8 +614,16 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 # Map strategy name to class name
                 strategy_name = strategy.get('name', 'ForexStrategy')
                 logger.info(f"Original strategy name from DB: '{strategy_name}'")
-                
-                if 'Enhanced' in strategy_name:
+
+                if 'Market Making HFT' in strategy_name:
+                    strategy_class_name = 'MarketMakingHFTStrategy'
+                elif 'Statistical Arbitrage HFT' in strategy_name:
+                    strategy_class_name = 'StatisticalArbitrageHFTStrategy'
+                elif 'Latency Arbitrage HFT' in strategy_name:
+                    strategy_class_name = 'LatencyArbitrageHFTStrategy'
+                elif 'Momentum Ignition HFT' in strategy_name:
+                    strategy_class_name = 'MomentumIgnitionHFTStrategy'
+                elif 'Enhanced' in strategy_name:
                     strategy_class_name = 'EnhancedForexStrategy'
                 elif 'Realtime Scalping 1M' in strategy_name:
                     strategy_class_name = 'RealtimeScalping1MStrategy'
@@ -686,7 +708,12 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                             strategy_params[param] = value
                     
                     logger.info(f"Converted scalping parameters: {strategy_params}")
-                
+
+                # Add initial capital parameter for consistent reference
+                logger.info("=== ADDING INITIAL CAPITAL PARAMETER ===")
+                strategy_params['initial_capital'] = backtest_request.initial_capital
+                logger.info(f"Added initial_capital: {backtest_request.initial_capital}")
+
                 # Add printlog parameter
                 logger.info("=== MODIFYING STRATEGY PARAMETERS ===")
                 logger.info(f"Setting printlog=False (was: {strategy_params.get('printlog', 'not set')})")
@@ -861,32 +888,76 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
 
                 if results and isinstance(results, dict):
                     logger.info(f"Real-time backtest completed with results: {results}")
-                    
-                    # Extract real results
-                    final_capital = results.get('final_value', backtest_request.initial_capital)
-                    total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital)
+
+                    # Extract results from portfolio snapshots for accurate calculations
+                    portfolio_snapshots = results.get('portfolio_snapshots', [])
+                    if portfolio_snapshots:
+                        # Use the last snapshot for final values - snapshots already have correct calculations
+                        final_snapshot = portfolio_snapshots[-1]
+                        final_capital = final_snapshot.get('total_value', backtest_request.initial_capital)
+                        total_return = final_snapshot.get('total_return', 0.0)
+
+                        # Convert total_return from decimal to percentage if needed
+                        if abs(total_return) < 1:  # Already in decimal form (e.g., -0.90)
+                            pass  # Keep as is
+                        elif abs(total_return) > 10:  # In percentage form (e.g., -90.0)
+                            total_return = total_return / 100.0
+
+                        # Get max drawdown from snapshots (already calculated correctly)
+                        max_drawdown = 0.0
+                        for snapshot in portfolio_snapshots:
+                            drawdown = snapshot.get('drawdown', 0.0)
+                            # Drawdown in snapshots is as percentage (0-100), convert to decimal
+                            if isinstance(drawdown, (int, float)) and drawdown > 1:
+                                drawdown = drawdown / 100.0
+                            max_drawdown = max(max_drawdown, drawdown)
+
+                        logger.info(f"Using snapshot calculations: final_capital=${final_capital:.2f}, total_return={total_return:.6f}, max_drawdown={max_drawdown:.6f}")
+                    else:
+                        # Fallback to backtrader results if no snapshots
+                        final_capital = results.get('final_value', backtest_request.initial_capital)
+                        total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital)
+                        max_drawdown = results.get('max_drawdown', 0.0) / 100.0 if results.get('max_drawdown', 0.0) > 1 else results.get('max_drawdown', 0.0)
+
                     total_trades = results.get('total_trades', 0)
                     winning_trades = results.get('winning_trades', 0)
                     losing_trades = results.get('losing_trades', 0)
                     win_rate = (winning_trades / total_trades) if total_trades > 0 else 0.0
-                    max_drawdown = results.get('max_drawdown', 0.0) / 100.0 if results.get('max_drawdown', 0.0) > 1 else results.get('max_drawdown', 0.0)
                     sharpe_ratio = results.get('sharpe_ratio', 0.0)
+                    
+                    # Extract final portfolio value from results
+                    final_capital = results.get('final_value', backtest_request.initial_capital)
+                    total_return = results.get('total_return', 0.0)
+                    sharpe_ratio = results.get('sharpe_ratio', 0.0)
+                    max_drawdown = results.get('max_drawdown', 0.0)
+                    total_trades = results.get('total_trades', 0)
+                    winning_trades = results.get('winning_trades', 0)
+                    losing_trades = results.get('losing_trades', 0)
+                    win_rate = results.get('win_rate', 0.0)
+                    
+                    logger.info(f"SAVING SESSION RESULTS TO DATABASE:")
+                    logger.info(f"  Session ID: {session_id}")
+                    logger.info(f"  Final Capital: {final_capital}")
+                    logger.info(f"  Total Return: {total_return}%")
+                    logger.info(f"  Sharpe Ratio: {sharpe_ratio}")
+                    logger.info(f"  Max Drawdown: {max_drawdown}%")
                     
                     # Update session with real backtest results
                     end_date_dt = datetime.fromisoformat(backtest_request.end_date)
                     db_manager.update_trading_session(
                         session_id,
                         end_time=end_date_dt,
-                        final_capital=final_capital,
-                        total_return=total_return,
+                        final_capital=final_capital,  # This should now be 97357.87
+                        total_return=(total_return / 100.0 if abs(total_return) > 1.0 else total_return), # Ensure it is a decimal
                         total_trades=total_trades,
                         winning_trades=winning_trades,
                         losing_trades=losing_trades,
                         win_rate=win_rate,
                         max_drawdown=max_drawdown,
                         sharpe_ratio=sharpe_ratio,
-                        status="completed"
+                        status='completed'
                     )
+                    logger.info(f"Session {session_id} updated in database successfully")
                     
                     # Broadcast completion with real-time tracking metrics
                     await manager.broadcast(json.dumps({
@@ -1135,7 +1206,11 @@ async def serve_react_root():
     """Serve React app at root"""
     try:
         with open("frontend/build/index.html", "r") as f:
-            return HTMLResponse(content=f.read())
+            response = HTMLResponse(content=f.read())
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
@@ -1159,7 +1234,11 @@ async def serve_react_app(full_path: str):
     
     try:
         with open("frontend/build/index.html", "r") as f:
-            return HTMLResponse(content=f.read())
+            response = HTMLResponse(content=f.read())
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
     except FileNotFoundError:
         return HTMLResponse(content="""
         <html>
@@ -1318,7 +1397,7 @@ async def start_live_trading(session_data: Dict[str, Any]):
             session_type="live",
             strategy_id=session_data["strategy_id"],
             symbol=session_data["symbol"],
-            initial_capital=session_data.get("initial_capital", 10000.0)
+            initial_capital=session_data.get("initial_capital", 100000.0)
         )
         
         # Initialize real-time logging components

@@ -82,8 +82,8 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
         self.logger.info("EnhancedRealTimeBroker initialized with comprehensive logging")
         
         # Initialize cash and value
-        self.cash = 10000.0
-        self.value = 10000.0
+        self.cash = 100000.0
+        self.value = 100000.0
         
         # Tracking collections
         self.trading_signals: List[TradingSignal] = []
@@ -332,8 +332,10 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
                     self.log_order_activity(order, OrderStatus.REJECTED, "Insufficient cash")
                     return
             else:
-                self.cash += (value - order.executed.comm)
-                self.logger.info(f"Sell execution: Cash increased by {value - order.executed.comm:.2f}")
+                # Sell order: increase cash (value is negative for sell orders)
+                cash_change = abs(value) - order.executed.comm
+                self.cash += cash_change
+                self.logger.info(f"Sell execution: Cash increased by {cash_change:.2f}")
             
             # Update portfolio value
             self._update_value()
@@ -431,7 +433,7 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
             "rejected_orders": len([a for a in self.order_activities if a.status == OrderStatus.REJECTED])
         }
 
-def create_enhanced_realtime_broker(initial_cash=10000.0, commission=0.001):
+def create_enhanced_realtime_broker(initial_cash=100000.0, commission=0.001):
     """
     Factory function to create an enhanced real-time broker
     
@@ -455,7 +457,7 @@ if __name__ == "__main__":
     # Test the enhanced real-time broker
     logging.basicConfig(level=logging.INFO)
     
-    broker = create_enhanced_realtime_broker(10000.0, 0.001)
+    broker = create_enhanced_realtime_broker(100000.0, 0.001)
     
     # Test signal logging
     signal_id = broker.log_trading_signal(

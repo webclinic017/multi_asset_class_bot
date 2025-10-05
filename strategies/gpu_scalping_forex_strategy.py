@@ -278,6 +278,10 @@ class GPUScalpingForexStrategy(bt.Strategy):
         """Initialize GPU-accelerated scalping strategy"""
         self.logger = logging.getLogger(__name__)
         
+        # Initialize portfolio value tracker for accurate portfolio tracking
+        from execution.portfolio_value_tracker import get_portfolio_tracker
+        self.portfolio_tracker = get_portfolio_tracker(100000.0)
+        
         # Basic price data
         self.dataclose = self.datas[0].close
         self.datahigh = self.datas[0].high
@@ -292,6 +296,8 @@ class GPUScalpingForexStrategy(bt.Strategy):
         # Performance tracking
         self.trade_count = 0
         self.winning_trades = 0
+        self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
+        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         # GPU setup
         self.device = 'cuda' if (GPU_AVAILABLE and self.p.use_gpu) else 'cpu'
@@ -522,6 +528,29 @@ class GPUScalpingForexStrategy(bt.Strategy):
                 
                 self.order = self.buy(size=position_size)
                 
+                # Add portfolio value change and profit/loss information
+                current_portfolio_value = self.broker.get_value()
+                portfolio_change = current_portfolio_value - self.initial_capital
+                portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                
+                # Get portfolio summary from tracker
+                portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                
+                self.logger.info(f"*** GPU SCALPING PORTFOLIO VALUE AFTER BUY ORDER ***")
+                self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                
+                if portfolio_change > 0:
+                    self.logger.info(f"*** GPU SCALPING PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                elif portfolio_change < 0:
+                    self.logger.info(f"*** GPU SCALPING LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                else:
+                    self.logger.info(f"*** GPU SCALPING BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
+                
             elif signal_data['signal'] == 'SELL' and signal_data['confidence'] > 0.7:
                 # Calculate position size
                 position_size = self.p.position_size_percent * signal_data['strength']
@@ -536,7 +565,85 @@ class GPUScalpingForexStrategy(bt.Strategy):
                         f'Size: {position_size:.3f}')
                 
                 self.order = self.sell(size=position_size)
-        
+                
+                # Add portfolio value change and profit/loss information
+                current_portfolio_value = self.broker.get_value()
+                portfolio_change = current_portfolio_value - self.initial_capital
+                portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                
+                # Get portfolio summary from tracker
+                portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                
+                self.logger.info(f"*** GPU SCALPING PORTFOLIO VALUE AFTER SELL ORDER ***")
+                self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                
+                if portfolio_change > 0:
+                    self.logger.info(f"*** GPU SCALPING PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                elif portfolio_change < 0:
+                    self.logger.info(f"*** GPU SCALPING LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+    def notify_order(self, order):
+        """Enhanced order notification with portfolio tracking"""
+        if order.status in [order.Submitted, order.Accepted]:
+            return
+
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.buyprice = order.executed.price
+                self.buycomm = order.executed.comm
+            
+            # Update portfolio tracker
+            if order.isbuy():
+                self.portfolio_tracker.update_cash(self.broker.get_cash())
+                self.portfolio_tracker.add_position(
+                    symbol="EUR_USD",
+                    size=order.executed.size,
+                    entry_price=order.executed.price,
+                    commission=order.executed.comm
+                )
+            else:
+                self.portfolio_tracker.close_position(
+                    symbol="EUR_USD",
+                    exit_price=order.executed.price,
+                    commission=order.executed.comm
+                )
+            
+            # Calculate portfolio change since start
+            current_portfolio_value = self.broker.get_value()
+            portfolio_change = current_portfolio_value - self.initial_capital
+            portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+            
+            # Get portfolio summary from tracker
+            portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+            
+            self.logger.info(f"*** GPU SCALPING FINAL PORTFOLIO VALUE CHANGE AFTER ORDER EXECUTION ***")
+            self.logger.info(f"  Previous Reference Capital: ${self.initial_capital:.2f}")
+            self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+            self.logger.info(f"  Trade P&L: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+            self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+            
+            if portfolio_change > 0:
+                self.logger.info(f"*** GPU SCALPING TRADE RESULT: PROFIT ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+            elif portfolio_change < 0:
+                self.logger.info(f"*** GPU SCALPING TRADE RESULT: LOSS ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+            else:
+                self.logger.info(f"*** GPU SCALPING TRADE RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
+            
+            # Update reference capital for next trade
+            self.initial_capital = current_portfolio_value
+            self.logger.info(f"*** UPDATED REFERENCE CAPITAL FOR NEXT TRADE: ${self.initial_capital:.2f} ***")
+            
+            self.log(f'GPU SCALPING ORDER EXECUTED - {order.getstatusname()} at {order.executed.price:.5f}')
+            self.order = None
+            
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log(f'GPU SCALPING ORDER FAILED - {order.getstatusname()}')
+            self.order = None
+
         else:  # In position - manage with tight stops
             self._manage_position()
 

@@ -58,7 +58,7 @@ class RealTimeTradingEngine:
         self.logger.info(f"RealTimeTradingEngine initialized for session {session_id}")
     
     def setup_engine(self, strategy_class_name: str, strategy_params: Dict[str, Any],
-                    initial_capital: float = 10000.0, commission: float = 0.001):
+                    initial_capital: float = 100000.0, commission: float = 0.001):
         """Setup the trading engine with strategy and broker"""
         try:
             # Create Cerebro engine
@@ -98,7 +98,19 @@ class RealTimeTradingEngine:
     def _get_strategy_class(self, strategy_class_name: str):
         """Dynamically import strategy class"""
         try:
-            if strategy_class_name == 'EnhancedRealtimeScalping1MStrategy':
+            if strategy_class_name == 'MarketMakingHFTStrategy':
+                from strategies.market_making_hft_strategy import MarketMakingHFTStrategy
+                return MarketMakingHFTStrategy
+            elif strategy_class_name == 'StatisticalArbitrageHFTStrategy':
+                from strategies.statistical_arbitrage_hft_strategy import StatisticalArbitrageHFTStrategy
+                return StatisticalArbitrageHFTStrategy
+            elif strategy_class_name == 'LatencyArbitrageHFTStrategy':
+                from strategies.latency_arbitrage_hft_strategy import LatencyArbitrageHFTStrategy
+                return LatencyArbitrageHFTStrategy
+            elif strategy_class_name == 'MomentumIgnitionHFTStrategy':
+                from strategies.momentum_ignition_hft_strategy import MomentumIgnitionHFTStrategy
+                return MomentumIgnitionHFTStrategy
+            elif strategy_class_name == 'EnhancedRealtimeScalping1MStrategy':
                 from strategies.enhanced_realtime_scalping_1m_strategy import EnhancedRealtimeScalping1MStrategy
                 return EnhancedRealtimeScalping1MStrategy
             elif strategy_class_name == 'EnhancedRealtimeScalping5MStrategy':
@@ -113,13 +125,13 @@ class RealTimeTradingEngine:
             elif strategy_class_name == 'RealtimeScalping5MStrategy':
                 from strategies.realtime_scalping_5m_strategy import RealtimeScalping5MStrategy
                 return RealtimeScalping5MStrategy
+
             else:
                 self.logger.error(f"Unknown strategy class: {strategy_class_name}")
                 return None
         except ImportError as e:
             self.logger.error(f"Error importing strategy {strategy_class_name}: {e}")
             return None
-    
     def add_data_feed(self, symbol: str, timeframe: str, data_source):
         """Add data feed to the engine"""
         try:
@@ -200,7 +212,7 @@ class RealTimeTradingEngine:
             
             # Update session status
             final_value = self.broker.get_value() if self.broker else 0
-            initial_capital = self.config.get('initial_capital', 10000)
+            initial_capital = self.config.get('initial_capital', 100000)
             total_return = (final_value - initial_capital) / initial_capital if initial_capital > 0 else 0
             
             self.db_manager.update_trading_session(
@@ -336,7 +348,7 @@ class RealTimeTradingEngine:
             broker_stats = self.broker.get_broker_stats() if self.broker else {}
             
             # Calculate performance metrics
-            initial_capital = self.config.get('initial_capital', 10000)
+            initial_capital = self.config.get('initial_capital', 100000)
             current_value = self.broker.get_value() if self.broker else initial_capital
             total_return = (current_value - initial_capital) / initial_capital if initial_capital > 0 else 0
             
@@ -365,7 +377,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     config = {
-        "initial_capital": 10000.0,
+        "initial_capital": 100000.0,
         "commission": 0.001,
         "strategy": "EnhancedRealtimeScalping1MStrategy",
         "symbol": "EUR_USD",

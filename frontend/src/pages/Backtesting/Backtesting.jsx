@@ -197,7 +197,7 @@ const Backtesting = () => {
     symbol: 'EUR_USD',
     start_date: '2024-01-01',
     end_date: '2024-12-31',
-    initial_capital: 10000,
+    initial_capital: 100000,
     timeframe: '1m'
   });
 
@@ -258,7 +258,20 @@ const Backtesting = () => {
   const fetchSessions = async () => {
     try {
       const response = await axios.get('/api/sessions');
+      console.log('=== API RESPONSE DEBUG ===');
+      console.log('Full response data:', response.data);
       const backtestSessions = response.data.filter((session) => session.session_type === 'backtest');
+      console.log('Filtered backtest sessions:', backtestSessions);
+      backtestSessions.forEach((session, index) => {
+        console.log(`Session ${index}:`, {
+          id: session.id,
+          strategy_name: session.strategy_name,
+          initial_capital: session.initial_capital,
+          final_capital: session.final_capital,
+          total_return: session.total_return,
+          total_trades: session.total_trades
+        });
+      });
       setSessions(backtestSessions);
     } catch (error) {
       console.error('Error fetching sessions:', error);
@@ -292,12 +305,17 @@ const Backtesting = () => {
 
   const getCompatibleStrategies = () => {
     const selectedSymbol = formData.symbol;
-    
+
     return strategies.filter(strategy => {
       const strategyName = strategy.name.toLowerCase();
       const selectedSymbolFormatted = selectedSymbol.replace('_', '/').toLowerCase();
       const selectedSymbolUnderscore = selectedSymbol.toLowerCase();
-      
+
+      // HFT strategies are compatible with all symbols
+      if (strategy.strategy_type === 'hft') {
+        return true;
+      }
+
       // Check if strategy name contains the selected symbol
       return strategyName.includes(selectedSymbolFormatted) ||
              strategyName.includes(selectedSymbolUnderscore) ||
@@ -358,14 +376,19 @@ const Backtesting = () => {
   return (
     <BacktestingContainer>
       <Header>
-        <Title>Backtesting</Title>
-        <div style={{ fontSize: '12px', color: wsConnected ? '#22c55e' : '#ef4444' }}>
-          WebSocket: {wsConnected ? 'Connected' : 'Disconnected'}
+        <div>
+          <Title>Backtesting</Title>
+          <div style={{ fontSize: '12px', color: wsConnected ? '#22c55e' : '#ef4444', marginTop: '8px' }}>
+            WebSocket: {wsConnected ? 'Connected' : 'Disconnected'}
+          </div>
         </div>
+        <Button onClick={fetchSessions} style={{ padding: '8px 16px', fontSize: '13px' }}>
+          🔄 Refresh Results
+        </Button>
       </Header>
 
       <Card>
-        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines)</CardTitle>
+        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines) - <span style={{color: '#22c55e', fontWeight: 'bold'}}>$100,000 Initial Capital</span></CardTitle>
         <FormGrid>
           <FormGroup>
             <Label>Strategy</Label>
@@ -390,13 +413,63 @@ const Backtesting = () => {
               value={formData.symbol}
               onChange={handleInputChange}
             >
-              <option value="EUR_USD">EUR/USD</option>
-              <option value="GBP_USD">GBP/USD</option>
-              <option value="USD_JPY">USD/JPY</option>
-              <option value="AUD_USD">AUD/USD</option>
-              <option value="BTC_USD">BTC/USD</option>
-              <option value="ETH_USD">ETH/USD</option>
-              <option value="SOL_USD">SOL/USD</option>
+              {/* Forex Pairs */}
+              <option value="EUR_USD">EUR/USD (Forex)</option>
+              <option value="GBP_USD">GBP/USD (Forex)</option>
+              <option value="USD_JPY">USD/JPY (Forex)</option>
+              <option value="AUD_USD">AUD/USD (Forex)</option>
+              <option value="USDCAD">USD/CAD (Forex)</option>
+              <option value="USDCHF">USD/CHF (Forex)</option>
+              <option value="NZDUSD">NZD/USD (Forex)</option>
+
+              {/* Crypto */}
+              <option value="BTC_USD">BTC/USD (Crypto)</option>
+              <option value="ETH_USD">ETH/USD (Crypto)</option>
+              <option value="SOL_USD">SOL/USD (Crypto)</option>
+
+              {/* Futures - Energy */}
+              <option value="WTI_CRUDE_OIL">WTI Crude Oil (Futures)</option>
+              <option value="BRENT_CRUDE_OIL">Brent Crude Oil (Futures)</option>
+              <option value="NATURAL_GAS">Natural Gas (Futures)</option>
+
+              {/* Futures - Metals */}
+              <option value="GOLD">Gold (Futures)</option>
+              <option value="SILVER">Silver (Futures)</option>
+              <option value="COPPER">Copper (Futures)</option>
+              <option value="PLATINUM">Platinum (Futures)</option>
+              <option value="PALLADIUM">Palladium (Futures)</option>
+
+              {/* Futures - Agriculture */}
+              <option value="CORN">Corn (Futures)</option>
+              <option value="WHEAT">Wheat (Futures)</option>
+              <option value="SOYBEANS">Soybeans (Futures)</option>
+              <option value="COFFEE">Coffee (Futures)</option>
+              <option value="COTTON">Cotton (Futures)</option>
+              <option value="SUGAR">Sugar (Futures)</option>
+
+              {/* Futures - Livestock */}
+              <option value="LIVE_CATTLE">Live Cattle (Futures)</option>
+              <option value="FEEDER_CATTLE">Feeder Cattle (Futures)</option>
+              <option value="LEAN_HOGS">Lean Hogs (Futures)</option>
+
+              {/* Futures - Financial */}
+              <option value="E_MINI_S&P">E-mini S&P 500 (Futures)</option>
+              <option value="E_MINI_NASDAQ">E-mini Nasdaq-100 (Futures)</option>
+              <option value="E_MINI_RUSSELL">E-mini Russell 2000 (Futures)</option>
+              <option value="E_MINI_DOW">E-mini Dow Jones (Futures)</option>
+              <option value="T_BOND">30-Year T-Bond (Futures)</option>
+              <option value="T_NOTE">10-Year T-Note (Futures)</option>
+              <option value="FIVE_YEAR">5-Year T-Note (Futures)</option>
+              <option value="TWO_YEAR">2-Year T-Note (Futures)</option>
+
+              {/* Currency Futures */}
+              <option value="EURO_FX">Euro FX (Futures)</option>
+              <option value="BRITISH_POUND">British Pound (Futures)</option>
+              <option value="JAPANESE_YEN">Japanese Yen (Futures)</option>
+              <option value="AUSTRALIAN_DOLLAR">Australian Dollar (Futures)</option>
+              <option value="CANADIAN_DOLLAR">Canadian Dollar (Futures)</option>
+              <option value="NEW_ZEALAND_DOLLAR">New Zealand Dollar (Futures)</option>
+              <option value="SWISS_FRANC">Swiss Franc (Futures)</option>
             </Select>
           </FormGroup>
           
@@ -488,9 +561,9 @@ const Backtesting = () => {
                   <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
                     {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
                   </div>
-                  <div>{totalTrades}</div>
-                  <div style={{ color: '#22c55e' }}>{winningTrades}</div>
-                  <div style={{ color: '#ef4444' }}>{losingTrades}</div>
+                  <div>{session.total_trades}</div>
+                  <div style={{ color: '#22c55e' }}>{session.winning_trades}</div>
+                  <div style={{ color: '#ef4444' }}>{session.losing_trades}</div>
                   <div style={{ fontSize: '12px', color: '#9ca3af' }}>
                     {session.status === 'running' ?
                       `Started: ${formatDateTime(session.start_time)}` :

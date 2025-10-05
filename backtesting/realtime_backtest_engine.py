@@ -51,7 +51,12 @@ class RealTimeBacktestEngine(BacktestEngine):
             commission=self.commission
         )
         self.cerebro.broker = realtime_broker
+
+        # Ensure cerebro has correct initial capital for analyzers
+        self.cerebro.broker.setcash(self.initial_capital)
+
         self.logger.info(f"Real-time broker installed for immediate order execution")
+        self.logger.info(f"Cerebro initial capital set to: ${self.initial_capital:,.2f}")
         
         # Real-time tracking
         self.portfolio_snapshots = []
@@ -93,6 +98,11 @@ class RealTimeBacktestEngine(BacktestEngine):
             # Add custom analyzer for real-time tracking
             self.cerebro.addanalyzer(RealTimePortfolioAnalyzer,
                                    _name='realtime_portfolio')
+            
+            # Add trade logging analyzer to store trades in database
+            self.cerebro.addanalyzer(TradeLoggingAnalyzer,
+                                   _name='trade_logger',
+                                   session_id=self.session_id)
             
             # Store engine reference for analyzer access
             self.cerebro._engine_ref = self
@@ -314,6 +324,80 @@ class RealTimePortfolioAnalyzer(bt.Analyzer):
             'portfolio_snapshots': len(self.engine.portfolio_snapshots) if self.engine else 0
         }
 
+class TradeLoggingAnalyzer(bt.Analyzer):
+    """
+    Custom analyzer that logs all trades to the database
+    """
+    
+    params = (
+        ('session_id', None),
+    )
+    
+    def __init__(self):
+        super(TradeLoggingAnalyzer, self).__init__()
+        self.session_id = self.p.session_id
+        self.logger = logging.getLogger(__name__)
+        
+        # Import database manager
+        from database.database_manager import DatabaseManager
+        self.db_manager = DatabaseManager()
+        
+        self.logger.info(f"TradeLoggingAnalyzer initialized for session {self.session_id}")
+    
+    def notify_trade(self, trade):
+        """Called when a trade is closed"""
+        if trade.isclosed and self.session_id:
+            try:
+                # Get trade details
+                entry_time = bt.num2date(trade.dtopen)
+                exit_time = bt.num2date(trade.dtclose)
+                
+                # Calculate duration
+                duration_seconds = int((exit_time - entry_time).total_seconds())
+                
+                # Determine exit reason based on P&L
+                if trade.pnl > 0:
+                    exit_reason = 'take_profit'
+                elif trade.pnl < 0:
+                    exit_reason = 'stop_loss'
+                else:
+                    exit_reason = 'manual'
+                
+                # Store trade in database
+                trade_id = self.db_manager.create_trade(
+                    session_id=self.session_id,
+                    symbol=trade.data._name if hasattr(trade.data, '_name') else 'UNKNOWN',
+                    side='BUY' if trade.long else 'SELL',
+                    entry_time=entry_time,
+                    entry_price=trade.price,
+                    quantity=trade.size,
+                    exit_time=exit_time,
+                    exit_price=trade.price + (trade.pnl / trade.size) if trade.size != 0 else trade.price,
+                    pnl=trade.pnl,
+                    pnl_pips=trade.pnlcomm,  # Commission-adjusted P&L
+                    commission=trade.commission if hasattr(trade, 'commission') else 0.0,
+                    duration_seconds=duration_seconds,
+                    exit_reason=exit_reason,
+                    status='closed'
+                )
+                
+                self.logger.info(f"Stored trade {trade_id} in database: "
+                               f"{'BUY' if trade.long else 'SELL'} "
+                               f"{trade.size} @ {trade.price:.5f}, "
+                               f"P&L: {trade.pnl:.2f}")
+                
+            except Exception as e:
+                self.logger.error(f"Error storing trade in database: {e}")
+                import traceback
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    def get_analysis(self):
+        """Return analysis results"""
+        return {
+            'session_id': self.session_id,
+            'trades_logged': True
+        }
+
 # Integration function for the API
 def create_realtime_backtest_engine(config: dict, session_id: int, 
                                    update_callback=None, websocket_manager=None):
@@ -358,7 +442,7 @@ if __name__ == "__main__":
     # Mock configuration
     config = {
         'backtesting': {
-            'initial_capital': 10000,
+            'initial_capital': 100000,
             'commission': 0.001,
             'slippage': 0.0005,
             'start_date': '2023-01-01',

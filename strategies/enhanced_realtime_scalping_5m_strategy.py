@@ -68,7 +68,7 @@ class EnhancedRealtimeScalping5MStrategy(bt.Strategy):
         
         # Portfolio tracker
         from execution.portfolio_value_tracker import get_portfolio_tracker
-        self.portfolio_tracker = get_portfolio_tracker(10000.0)
+        self.portfolio_tracker = get_portfolio_tracker(100000.0)
         
         # Basic price data
         self.dataclose = self.datas[0].close
@@ -88,6 +88,8 @@ class EnhancedRealtimeScalping5MStrategy(bt.Strategy):
         self.winning_trades = 0
         self.total_pnl = 0.0
         self.peak_value = self.broker.get_cash()
+        self.initial_capital = self.broker.get_cash()  # Store initial capital for profit/loss calculations
+        self.last_completed_portfolio_value = self.broker.get_cash()  # Initialize reference capital
         
         # Scalping specific tracking
         self.last_trade_time = None
@@ -485,6 +487,16 @@ class EnhancedRealtimeScalping5MStrategy(bt.Strategy):
 
     def next(self):
         """Main scalping logic with enhanced real-time logging for 5M"""
+        # Update reference capital if portfolio value has changed significantly
+        current_portfolio_value = self.broker.get_value()
+        if abs(current_portfolio_value - self.last_completed_portfolio_value) > 1.0:  # $1 threshold
+            old_reference = self.last_completed_portfolio_value
+            self.last_completed_portfolio_value = current_portfolio_value
+            self.logger.info(f"*** 5M SCALPING REAL-TIME REFERENCE CAPITAL UPDATE ***")
+            self.logger.info(f"  Old Reference: ${old_reference:.2f}")
+            self.logger.info(f"  New Reference: ${self.last_completed_portfolio_value:.2f}")
+            self.logger.info(f"  Portfolio Change: ${self.last_completed_portfolio_value - old_reference:.2f}")
+        
         if self.order:
             return
         
@@ -560,6 +572,30 @@ class EnhancedRealtimeScalping5MStrategy(bt.Strategy):
                     self.entry_bar = len(self)
                     self.last_trade_time = self.datas[0].datetime.datetime(0)
                     self.trades_this_hour += 1
+                    
+                    # Add portfolio value change and profit/loss information
+                    current_portfolio_value = self.broker.get_value()
+                    portfolio_change = current_portfolio_value - self.initial_capital
+                    portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                    
+                    # Get portfolio summary from tracker
+                    portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                    
+                    self.logger.info(f"*** 5M SCALPING PORTFOLIO VALUE AFTER BUY ORDER ***")
+                    self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                    self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                    self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                    self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                    self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                    self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                    
+                    if portfolio_change > 0:
+                        self.logger.info(f"*** 5M SCALPING PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                    elif portfolio_change < 0:
+                        self.logger.info(f"*** 5M SCALPING LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                    else:
+                        self.logger.info(f"*** 5M SCALPING BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
+                        
                 except Exception as e:
                     self.logger.error(f"Buy order failed: {e}")
                 
@@ -618,6 +654,30 @@ class EnhancedRealtimeScalping5MStrategy(bt.Strategy):
                     self.entry_bar = len(self)
                     self.last_trade_time = self.datas[0].datetime.datetime(0)
                     self.trades_this_hour += 1
+                    
+                    # Add portfolio value change and profit/loss information
+                    current_portfolio_value = self.broker.get_value()
+                    portfolio_change = current_portfolio_value - self.initial_capital
+                    portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+                    
+                    # Get portfolio summary from tracker
+                    portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+                    
+                    self.logger.info(f"*** 5M SCALPING PORTFOLIO VALUE AFTER SELL ORDER ***")
+                    self.logger.info(f"  Initial Capital: ${self.initial_capital:.2f}")
+                    self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+                    self.logger.info(f"  Portfolio Change: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+                    self.logger.info(f"  Realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+                    self.logger.info(f"  Unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+                    self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+                    
+                    if portfolio_change > 0:
+                        self.logger.info(f"*** 5M SCALPING PROFIT: ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+                    elif portfolio_change < 0:
+                        self.logger.info(f"*** 5M SCALPING LOSS: ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+                    else:
+                        self.logger.info(f"*** 5M SCALPING BREAK EVEN: ${portfolio_change:.2f} (0.00%) ***")
+                        
                 except Exception as e:
                     self.logger.error(f"Sell order failed: {e}")
                     
@@ -697,6 +757,31 @@ class EnhancedRealtimeScalping5MStrategy(bt.Strategy):
                     exit_price=order.executed.price,
                     commission=order.executed.comm
                 )
+            
+            # Calculate portfolio change since start
+            current_portfolio_value = self.broker.get_value()
+            portfolio_change = current_portfolio_value - self.initial_capital
+            portfolio_change_pct = (portfolio_change / self.initial_capital) * 100
+            
+            # Get portfolio summary from tracker
+            portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+            
+            self.logger.info(f"*** 5M SCALPING FINAL PORTFOLIO VALUE CHANGE AFTER ORDER EXECUTION ***")
+            self.logger.info(f"  Previous Reference Capital: ${self.initial_capital:.2f}")
+            self.logger.info(f"  Current Portfolio Value: ${current_portfolio_value:.2f}")
+            self.logger.info(f"  Trade P&L: ${portfolio_change:.2f} ({portfolio_change_pct:+.2f}%)")
+            self.logger.info(f"  Net P&L: ${portfolio_summary['net_pnl']:.2f}")
+            
+            if portfolio_change > 0:
+                self.logger.info(f"*** 5M SCALPING TRADE RESULT: PROFIT ${portfolio_change:.2f} (+{portfolio_change_pct:.2f}%) ***")
+            elif portfolio_change < 0:
+                self.logger.info(f"*** 5M SCALPING TRADE RESULT: LOSS ${portfolio_change:.2f} ({portfolio_change_pct:.2f}%) ***")
+            else:
+                self.logger.info(f"*** 5M SCALPING TRADE RESULT: BREAK EVEN ${portfolio_change:.2f} (0.00%) ***")
+            
+            # Update reference capital for next trade
+            self.initial_capital = current_portfolio_value
+            self.logger.info(f"*** UPDATED REFERENCE CAPITAL FOR NEXT TRADE: ${self.initial_capital:.2f} ***")
             
             self.log(f'5M SCALPING ORDER EXECUTED - {order.getstatusname()} at {order.executed.price:.5f}')
             self.order = None

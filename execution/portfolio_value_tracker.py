@@ -13,7 +13,7 @@ class PortfolioValueTracker:
     Bypasses backtrader's internal value calculation issues
     """
     
-    def __init__(self, initial_capital: float = 10000.0):
+    def __init__(self, initial_capital: float = 100000.0):
         self.logger = logging.getLogger(__name__)
         self.initial_capital = initial_capital
         self.current_cash = initial_capital
@@ -156,7 +156,7 @@ class PortfolioValueTracker:
 # Global portfolio tracker instance
 _global_portfolio_tracker = None
 
-def get_portfolio_tracker(initial_capital: float = 10000.0) -> PortfolioValueTracker:
+def get_portfolio_tracker(initial_capital: float = 100000.0) -> PortfolioValueTracker:
     """Get or create global portfolio tracker instance"""
     global _global_portfolio_tracker
     if _global_portfolio_tracker is None:
@@ -167,6 +167,12 @@ def reset_portfolio_tracker():
     """Reset global portfolio tracker"""
     global _global_portfolio_tracker
     _global_portfolio_tracker = None
+
+def force_reset_portfolio_tracker_to_100k():
+    """Force reset portfolio tracker to use $100,000"""
+    global _global_portfolio_tracker
+    _global_portfolio_tracker = PortfolioValueTracker(100000.0)
+    return _global_portfolio_tracker
 
 if __name__ == "__main__":
     # Test portfolio value tracker

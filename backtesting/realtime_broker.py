@@ -17,11 +17,7 @@ class RealTimeBroker(bt.brokers.BackBroker):
         super().__init__(**kwargs)
         self.logger = logging.getLogger(__name__)
         self.logger.info("RealTimeBroker initialized for immediate order execution")
-        
-        # Initialize cash and value properly - use the parent class method
-        self.cash = 10000.0  # Set initial cash
-        self.value = 10000.0  # Set initial portfolio value
-        
+
         # Track execution for debugging
         self.execution_count = 0
         self.pending_orders = []
@@ -106,9 +102,10 @@ class RealTimeBroker(bt.brokers.BackBroker):
                     self.logger.error(f"Insufficient cash for buy order: {value + order.executed.comm:.2f} > {self.cash:.2f}")
                     return
             else:
-                # Sell order: increase cash, reduce position
-                self.cash += (value - order.executed.comm)
-                self.logger.info(f"Sell execution: Cash increased by {value - order.executed.comm:.2f}")
+                # Sell order: increase cash, reduce position (value is negative for sell orders)
+                cash_change = abs(value) - order.executed.comm
+                self.cash += cash_change
+                self.logger.info(f"Sell execution: Cash increased by {cash_change:.2f}")
             
             # Update portfolio value
             self._update_value()
@@ -182,10 +179,15 @@ class RealTimeBroker(bt.brokers.BackBroker):
     def set_cash(self, cash):
         """Set cash amount"""
         self.cash = float(cash)
-        self.value = self.cash  # Reset value when cash is set
-        self.logger.info(f"Cash set to: ${self.cash:.2f}")
+        self._update_value()  # Update value when cash is set
+        self.logger.info(f"Cash set to: ${self.cash:.2f}, Value: ${self.value:.2f}")
 
-def create_realtime_broker(initial_cash=10000.0, commission=0.001):
+    def setcash(self, cash):
+        """Backtrader compatibility method"""
+        super().setcash(cash)  # Call parent setcash first
+        return self.set_cash(cash)
+
+def create_realtime_broker(initial_cash=100000.0, commission=0.001):
     """
     Factory function to create a real-time broker with immediate execution
     
@@ -209,6 +211,6 @@ if __name__ == "__main__":
     # Test the real-time broker
     logging.basicConfig(level=logging.INFO)
     
-    broker = create_realtime_broker(10000.0, 0.001)
+    broker = create_realtime_broker(100000.0, 0.001)
     print(f"Broker created with cash: ${broker.get_cash():.2f}")
     print(f"Broker value: ${broker.get_value():.2f}")
