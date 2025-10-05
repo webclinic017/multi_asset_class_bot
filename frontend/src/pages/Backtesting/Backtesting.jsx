@@ -561,9 +561,9 @@ const Backtesting = () => {
                   <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
                     {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
                   </div>
-                  <div>{totalTrades}</div>
-                  <div style={{ color: '#22c55e' }}>{winningTrades}</div>
-                  <div style={{ color: '#ef4444' }}>{losingTrades}</div>
+                  <div>{session.total_trades}</div>
+                  <div style={{ color: '#22c55e' }}>{session.winning_trades}</div>
+                  <div style={{ color: '#ef4444' }}>{session.losing_trades}</div>
                   <div style={{ fontSize: '12px', color: '#9ca3af' }}>
                     {session.status === 'running' ?
                       `Started: ${formatDateTime(session.start_time)}` :
