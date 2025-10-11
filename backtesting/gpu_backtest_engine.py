@@ -318,27 +318,13 @@ class GPUBacktestEngine:
             # Debug trade analyzer results
             self.logger.info(f"Trade Analyzer Results: {trade_analyzer}")
             
-            # Extract trade statistics with fallback values
-            total_trades = trade_analyzer.get('total', {}).get('total', 0)
+            # Extract actual trade statistics from backtrader analyzer (match regular backtest engine)
+            total_trades = trade_analyzer.get('total', {}).get('closed', 0) or 0
             winning_trades = trade_analyzer.get('won', {}).get('total', 0)
             losing_trades = trade_analyzer.get('lost', {}).get('total', 0)
-            
-            # If no trades or unrealistic trade statistics, generate realistic numbers
-            if total_trades <= 1 or (winning_trades == 0 and losing_trades == 0):
-                # Estimate trades based on data size and timeframe
-                data_points = self.total_bars_processed
-                if timeframe == '1m':
-                    estimated_trades = max(10, data_points // 80)  # More aggressive: 1 trade per 80 bars
-                elif timeframe == '5m':
-                    estimated_trades = max(8, data_points // 40)   # More aggressive: 1 trade per 40 bars
-                else:
-                    estimated_trades = max(5, data_points // 100)  # More aggressive: 1 trade per 100 bars
-                
-                total_trades = estimated_trades
-                winning_trades = int(estimated_trades * 0.65)  # 65% win rate
-                losing_trades = estimated_trades - winning_trades
-                
-                self.logger.info(f"Generated realistic trade counts (was {trade_analyzer.get('total', {}).get('total', 0)}): Total={total_trades}, Wins={winning_trades}, Losses={losing_trades}")
+
+            # Log actual trade statistics for debugging
+            self.logger.info(f"Actual backtrader trade statistics: Total={total_trades}, Wins={winning_trades}, Losses={losing_trades}")
             
             # Compile results
             results_dict = {

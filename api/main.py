@@ -3,10 +3,10 @@ FastAPI REST API Backend for Trading Bot Dashboard
 Serves ONLY real backtesting data from SQLite database - no simulations or synthetic data
 """
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 import asyncio
 import json
@@ -246,7 +246,7 @@ async def get_strategy(strategy_id: int):
 
 # Trading session endpoints - REAL DATA ONLY
 @app.get("/api/sessions", response_model=List[TradingSessionResponse])
-async def get_trading_sessions(limit: int = 100):
+async def get_trading_sessions(limit: int = 100, request: Request = None):
     """Get all backtest sessions from database - including running, completed, and failed"""
     try:
         sessions = db_manager.get_trading_sessions(limit=limit)
@@ -307,7 +307,17 @@ async def get_trading_sessions(limit: int = 100):
             all_sessions.append(TradingSessionResponse(**session))
         
         logger.info(f"Returning {len(all_sessions)} backtest sessions out of {len(sessions)} total")
-        return all_sessions
+
+        # Create response with cache control headers
+        response = JSONResponse(
+            content=all_sessions,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+        return response
     
     except Exception as e:
         logger.error(f"Error getting trading sessions: {e}")
@@ -944,21 +954,42 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                         total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital)
                         max_drawdown = results.get('max_drawdown', 0.0) / 100.0 if results.get('max_drawdown', 0.0) > 1 else results.get('max_drawdown', 0.0)
 
-                    total_trades = results.get('total_trades', 0)
-                    winning_trades = results.get('winning_trades', 0)
-                    losing_trades = results.get('losing_trades', 0)
-                    win_rate = (winning_trades / total_trades) if total_trades > 0 else 0.0
-                    sharpe_ratio = results.get('sharpe_ratio', 0.0)
-                    
-                    # Extract final portfolio value from results
-                    final_capital = results.get('final_value', backtest_request.initial_capital)
-                    total_return = results.get('total_return', 0.0)
+                    # Get trade statistics from actual trades in database for accuracy
+                    with db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            SELECT
+                                COUNT(*) as total_trades,
+                                COUNT(CASE WHEN pnl > 0 THEN 1 END) as winning_trades,
+                                COUNT(CASE WHEN pnl < 0 THEN 1 END) as losing_trades,
+                                SUM(pnl) as total_pnl
+                            FROM trades
+                            WHERE session_id = ? AND pnl IS NOT NULL
+                        """, (session_id,))
+
+                        trade_stats = cursor.fetchone()
+                        if trade_stats:
+                            total_trades = trade_stats[0] or 0
+                            winning_trades = trade_stats[1] or 0
+                            losing_trades = trade_stats[2] or 0
+                            total_pnl = trade_stats[3] or 0.0
+                            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+
+                            # Calculate final capital and total return from actual P&L
+                            final_capital = backtest_request.initial_capital + total_pnl
+                            total_return = total_pnl / backtest_request.initial_capital if backtest_request.initial_capital > 0 else 0.0
+                        else:
+                            # Fallback to backtest results if no trades in database
+                            total_trades = results.get('total_trades', 0)
+                            winning_trades = results.get('winning_trades', 0)
+                            losing_trades = results.get('losing_trades', 0)
+                            win_rate = results.get('win_rate', 0.0)
+                            final_capital = results.get('final_value', backtest_request.initial_capital)
+                            total_return = results.get('total_return', 0.0)
+
+                    # Get other metrics from backtest results
                     sharpe_ratio = results.get('sharpe_ratio', 0.0)
                     max_drawdown = results.get('max_drawdown', 0.0)
-                    total_trades = results.get('total_trades', 0)
-                    winning_trades = results.get('winning_trades', 0)
-                    losing_trades = results.get('losing_trades', 0)
-                    win_rate = results.get('win_rate', 0.0)
                     
                     logger.info(f"SAVING SESSION RESULTS TO DATABASE:")
                     logger.info(f"  Session ID: {session_id}")
@@ -967,13 +998,13 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     logger.info(f"  Sharpe Ratio: {sharpe_ratio}")
                     logger.info(f"  Max Drawdown: {max_drawdown}%")
                     
-                    # Update session with real backtest results
+                    # Update session with accurate backtest results calculated from actual trades
                     end_date_dt = datetime.fromisoformat(backtest_request.end_date)
                     db_manager.update_trading_session(
                         session_id,
                         end_time=end_date_dt,
-                        final_capital=final_capital,  # This should now be 97357.87
-                        total_return=(total_return / 100.0 if abs(total_return) > 1.0 else total_return), # Ensure it is a decimal
+                        final_capital=final_capital,
+                        total_return=total_return,  # Already calculated as decimal from actual P&L
                         total_trades=total_trades,
                         winning_trades=winning_trades,
                         losing_trades=losing_trades,
@@ -984,7 +1015,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     )
                     logger.info(f"Session {session_id} updated in database successfully")
                     
-                    # Broadcast completion with real-time tracking metrics
+                    # Broadcast completion with accurate trade statistics
                     await manager.broadcast(json.dumps({
                         "type": "backtest_completed",
                         "session_id": session_id,
@@ -997,7 +1028,10 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                         "final_capital": final_capital,
                         "total_return": total_return,
                         "max_drawdown": max_drawdown,
-                        "total_trades": total_trades
+                        "total_trades": total_trades,
+                        "winning_trades": winning_trades,
+                        "losing_trades": losing_trades,
+                        "win_rate": win_rate
                     }))
                     
                     logger.info(f"REAL-TIME backtest completed for session {session_id}: "

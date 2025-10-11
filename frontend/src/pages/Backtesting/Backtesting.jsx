@@ -257,21 +257,30 @@ const Backtesting = () => {
 
   const fetchSessions = async () => {
     try {
-      const response = await axios.get('/api/sessions');
+      // Add cache-busting parameter to ensure fresh data
+      const timestamp = new Date().getTime();
+      const response = await axios.get(`/api/sessions?_t=${timestamp}`);
       console.log('=== API RESPONSE DEBUG ===');
       console.log('Full response data:', response.data);
       const backtestSessions = response.data.filter((session) => session.session_type === 'backtest');
       console.log('Filtered backtest sessions:', backtestSessions);
+
+      // Enhanced debugging for trade statistics
       backtestSessions.forEach((session, index) => {
-        console.log(`Session ${index}:`, {
+        console.log(`Session ${index} - TRADE STATS:`, {
           id: session.id,
           strategy_name: session.strategy_name,
           initial_capital: session.initial_capital,
           final_capital: session.final_capital,
           total_return: session.total_return,
-          total_trades: session.total_trades
+          total_trades: session.total_trades,
+          winning_trades: session.winning_trades,
+          losing_trades: session.losing_trades,
+          win_rate: session.win_rate,
+          status: session.status
         });
       });
+
       setSessions(backtestSessions);
     } catch (error) {
       console.error('Error fetching sessions:', error);
