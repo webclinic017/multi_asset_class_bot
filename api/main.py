@@ -260,63 +260,61 @@ async def get_trading_sessions(limit: int = 100, request: Request = None):
             if session.get('session_type') != 'backtest':
                 continue
             
-            # Check if session has actual trades in trades table
+            # Get detailed trade statistics from database
             with db_manager.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM trades WHERE session_id = ?", (session_id,))
-                actual_trade_count = cursor.fetchone()[0]
-            
-            # Update session data with actual trade counts
-            session['total_trades'] = actual_trade_count
-            
-            # Get detailed trade statistics for all sessions with trades
-            if actual_trade_count > 0:
-                with db_manager.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT
-                            COUNT(CASE WHEN pnl > 0 THEN 1 END) as wins,
-                            COUNT(CASE WHEN pnl < 0 THEN 1 END) as losses,
-                            SUM(pnl) as total_pnl
-                        FROM trades
-                        WHERE session_id = ? AND pnl IS NOT NULL
-                    """, (session_id,))
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) as total_trades,
+                        COUNT(CASE WHEN pnl > 0 THEN 1 END) as wins,
+                        COUNT(CASE WHEN pnl < 0 THEN 1 END) as losses,
+                        SUM(pnl) as total_pnl
+                    FROM trades
+                    WHERE session_id = ? AND pnl IS NOT NULL
+                """, (session_id,))
 
-                    trade_stats = cursor.fetchone()
-                    if trade_stats:
-                        session['winning_trades'] = trade_stats[0] or 0
-                        session['losing_trades'] = trade_stats[1] or 0
-
-                        # If we have actual trades with P&L, recalculate final_capital from trade data
-                        # This ensures accuracy when trades are properly logged
-                        if trade_stats[2] is not None:
-                            initial_capital = session.get('initial_capital', 100000)
-                            total_pnl = trade_stats[2]
-                            session['final_capital'] = initial_capital + total_pnl
-                            session['total_return'] = total_pnl / initial_capital if initial_capital > 0 else 0
-                        else:
-                            # Fallback to stored values if trade P&L is null
-                            stored_final_capital = session.get('final_capital')
-                            initial_capital = session.get('initial_capital', 100000)
-                            if stored_final_capital and stored_final_capital != initial_capital:
-                                session['total_return'] = ((stored_final_capital - initial_capital) / initial_capital) if initial_capital > 0 else 0
-                            else:
-                                session['final_capital'] = initial_capital
-                                session['total_return'] = 0
-            else:
-                # No trades in database - use stored final_capital from backtest engine
-                stored_final_capital = session.get('final_capital')
-                initial_capital = session.get('initial_capital', 100000)
-
-                if stored_final_capital and stored_final_capital != initial_capital and stored_final_capital > 0:
-                    # Use the stored final capital and calculate return
-                    session['total_return'] = ((stored_final_capital - initial_capital) / initial_capital) if initial_capital > 0 else 0
+                trade_stats = cursor.fetchone()
+                
+                if trade_stats and trade_stats[0] > 0:
+                    # We have actual trades with P&L data
+                    total_trades = trade_stats[0]
+                    winning_trades = trade_stats[1] or 0
+                    losing_trades = trade_stats[2] or 0
+                    total_pnl = trade_stats[3] or 0.0
+                    
+                    # Calculate final capital from actual trade P&L
+                    initial_capital = session.get('initial_capital', 100000)
+                    final_capital = initial_capital + total_pnl
+                    total_return = total_pnl / initial_capital if initial_capital > 0 else 0
+                    
+                    # Update session with calculated values
+                    session['total_trades'] = total_trades
+                    session['winning_trades'] = winning_trades
+                    session['losing_trades'] = losing_trades
+                    session['final_capital'] = final_capital
+                    session['total_return'] = total_return
+                    
+                    logger.info(f"Session {session_id}: {total_trades} trades, "
+                              f"W/L: {winning_trades}/{losing_trades}, "
+                              f"Final: ${final_capital:.2f}, Return: {total_return*100:.2f}%")
                 else:
-                    # No valid final capital stored, use defaults
-                    session['final_capital'] = initial_capital
-                    session['total_return'] = 0
-                    session['winning_trades'] = 0
-                    session['losing_trades'] = 0
+                    # No trades with P&L in database - use stored values from session
+                    stored_final_capital = session.get('final_capital')
+                    initial_capital = session.get('initial_capital', 100000)
+                    
+                    # Use stored values if available and valid
+                    if stored_final_capital and stored_final_capital > 0:
+                        session['final_capital'] = stored_final_capital
+                        session['total_return'] = ((stored_final_capital - initial_capital) / initial_capital) if initial_capital > 0 else 0
+                    else:
+                        # No valid data - set defaults
+                        session['final_capital'] = initial_capital
+                        session['total_return'] = 0
+                    
+                    # Ensure trade counts are set
+                    session['total_trades'] = session.get('total_trades', 0)
+                    session['winning_trades'] = session.get('winning_trades', 0)
+                    session['losing_trades'] = session.get('losing_trades', 0)
             
             # Convert symbol format for frontend display (EURUSD -> EUR_USD)
             symbol = session.get('symbol', '')
@@ -1059,24 +1057,30 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                         """, (session_id,))
 
                         trade_stats = cursor.fetchone()
-                        if trade_stats:
-                            total_trades = trade_stats[0] or 0
+                        
+                        # Check if we have trades with P&L in database
+                        if trade_stats and trade_stats[0] > 0 and trade_stats[3] is not None:
+                            # Use database trade statistics
+                            total_trades = trade_stats[0]
                             winning_trades = trade_stats[1] or 0
                             losing_trades = trade_stats[2] or 0
-                            total_pnl = trade_stats[3] or 0.0
+                            total_pnl = trade_stats[3]
                             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
                             # Calculate final capital and total return from actual P&L
                             final_capital = backtest_request.initial_capital + total_pnl
                             total_return = total_pnl / backtest_request.initial_capital if backtest_request.initial_capital > 0 else 0.0
+                            
+                            logger.info(f"Using database trade P&L: {total_trades} trades, total_pnl=${total_pnl:.2f}, final_capital=${final_capital:.2f}")
                         else:
-                            # Fallback to backtest results if no trades in database
+                            # No trades with P&L in database - use backtest engine results
                             total_trades = results.get('total_trades', 0)
                             winning_trades = results.get('winning_trades', 0)
                             losing_trades = results.get('losing_trades', 0)
                             win_rate = results.get('win_rate', 0.0)
-                            final_capital = results.get('final_value', backtest_request.initial_capital)
-                            total_return = results.get('total_return', 0.0)
+                            # Keep the final_capital from backtest results (already set above from final_value)
+                            # Don't recalculate - use what the engine provided
+                            logger.info(f"Using backtest engine results: final_capital=${final_capital:.2f}, total_return={total_return:.6f}")
 
                     # Get other metrics from backtest results
                     sharpe_ratio = results.get('sharpe_ratio', 0.0)

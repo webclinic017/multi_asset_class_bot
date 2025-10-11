@@ -275,18 +275,26 @@ const Backtesting = () => {
       const response = await axios.get(`/api/sessions?_t=${timestamp}`);
       console.log('=== API RESPONSE DEBUG ===');
       console.log('Full response data:', response.data);
+      
+      // Filter backtest sessions - backend already provides accurate data
       const backtestSessions = response.data
         .filter((session) => session.session_type === 'backtest')
-        .map(session => ({
-          ...session,
-          total_return: session.total_return || 0,
-          final_capital: session.final_capital || session.initial_capital,
-          winning_trades: session.winning_trades || 0,
-          losing_trades: session.losing_trades || 0,
-          total_trades: session.total_trades || 0,
-        }));
+        .map(session => {
+          // Use backend-calculated values directly without overriding
+          // Only provide defaults for truly missing values
+          return {
+            ...session,
+            // Ensure numeric values are properly typed
+            total_return: typeof session.total_return === 'number' ? session.total_return : 0,
+            final_capital: typeof session.final_capital === 'number' ? session.final_capital : (session.initial_capital || 0),
+            winning_trades: typeof session.winning_trades === 'number' ? session.winning_trades : 0,
+            losing_trades: typeof session.losing_trades === 'number' ? session.losing_trades : 0,
+            total_trades: typeof session.total_trades === 'number' ? session.total_trades : 0,
+          };
+        });
       
       console.log('Processed backtest sessions:', backtestSessions);
+      console.log('Sample session data:', backtestSessions[0]);
 
       setSessions(backtestSessions);
     } catch (error) {
