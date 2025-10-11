@@ -475,6 +475,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
 
         # Detect asset class from symbol if strategy doesn't specify futures
         detected_asset_class = strategy.get('asset_class', 'forex')
+        logger.info(f"Strategy asset_class: {detected_asset_class}, symbol: {backtest_request.symbol}")
         if detected_asset_class == 'forex':
             # Check if symbol looks like futures (not a forex pair)
             # Forex pairs typically have format XXX_YYY where XXX and YYY are currency codes
@@ -484,11 +485,12 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 forex_currencies = {'EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'XAU', 'XAG'}
                 if not (base in forex_currencies and quote in forex_currencies):
                     detected_asset_class = 'futures'
-                    logger.info(f"Detected futures symbol {backtest_request.symbol}, overriding asset_class to 'futures'")
+                    logger.info(f"Detected futures symbol {backtest_request.symbol} (underscore, not forex), overriding asset_class to 'futures'")
             else:
                 # No underscore, likely futures symbol like ES, NG, CL
                 detected_asset_class = 'futures'
-                logger.info(f"Detected futures symbol {backtest_request.symbol}, overriding asset_class to 'futures'")
+                logger.info(f"Detected futures symbol {backtest_request.symbol} (no underscore), overriding asset_class to 'futures'")
+        logger.info(f"Final detected asset_class: {detected_asset_class}")
         
         # Check what data is actually available
         with db_manager.get_connection() as conn:

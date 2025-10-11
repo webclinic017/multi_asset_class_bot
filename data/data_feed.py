@@ -423,25 +423,34 @@ class IBKRDataFeed(DataFeed, EWrapper):
     def get_futures_data(self, symbol, timeframe, start_date, end_date):
         """
         Retrieve futures data from Interactive Brokers
-        
+
         Args:
-            symbol (str): Futures contract (e.g., 'ESZ23')
+            symbol (str): Futures contract (e.g., 'ESZ23', 'NGZ4')
             timeframe (str): Timeframe (e.g., '1 min', '5 mins', '1 hour')
             start_date (str): Start date in 'YYYY-MM-DD' format
             end_date (str): End date in 'YYYY-MM-DD' format
-            
+
         Returns:
             pd.DataFrame: Historical price data
         """
         try:
+            # Validate symbol format
+            if len(symbol) < 3:
+                raise ValueError(f"Invalid futures symbol format: {symbol}. Use format like 'NGZ4' (Natural Gas Dec 2024)")
+
+            # Parse symbol: last 2 chars should be month code + year
+            month_year = symbol[-2:]
+            if not (month_year[0].isalpha() and month_year[1].isdigit()):
+                raise ValueError(f"Invalid futures symbol format: {symbol}. Last 2 chars should be month code + year (e.g., 'Z4' for Dec 2024)")
+
             self.connect()
-            
+
             contract = Contract()
-            contract.symbol = symbol[:-2] # e.g., ES from ESZ23
+            contract.symbol = symbol[:-2] # e.g., NG from NGZ4
             contract.secType = "FUT"
-            contract.exchange = "GLOBEX" # Or appropriate exchange
+            contract.exchange = "GLOBEX" # Natural Gas trades on GLOBEX
             contract.currency = "USD"
-            contract.lastTradeDateOrContractMonth = "20" + symbol[-2:] # e.g., 2023 from ESZ23
+            contract.lastTradeDateOrContractMonth = "20" + symbol[-2:] # e.g., 2024 from NGZ4
             
             # Generate unique request ID
             req_id = self.req_id_counter
@@ -506,10 +515,10 @@ class DBDataFeed(DataFeed):
 
     def get_futures_data(self, symbol, timeframe, start_date, end_date):
         """
-        Retrieve futures data from database, fetch from IBKR if not available
+        Retrieve futures data from IBKR (bypassing cache for testing)
 
         Args:
-            symbol (str): Futures contract (e.g., 'ESZ23')
+            symbol (str): Futures contract (e.g., 'ESZ23', 'NGZ4')
             timeframe (str): Timeframe (e.g., '1 min', '5 mins', '1 hour')
             start_date (str): Start date in 'YYYY-MM-DD' format
             end_date (str): End date in 'YYYY-MM-DD' format
@@ -518,24 +527,26 @@ class DBDataFeed(DataFeed):
             pd.DataFrame: Historical price data
         """
         try:
-            # First, try to get data from database
-            start_dt = pd.to_datetime(start_date)
-            end_dt = pd.to_datetime(end_date)
+            self.logger.info(f"Fetching fresh data for {symbol} from IBKR (cache bypassed)")
+            self.logger.info(f"IBKR config: host={self.ibkr_feed.host}, port={self.ibkr_feed.port}, client_id={self.ibkr_feed.client_id}")
 
-            df = self.db_manager.get_market_data(symbol, timeframe, start_dt, end_dt)
+            # Always fetch from IBKR (bypassing database cache)
+            df = self.ibkr_feed.get_futures_data(symbol, timeframe, start_date, end_date)
 
+            # Still save to database for future use
             if not df.empty:
-                self.logger.info(f"Retrieved {len(df)} candles for {symbol} from database")
-                return df
-            else:
-                self.logger.info(f"No data found in database for {symbol}, fetching from IBKR")
+                try:
+                    self.db_manager.store_market_data(symbol, timeframe, df)
+                    self.logger.info(f"Saved {len(df)} candles for {symbol} to database")
+                except Exception as e:
+                    self.logger.warning(f"Failed to save data to database: {e}")
 
-                # Fetch from IBKR and it will automatically save to DB
-                df = self.ibkr_feed.get_futures_data(symbol, timeframe, start_date, end_date)
-                return df
+            return df
 
         except Exception as e:
             self.logger.error(f"Error retrieving futures data for {symbol}: {str(e)}")
+            self.logger.error(f"Make sure IBKR TWS/Gateway is running and API is enabled")
+            self.logger.error(f"For futures, use specific contract symbols like 'NGZ4' (Dec 2024 Natural Gas)")
             raise
 
 
