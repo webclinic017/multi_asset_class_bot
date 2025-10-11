@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
-import RealTimeLogs from '../../components/Logs/RealTimeLogs';
 
 const BacktestingContainer = styled.div`
   padding: 20px;
@@ -9,14 +8,8 @@ const BacktestingContainer = styled.div`
 `;
 
 const MainContent = styled.div`
-  display: grid;
-  grid-template-columns: 3fr 1fr;
-  gap: 24px;
+  width: 100%;
 `;
-
-const LeftColumn = styled.div``;
-
-const RightColumn = styled.div``;
 
 const Header = styled.div`
   display: flex;
@@ -418,7 +411,7 @@ const Backtesting = () => {
       </Header>
 
       <Card>
-        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines) - <span style={{color: '#22c55e', fontWeight: 'bold'}}>$100,000 Initial Capital</span></CardTitle>
+        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines)</CardTitle>
         <FormGrid>
           <FormGroup>
             <Label>Strategy</Label>
@@ -558,105 +551,100 @@ const Backtesting = () => {
       </Card>
 
       <MainContent>
-        <LeftColumn>
-          <Card>
-            <CardTitle>Backtest Results</CardTitle>
-            {sessions.length > 0 && (
-              <MetricsGrid>
-                <MetricCard>
-                  <MetricValue>{sessions.length}</MetricValue>
-                  <MetricLabel>Total Backtests</MetricLabel>
-                </MetricCard>
-                <MetricCard>
-                  <MetricValue>
-                    {sessions.filter(s => s.status === 'completed').length}
-                  </MetricValue>
-                  <MetricLabel>Completed</MetricLabel>
-                </MetricCard>
-                <MetricCard>
-                  <MetricValue>
-                    {sessions.filter(s => (s.total_return || 0) > 0).length}
-                  </MetricValue>
-                  <MetricLabel>Profitable</MetricLabel>
-                </MetricCard>
-                <MetricCard>
-                  <MetricValue>
-                    {sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0)}
-                  </MetricValue>
-                  <MetricLabel>Total Trades</MetricLabel>
-                </MetricCard>
-                <MetricCard>
-                  <MetricValue>
-                    {sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0)}
-                  </MetricValue>
-                  <MetricLabel>Total Wins</MetricLabel>
-                </MetricCard>
-                <MetricCard>
-                  <MetricValue>
-                    {sessions.length > 0 ?
-                      ((sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0) /
-                        Math.max(1, sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0))) * 100).toFixed(1) + '%'
-                      : '0%'}
-                  </MetricValue>
-                  <MetricLabel>Overall Win Rate</MetricLabel>
-                </MetricCard>
-              </MetricsGrid>
-            )}
+        <Card>
+          <CardTitle>📊 Backtest Results</CardTitle>
+          {sessions.length > 0 && (
+            <MetricsGrid>
+              <MetricCard>
+                <MetricValue>{sessions.length}</MetricValue>
+                <MetricLabel>Total Backtests</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.filter(s => s.status === 'completed').length}
+                </MetricValue>
+                <MetricLabel>Completed</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.filter(s => (s.total_return || 0) > 0).length}
+                </MetricValue>
+                <MetricLabel>Profitable</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0)}
+                </MetricValue>
+                <MetricLabel>Total Trades</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0)}
+                </MetricValue>
+                <MetricLabel>Total Wins</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.length > 0 ?
+                    ((sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0) /
+                      Math.max(1, sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0))) * 100).toFixed(1) + '%'
+                    : '0%'}
+                </MetricValue>
+                <MetricLabel>Overall Win Rate</MetricLabel>
+              </MetricCard>
+            </MetricsGrid>
+          )}
 
-            {sessions.length > 0 ? (
-              <DataGrid style={{ marginTop: '24px' }}>
-                <DataGridHeader>
-                  <div>Strategy</div>
-                  <div>Symbol</div>
-                  <div>Period</div>
-                  <div>Initial Capital</div>
-                  <div>Final Capital</div>
-                  <div>Return</div>
-                  <div>Total Trades</div>
-                  <div>Winning</div>
-                  <div>Losing</div>
-                  <div>Run Time</div>
-                  <div>Status</div>
-                </DataGridHeader>
-                {sessions.map(session => (
-                  <DataGridRow key={session.id}>
-                    <div>{session.strategy_name}</div>
-                    <div>{session.symbol}</div>
-                    <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
-                    <div>{formatCurrency(session.initial_capital)}</div>
-                    <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
-                    <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
-                      {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
-                    </div>
-                    <div>{session.total_trades}</div>
-                    <div style={{ color: '#22c55e' }}>{session.winning_trades}</div>
-                    <div style={{ color: '#ef4444' }}>{session.losing_trades}</div>
-                    <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                      {session.status === 'running' ?
-                        `Started: ${formatDateTime(session.start_time)}` :
-                        session.end_time ?
-                          `${Math.round((new Date(session.end_time) - new Date(session.start_time)) / 1000)}s` :
-                          formatDateTime(session.start_time)
-                      }
-                    </div>
-                    <div>
-                      <StatusBadge className={sessionStatus[session.id] || session.status}>
-                        {sessionStatus[session.id] || session.status}
-                      </StatusBadge>
-                    </div>
-                  </DataGridRow>
-                ))}
-              </DataGrid>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-                📊 No backtest results yet. Run your first real backtest above to see authentic results here.
-              </div>
-            )}
-          </Card>
-        </LeftColumn>
-        <RightColumn>
-          <RealTimeLogs />
-        </RightColumn>
+          {sessions.length > 0 ? (
+            <DataGrid style={{ marginTop: '24px' }}>
+              <DataGridHeader>
+                <div>Strategy</div>
+                <div>Symbol</div>
+                <div>Period</div>
+                <div>Initial Capital</div>
+                <div>Final Capital</div>
+                <div>Return</div>
+                <div>Total Trades</div>
+                <div>Winning</div>
+                <div>Losing</div>
+                <div>Run Time</div>
+                <div>Status</div>
+              </DataGridHeader>
+              {sessions.map(session => (
+                <DataGridRow key={session.id}>
+                  <div>{session.strategy_name}</div>
+                  <div>{session.symbol}</div>
+                  <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
+                  <div>{formatCurrency(session.initial_capital)}</div>
+                  <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
+                  <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
+                    {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
+                  </div>
+                  <div>{session.total_trades}</div>
+                  <div style={{ color: '#22c55e' }}>{session.winning_trades}</div>
+                  <div style={{ color: '#ef4444' }}>{session.losing_trades}</div>
+                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                    {session.status === 'running' ?
+                      `Started: ${formatDateTime(session.start_time)}` :
+                      session.end_time ?
+                        `${Math.round((new Date(session.end_time) - new Date(session.start_time)) / 1000)}s` :
+                        formatDateTime(session.start_time)
+                    }
+                  </div>
+                  <div>
+                    <StatusBadge className={sessionStatus[session.id] || session.status}>
+                      {sessionStatus[session.id] || session.status}
+                    </StatusBadge>
+                  </div>
+                </DataGridRow>
+              ))}
+            </DataGrid>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+              📊 No backtest results yet. Run your first real backtest above to see authentic results here.
+            </div>
+          )}
+        </Card>
       </MainContent>
     </BacktestingContainer>
   );

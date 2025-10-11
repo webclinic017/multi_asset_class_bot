@@ -281,27 +281,42 @@ async def get_trading_sessions(limit: int = 100, request: Request = None):
                         FROM trades
                         WHERE session_id = ? AND pnl IS NOT NULL
                     """, (session_id,))
-                    
+
                     trade_stats = cursor.fetchone()
                     if trade_stats:
                         session['winning_trades'] = trade_stats[0] or 0
                         session['losing_trades'] = trade_stats[1] or 0
-                        
+
+                        # If we have actual trades with P&L, recalculate final_capital from trade data
+                        # This ensures accuracy when trades are properly logged
                         if trade_stats[2] is not None:
                             initial_capital = session.get('initial_capital', 100000)
                             total_pnl = trade_stats[2]
-                            
                             session['final_capital'] = initial_capital + total_pnl
                             session['total_return'] = total_pnl / initial_capital if initial_capital > 0 else 0
                         else:
-                            session['final_capital'] = session.get('initial_capital')
-                            session['total_return'] = 0
+                            # Fallback to stored values if trade P&L is null
+                            stored_final_capital = session.get('final_capital')
+                            initial_capital = session.get('initial_capital', 100000)
+                            if stored_final_capital and stored_final_capital != initial_capital:
+                                session['total_return'] = ((stored_final_capital - initial_capital) / initial_capital) if initial_capital > 0 else 0
+                            else:
+                                session['final_capital'] = initial_capital
+                                session['total_return'] = 0
             else:
-                # For sessions with no trades, set defaults
-                session['winning_trades'] = 0
-                session['losing_trades'] = 0
-                session['final_capital'] = session.get('initial_capital')
-                session['total_return'] = 0
+                # No trades in database - use stored final_capital from backtest engine
+                stored_final_capital = session.get('final_capital')
+                initial_capital = session.get('initial_capital', 100000)
+
+                if stored_final_capital and stored_final_capital != initial_capital and stored_final_capital > 0:
+                    # Use the stored final capital and calculate return
+                    session['total_return'] = ((stored_final_capital - initial_capital) / initial_capital) if initial_capital > 0 else 0
+                else:
+                    # No valid final capital stored, use defaults
+                    session['final_capital'] = initial_capital
+                    session['total_return'] = 0
+                    session['winning_trades'] = 0
+                    session['losing_trades'] = 0
             
             # Convert symbol format for frontend display (EURUSD -> EUR_USD)
             symbol = session.get('symbol', '')
@@ -555,7 +570,24 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             datetime.fromisoformat(backtest_request.end_date) if backtest_request.end_date <= data_end else datetime.fromisoformat(data_end),
             limit=10000
         )
-        
+
+        # If no data in database and this is futures, try to fetch from IBKR
+        if df.empty and detected_asset_class == 'futures':
+            logger.info(f"No futures data found in database for {actual_symbol}, attempting to fetch from IBKR TWS...")
+            try:
+                from data.data_feed import DBDataFeed
+                db_feed = DBDataFeed(config)
+                df = db_feed.get_futures_data(
+                    actual_symbol,
+                    actual_timeframe,
+                    backtest_request.start_date,
+                    backtest_request.end_date
+                )
+                logger.info(f"Successfully fetched {len(df)} candles from IBKR for {actual_symbol}")
+            except Exception as ibkr_error:
+                logger.error(f"Failed to fetch futures data from IBKR: {ibkr_error}")
+                raise Exception(f"No market data available for {actual_symbol} in database and IBKR fetch failed")
+
         if df.empty:
             raise Exception(f"No market data retrieved for {actual_symbol}")
         
@@ -966,35 +998,52 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 if results and isinstance(results, dict):
                     logger.info(f"Real-time backtest completed with results: {results}")
 
-                    # Extract results from portfolio snapshots for accurate calculations
-                    portfolio_snapshots = results.get('portfolio_snapshots', [])
-                    if portfolio_snapshots:
-                        # Use the last snapshot for final values - snapshots already have correct calculations
-                        final_snapshot = portfolio_snapshots[-1]
-                        final_capital = final_snapshot.get('total_value', backtest_request.initial_capital)
-                        total_return = final_snapshot.get('total_return', 0.0)
+                    # Try to get final portfolio value from strategy's portfolio tracker first
+                    strategy_final_value = None
+                    if hasattr(backtest_engine, 'cerebro') and hasattr(backtest_engine.cerebro, '_strategies'):
+                        for strategy_wrapper in backtest_engine.cerebro._strategies:
+                            strategy = strategy_wrapper[0] if isinstance(strategy_wrapper, (list, tuple)) else strategy_wrapper
+                            if hasattr(strategy, 'portfolio_tracker'):
+                                try:
+                                    strategy_final_value = strategy.portfolio_tracker.get_total_portfolio_value()
+                                    logger.info(f"Using strategy portfolio tracker final value: ${strategy_final_value:.2f}")
+                                    break
+                                except Exception as e:
+                                    logger.warning(f"Could not get portfolio value from strategy tracker: {e}")
 
-                        # Convert total_return from decimal to percentage if needed
-                        if abs(total_return) < 1:  # Already in decimal form (e.g., -0.90)
-                            pass  # Keep as is
-                        elif abs(total_return) > 10:  # In percentage form (e.g., -90.0)
-                            total_return = total_return / 100.0
+                    # Use the final_value from backtest results as primary source
+                    final_capital = results.get('final_value', backtest_request.initial_capital)
+                    total_return = results.get('total_return', 0.0)
 
-                        # Get max drawdown from snapshots (already calculated correctly)
-                        max_drawdown = 0.0
-                        for snapshot in portfolio_snapshots:
-                            drawdown = snapshot.get('drawdown', 0.0)
-                            # Drawdown in snapshots is as percentage (0-100), convert to decimal
-                            if isinstance(drawdown, (int, float)) and drawdown > 1:
-                                drawdown = drawdown / 100.0
-                            max_drawdown = max(max_drawdown, drawdown)
+                    # Get max drawdown from results
+                    max_drawdown = results.get('max_drawdown', 0.0)
+                    if isinstance(max_drawdown, (int, float)) and max_drawdown > 1:
+                        max_drawdown = max_drawdown / 100.0  # Convert from percentage to decimal
 
-                        logger.info(f"Using snapshot calculations: final_capital=${final_capital:.2f}, total_return={total_return:.6f}, max_drawdown={max_drawdown:.6f}")
-                    else:
-                        # Fallback to backtrader results if no snapshots
-                        final_capital = results.get('final_value', backtest_request.initial_capital)
-                        total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital)
-                        max_drawdown = results.get('max_drawdown', 0.0) / 100.0 if results.get('max_drawdown', 0.0) > 1 else results.get('max_drawdown', 0.0)
+                    logger.info(f"Using backtest results: final_capital=${final_capital:.2f}, total_return={total_return:.6f}, max_drawdown={max_drawdown:.6f}")
+
+                    # Override with strategy tracker value if available (most accurate)
+                    if strategy_final_value is not None:
+                        final_capital = strategy_final_value
+                        total_return = ((final_capital - backtest_request.initial_capital) / backtest_request.initial_capital) if backtest_request.initial_capital > 0 else 0.0
+                        logger.info(f"Overriding with strategy tracker final value: ${final_capital:.2f}, total_return={total_return:.6f}")
+
+                    # Add final portfolio snapshot with correct final value
+                    try:
+                        db_manager.store_portfolio_snapshot(
+                            session_id=session_id,
+                            timestamp=datetime.utcnow(),
+                            total_value=final_capital,
+                            cash_balance=final_capital,  # Assume all cash at end
+                            unrealized_pnl=0.0,  # All realized at end
+                            realized_pnl=final_capital - backtest_request.initial_capital,
+                            open_positions=0,  # All closed at end
+                            daily_pnl=0.0,
+                            drawdown=0.0  # Final drawdown is already calculated
+                        )
+                        logger.info(f"Added final portfolio snapshot with correct final value: ${final_capital:.2f}")
+                    except Exception as snapshot_error:
+                        logger.warning(f"Could not store final portfolio snapshot: {snapshot_error}")
 
                     # Get trade statistics from actual trades in database for accuracy
                     with db_manager.get_connection() as conn:
