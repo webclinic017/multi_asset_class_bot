@@ -269,9 +269,8 @@ async def get_trading_sessions(limit: int = 100, request: Request = None):
             # Update session data with actual trade counts
             session['total_trades'] = actual_trade_count
             
-            # For completed sessions with trades, get detailed trade statistics
-            if session.get('status') == 'completed' and actual_trade_count > 0:
-                # Get actual win/loss counts from trades table
+            # Get detailed trade statistics for all sessions with trades
+            if actual_trade_count > 0:
                 with db_manager.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute("""
@@ -288,21 +287,21 @@ async def get_trading_sessions(limit: int = 100, request: Request = None):
                         session['winning_trades'] = trade_stats[0] or 0
                         session['losing_trades'] = trade_stats[1] or 0
                         
-                        # Update final capital and total return if we have P&L data
                         if trade_stats[2] is not None:
-                            initial_capital = session.get('initial_capital', 10000)
+                            initial_capital = session.get('initial_capital', 100000)
                             total_pnl = trade_stats[2]
                             
-                            # Calculate correct final capital: initial + total P&L
-                            correct_final_capital = initial_capital + total_pnl
-                            session['final_capital'] = correct_final_capital
-                            
-                            # Calculate total return as percentage: P&L / initial capital
-                            session['total_return'] = total_pnl / initial_capital
+                            session['final_capital'] = initial_capital + total_pnl
+                            session['total_return'] = total_pnl / initial_capital if initial_capital > 0 else 0
+                        else:
+                            session['final_capital'] = session.get('initial_capital')
+                            session['total_return'] = 0
             else:
-                # For running/failed sessions, set defaults
-                session['winning_trades'] = session.get('winning_trades', 0)
-                session['losing_trades'] = session.get('losing_trades', 0)
+                # For sessions with no trades, set defaults
+                session['winning_trades'] = 0
+                session['losing_trades'] = 0
+                session['final_capital'] = session.get('initial_capital')
+                session['total_return'] = 0
             
             # Convert symbol format for frontend display (EURUSD -> EUR_USD)
             symbol = session.get('symbol', '')
@@ -473,6 +472,12 @@ def load_yaml_config(filepath):
 async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequest):
     """Background task to run REAL backtesting with real-time portfolio value tracking"""
     try:
+        await manager.broadcast(json.dumps({
+            "type": "backtest_status",
+            "session_id": session_id,
+            "status": "Fetching data",
+            "progress": 10,
+        }))
         logger.info(f"=== STARTING REAL-TIME BACKTEST SESSION {session_id} ===")
         logger.info(f"Backtest request details: {backtest_request.dict()}")
         
@@ -560,6 +565,12 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         
         # Run real backtest using REAL-TIME backtest engine with portfolio tracking
         try:
+            await manager.broadcast(json.dumps({
+                "type": "backtest_status",
+                "session_id": session_id,
+                "status": "Initializing Engine",
+                "progress": 20,
+            }))
             from backtesting.realtime_backtest_engine import create_realtime_backtest_engine
             
             logger.info("=== INITIALIZING REAL-TIME BACKTEST ENGINE ===")
@@ -651,9 +662,21 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             # Load the real data
             asset_type = detected_asset_class
             logger.info(f"Asset type: {asset_type}")
+            await manager.broadcast(json.dumps({
+                "type": "backtest_status",
+                "session_id": session_id,
+                "status": "Loading Data",
+                "progress": 30,
+            }))
             loaded_data = backtest_engine.load_data(actual_symbol, asset_type, actual_timeframe)
             
             if loaded_data is not None and not loaded_data.empty:
+                await manager.broadcast(json.dumps({
+                    "type": "backtest_status",
+                    "session_id": session_id,
+                    "status": "Setting up Strategy",
+                    "progress": 50,
+                }))
                 logger.info(f"Successfully loaded {len(loaded_data)} real data points for backtesting")
                 
                 # === DETAILED STRATEGY PARAMETER LOGGING ===
@@ -928,6 +951,12 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 
                 # Run real-time backtest with portfolio tracking
                 logger.info("=== EXECUTING REAL-TIME BACKTEST ===")
+                await manager.broadcast(json.dumps({
+                    "type": "backtest_status",
+                    "session_id": session_id,
+                    "status": "Running Backtest",
+                    "progress": 70,
+                }))
                 results = backtest_engine.run_with_realtime_updates()
 
                 logger.info(f"=== REAL-TIME BACKTEST EXECUTION COMPLETED ===")
@@ -1096,7 +1125,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         
         # Update session status to failed
         db_manager.update_trading_session(session_id, status="failed")
-        
+
         # Broadcast failure via WebSocket
         await manager.broadcast(json.dumps({
             "type": "backtest_failed",
@@ -1571,3 +1600,23 @@ async def websocket_realtime_endpoint(websocket: WebSocket, session_id: int):
             
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+@app.websocket("/ws/logs")
+async def websocket_logs_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs', 'trading_bot.log')
+        with open(log_file, 'r') as f:
+            f.seek(0, 2)  # Go to the end of the file
+            while True:
+                line = f.readline()
+                if not line:
+                    await asyncio.sleep(0.1)
+                    continue
+                await websocket.send_text(line.strip())
+    except WebSocketDisconnect:
+        print("Client disconnected from logs")
+    except Exception as e:
+        print(f"Error in logs websocket: {e}")
+    finally:
+        await websocket.close()
