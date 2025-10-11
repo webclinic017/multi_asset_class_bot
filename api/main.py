@@ -1112,16 +1112,18 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     logger.info(f"Backtest results saved to {csv_path} with {len(results_df)} rows")
                     
                 else:
+                    logger.error("Real-time backtest engine returned no valid results.")
                     raise Exception("Real-time backtest engine returned no valid results")
             else:
+                logger.error(f"Failed to load market data for {actual_symbol}")
                 raise Exception(f"Failed to load market data for {actual_symbol}")
                 
         except Exception as backtest_error:
-            logger.error(f"Real-time backtest engine failed: {backtest_error}")
+            logger.error(f"Real-time backtest engine failed: {backtest_error}", exc_info=True)
             raise Exception(f"Real-time backtesting failed: {backtest_error}")
         
     except Exception as e:
-        logger.error(f"Error in REAL backtest task: {e}")
+        logger.error(f"Error in REAL backtest task: {e}", exc_info=True)
         
         # Update session status to failed
         db_manager.update_trading_session(session_id, status="failed")

@@ -201,6 +201,7 @@ const MetricLabel = styled.div`
 const Backtesting = () => {
   const [sessions, setSessions] = useState([]);
   const [strategies, setStrategies] = useState([]);
+  const [sessionStatus, setSessionStatus] = useState({});
   const [loading, setLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [formData, setFormData] = useState({
@@ -246,14 +247,10 @@ const Backtesting = () => {
            // Refresh sessions when backtest completes
            setTimeout(fetchSessions, 1000);
          } else if (data.type === 'backtest_status') {
-           setSessions(prevSessions => {
-             return prevSessions.map(session => {
-               if (session.id === data.session_id) {
-                 return { ...session, status: data.status };
-               }
-               return session;
-             });
-           });
+           setSessionStatus(prevStatus => ({
+             ...prevStatus,
+             [data.session_id]: data.status,
+           }));
          }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -285,25 +282,18 @@ const Backtesting = () => {
       const response = await axios.get(`/api/sessions?_t=${timestamp}`);
       console.log('=== API RESPONSE DEBUG ===');
       console.log('Full response data:', response.data);
-      const backtestSessions = response.data.filter((session) => session.session_type === 'backtest');
-      console.log('Filtered backtest sessions:', backtestSessions);
-
-      // Enhanced debugging for trade statistics
-      backtestSessions.forEach((session, index) => {
-        console.log(`Session ${index} - TRADE STATS:`, {
-          id: session.id,
-          strategy_name: session.strategy_name,
-          symbol: session.symbol,
-          initial_capital: session.initial_capital,
-          final_capital: session.final_capital,
-          total_return: session.total_return,
-          total_trades: session.total_trades,
-          winning_trades: session.winning_trades,
-          losing_trades: session.losing_trades,
-          win_rate: session.win_rate,
-          status: session.status
-        });
-      });
+      const backtestSessions = response.data
+        .filter((session) => session.session_type === 'backtest')
+        .map(session => ({
+          ...session,
+          total_return: session.total_return || 0,
+          final_capital: session.final_capital || session.initial_capital,
+          winning_trades: session.winning_trades || 0,
+          losing_trades: session.losing_trades || 0,
+          total_trades: session.total_trades || 0,
+        }));
+      
+      console.log('Processed backtest sessions:', backtestSessions);
 
       setSessions(backtestSessions);
     } catch (error) {
@@ -650,8 +640,8 @@ const Backtesting = () => {
                       }
                     </div>
                     <div>
-                      <StatusBadge className={session.status}>
-                        {session.status}
+                      <StatusBadge className={sessionStatus[session.id] || session.status}>
+                        {sessionStatus[session.id] || session.status}
                       </StatusBadge>
                     </div>
                   </DataGridRow>
