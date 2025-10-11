@@ -567,7 +567,9 @@ const Backtesting = () => {
                   <div style={{ fontSize: '12px', color: '#9ca3af' }}>
                     {session.status === 'running' ?
                       `Started: ${formatDateTime(session.start_time)}` :
-                      formatDateTime(session.end_time || session.start_time)
+                      session.end_time ?
+                        `${Math.round((new Date(session.end_time) - new Date(session.start_time)) / 1000)}s` :
+                        formatDateTime(session.start_time)
                     }
                   </div>
                   <div>

@@ -291,7 +291,17 @@ class MarketMakingHFTStrategy(bt.Strategy):
             logging.info(f'{dt.isoformat()} {txt}')
 
     def stop(self):
-        """Strategy stop - log final statistics"""
+        """Strategy stop - close all positions and log final statistics"""
+        # Close any remaining inventory to register complete trades
+        position = self.getposition(self.data)
+        if position.size != 0:
+            if position.size > 0:
+                self.sell(size=position.size, exectype=bt.Order.Market)
+                self.logger.info(f"Closing final long position: {position.size} units")
+            else:
+                self.buy(size=abs(position.size), exectype=bt.Order.Market)
+                self.logger.info(f"Closing final short position: {abs(position.size)} units")
+        
         total_return = self.spread_captured
         win_rate = (self.total_trades / max(self.total_trades, 1)) * 100
 

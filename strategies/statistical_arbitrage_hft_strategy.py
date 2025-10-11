@@ -336,7 +336,17 @@ class StatisticalArbitrageHFTStrategy(bt.Strategy):
             logging.info(f'{dt.isoformat()} {txt}')
 
     def stop(self):
-        """Strategy stop - log final statistics"""
+        """Strategy stop - close all positions and log final statistics"""
+        # Close any remaining positions to register complete trades
+        position = self.getposition(self.data)
+        if position.size != 0:
+            if position.size > 0:
+                self.sell(size=position.size, exectype=bt.Order.Market)
+                self.logger.info(f"Closing final long position: {position.size} units")
+            else:
+                self.buy(size=abs(position.size), exectype=bt.Order.Market)
+                self.logger.info(f"Closing final short position: {abs(position.size)} units")
+        
         win_rate = (self.winning_trades / self.total_trades) * 100 if self.total_trades > 0 else 0
 
         self.logger.info("=== STATISTICAL ARBITRAGE HFT STRATEGY RESULTS ===")
