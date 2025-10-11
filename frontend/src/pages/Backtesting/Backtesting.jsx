@@ -218,6 +218,7 @@ const Backtesting = () => {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws`;
+      console.log('Attempting WebSocket connection to:', wsUrl);
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
@@ -228,7 +229,9 @@ const Backtesting = () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          console.log('WebSocket message received:', data);
           if (data.type === 'backtest_completed' || data.type === 'backtest_failed') {
+            console.log('Backtest status update received, refreshing sessions...');
             // Refresh sessions when backtest completes
             setTimeout(fetchSessions, 1000);
           }
@@ -237,8 +240,8 @@ const Backtesting = () => {
         }
       };
       
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      ws.onclose = (event) => {
+        console.log('WebSocket disconnected:', event.code, event.reason);
         setWsConnected(false);
         // Attempt to reconnect after 5 seconds
         setTimeout(setupWebSocket, 5000);
@@ -270,6 +273,7 @@ const Backtesting = () => {
         console.log(`Session ${index} - TRADE STATS:`, {
           id: session.id,
           strategy_name: session.strategy_name,
+          symbol: session.symbol,
           initial_capital: session.initial_capital,
           final_capital: session.final_capital,
           total_return: session.total_return,
@@ -284,6 +288,7 @@ const Backtesting = () => {
       setSessions(backtestSessions);
     } catch (error) {
       console.error('Error fetching sessions:', error);
+      alert('Failed to fetch backtest sessions. Please check if the backend server is running.');
     }
   };
 
@@ -340,14 +345,20 @@ const Backtesting = () => {
 
     setLoading(true);
     try {
+      console.log('Starting backtest with data:', formData);
       const response = await axios.post('/api/backtest', formData);
+      console.log('Backtest response:', response.data);
+      
       alert(`✅ Real backtest started successfully!\n\nSession ID: ${response.data.session_id}\n\nUsing: ${response.data.note}\n\nResults will appear below when completed.`);
+      
       // Refresh sessions immediately to show the new running session
-      fetchSessions();
+      setTimeout(() => {
+        fetchSessions();
+      }, 1000);
     } catch (error) {
       console.error('Error running backtest:', error);
-      const errorMessage = error.response?.data?.detail || 'Error starting backtest';
-      alert(`❌ Backtest Error:\n\n${errorMessage}`);
+      const errorMessage = error.response?.data?.detail || error.message || 'Error starting backtest';
+      alert(`❌ Backtest Error:\n\n${errorMessage}\n\nPlease check:\n- Backend server is running\n- Database connection is working\n- Market data exists for selected symbol`);
     } finally {
       setLoading(false);
     }

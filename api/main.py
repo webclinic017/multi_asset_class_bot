@@ -304,11 +304,17 @@ async def get_trading_sessions(limit: int = 100, request: Request = None):
                 session['winning_trades'] = session.get('winning_trades', 0)
                 session['losing_trades'] = session.get('losing_trades', 0)
             
-            all_sessions.append(TradingSessionResponse(**session))
+            # Convert symbol format for frontend display (EURUSD -> EUR_USD)
+            symbol = session.get('symbol', '')
+            if symbol and '_' not in symbol and len(symbol) == 6:
+                # Convert EURUSD to EUR_USD format
+                session['symbol'] = f"{symbol[:3]}_{symbol[3:]}"
+            
+            all_sessions.append(session)
         
         logger.info(f"Returning {len(all_sessions)} backtest sessions out of {len(sessions)} total")
 
-        # Create response with cache control headers
+        # Return sessions with cache control headers
         response = JSONResponse(
             content=all_sessions,
             headers={
@@ -328,7 +334,7 @@ async def get_active_sessions():
     """Get active trading sessions from database"""
     try:
         sessions = db_manager.get_active_sessions()
-        return [TradingSessionResponse(**session) for session in sessions]
+        return sessions
     
     except Exception as e:
         logger.error(f"Error getting active sessions: {e}")
@@ -479,9 +485,16 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         
         logger.info(f"Retrieved strategy: {strategy}")
         
-        # Convert symbol format and check available data
-        symbol_db_format = backtest_request.symbol.replace('_', '')  # EUR_USD -> EURUSD
-        logger.info(f"Symbol conversion: {backtest_request.symbol} -> {symbol_db_format}")
+        # Convert symbol format and check available data - try multiple formats
+        symbol_formats = [
+            backtest_request.symbol.replace('_', ''),  # EUR_USD -> EURUSD
+            backtest_request.symbol.replace('_', '/'),  # EUR_USD -> EUR/USD
+            backtest_request.symbol  # Original format
+        ]
+        logger.info(f"Symbol conversion: {backtest_request.symbol} -> trying formats: {symbol_formats}")
+        
+        # Also check for symbol with underscore format in case it exists
+        symbol_with_underscore = backtest_request.symbol
 
         # Detect asset class from symbol if strategy doesn't specify futures
         detected_asset_class = strategy.get('asset_class', 'forex')
@@ -502,16 +515,16 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 logger.info(f"Detected futures symbol {backtest_request.symbol} (no underscore), overriding asset_class to 'futures'")
         logger.info(f"Final detected asset_class: {detected_asset_class}")
         
-        # Check what data is actually available
+        # Check what data is actually available - try multiple formats
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT symbol, timeframe, COUNT(*) as count, MIN(timestamp), MAX(timestamp)
                 FROM market_data
-                WHERE symbol = ? OR symbol = ?
+                WHERE symbol = ? OR symbol = ? OR symbol = ?
                 GROUP BY symbol, timeframe
                 ORDER BY count DESC
-            """, (symbol_db_format, backtest_request.symbol))
+            """, (symbol_formats[0], symbol_formats[1], symbol_formats[2]))
             
             available_data = cursor.fetchall()
             logger.info(f"Available data for {backtest_request.symbol}: {available_data}")
