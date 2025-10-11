@@ -472,6 +472,23 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         # Convert symbol format and check available data
         symbol_db_format = backtest_request.symbol.replace('_', '')  # EUR_USD -> EURUSD
         logger.info(f"Symbol conversion: {backtest_request.symbol} -> {symbol_db_format}")
+
+        # Detect asset class from symbol if strategy doesn't specify futures
+        detected_asset_class = strategy.get('asset_class', 'forex')
+        if detected_asset_class == 'forex':
+            # Check if symbol looks like futures (not a forex pair)
+            # Forex pairs typically have format XXX_YYY where XXX and YYY are currency codes
+            if '_' in backtest_request.symbol:
+                base, quote = backtest_request.symbol.split('_', 1)
+                # Common forex currencies
+                forex_currencies = {'EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'NZD', 'XAU', 'XAG'}
+                if not (base in forex_currencies and quote in forex_currencies):
+                    detected_asset_class = 'futures'
+                    logger.info(f"Detected futures symbol {backtest_request.symbol}, overriding asset_class to 'futures'")
+            else:
+                # No underscore, likely futures symbol like ES, NG, CL
+                detected_asset_class = 'futures'
+                logger.info(f"Detected futures symbol {backtest_request.symbol}, overriding asset_class to 'futures'")
         
         # Check what data is actually available
         with db_manager.get_connection() as conn:
@@ -529,12 +546,18 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     'commission': 0.001,
                     'slippage': 0.0005,
                     'start_date': backtest_request.start_date,
-                    'end_date': backtest_request.end_date
+                    'end_date': backtest_request.end_date,
+                    'asset_class': detected_asset_class
                 },
                 'oanda': {
                     'account_id': config_s['data']['oanda']['account_id'],
                     'access_token': config_s['data']['oanda']['access_token'],
                     'practice': True
+                },
+                'ibkr': {
+                    'host': config_s.get('data', {}).get('ibkr', {}).get('host', '127.0.0.1'),
+                    'port': config_s.get('data', {}).get('ibkr', {}).get('port', 7497),
+                    'client_id': config_s.get('data', {}).get('ibkr', {}).get('client_id', 1)
                 }
             }
             logger.info(f"Real-time backtest engine config: {config}")
@@ -601,8 +624,8 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             logger.info(f"Data feed set on backtest engine: {type(backtest_engine.data_feed)}")
             
             # Load the real data
-            asset_type = strategy.get('asset_class', 'forex')
-            logger.info(f"Asset type from strategy: {asset_type}")
+            asset_type = detected_asset_class
+            logger.info(f"Asset type: {asset_type}")
             loaded_data = backtest_engine.load_data(actual_symbol, asset_type, actual_timeframe)
             
             if loaded_data is not None and not loaded_data.empty:

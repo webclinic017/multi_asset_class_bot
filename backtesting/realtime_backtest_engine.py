@@ -399,26 +399,31 @@ class TradeLoggingAnalyzer(bt.Analyzer):
         }
 
 # Integration function for the API
-def create_realtime_backtest_engine(config: dict, session_id: int, 
+def create_realtime_backtest_engine(config: dict, session_id: int,
                                    update_callback=None, websocket_manager=None):
     """
     Factory function to create a real-time backtest engine
-    
+
     Args:
         config: Backtest configuration
         session_id: Trading session ID
         update_callback: Optional callback for portfolio updates
         websocket_manager: Optional WebSocket manager for broadcasting
-        
+
     Returns:
         RealTimeBacktestEngine: Configured engine instance
     """
-    from data.data_feed import OANDADataFeed
+    from data.data_feed import OANDADataFeed, DBDataFeed
     from data.preprocessing import DataPreprocessor
     from risk.risk_manager import RiskManager
-    
-    # Initialize components
-    data_feed = OANDADataFeed(config)
+
+    # Choose data feed based on asset class
+    asset_class = config.get('backtesting', {}).get('asset_class', 'forex')
+    if asset_class == 'futures':
+        data_feed = DBDataFeed(config)
+    else:
+        data_feed = OANDADataFeed(config)
+
     preprocessor = DataPreprocessor()
     risk_manager = RiskManager(config)
     

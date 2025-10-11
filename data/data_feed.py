@@ -363,19 +363,23 @@ class CCXTDataFeed(DataFeed):
 
 class IBKRDataFeed(DataFeed, EWrapper):
     """Interactive Brokers data feed implementation"""
-    
+
     def __init__(self, config: dict):
         super().__init__(config)
         EWrapper.__init__(self)
-        
+
         self.host = self.config['ibkr']['host']
         self.port = self.config['ibkr']['port']
         self.client_id = self.config['ibkr']['client_id']
-        
+
         self.client = EClient(self)
         self.data = {} # To store historical data
         self.req_id_counter = 0
-        
+
+        # Initialize database manager for caching
+        from database.database_manager import DatabaseManager
+        self.db_manager = DatabaseManager()
+
         self.logger.info("IBKRDataFeed initialized")
     
     def connect(self):
@@ -466,15 +470,74 @@ class IBKRDataFeed(DataFeed, EWrapper):
             
             df = pd.DataFrame(self.data[req_id])
             df.set_index('timestamp', inplace=True)
-            
+
+            # Save to database for future use
+            if not df.empty:
+                try:
+                    self.db_manager.store_market_data(symbol, timeframe, df)
+                    self.logger.info(f"Saved {len(df)} candles for {symbol} to database")
+                except Exception as e:
+                    self.logger.warning(f"Failed to save data to database: {e}")
+
             self.disconnect()
-            
+
             self.logger.info(f"Retrieved {len(df)} candles for {symbol} from IBKR")
             return df
             
         except Exception as e:
             self.logger.error(f"Error retrieving IBKR data for {symbol}: {str(e)}")
             raise
+
+
+class DBDataFeed(DataFeed):
+    """Database-backed data feed that uses IBKR as fallback for futures"""
+
+    def __init__(self, config: dict):
+        super().__init__(config)
+
+        # Initialize database manager
+        from database.database_manager import DatabaseManager
+        self.db_manager = DatabaseManager()
+
+        # Initialize IBKR feed as fallback
+        self.ibkr_feed = IBKRDataFeed(config)
+
+        self.logger.info("DBDataFeed initialized")
+
+    def get_futures_data(self, symbol, timeframe, start_date, end_date):
+        """
+        Retrieve futures data from database, fetch from IBKR if not available
+
+        Args:
+            symbol (str): Futures contract (e.g., 'ESZ23')
+            timeframe (str): Timeframe (e.g., '1 min', '5 mins', '1 hour')
+            start_date (str): Start date in 'YYYY-MM-DD' format
+            end_date (str): End date in 'YYYY-MM-DD' format
+
+        Returns:
+            pd.DataFrame: Historical price data
+        """
+        try:
+            # First, try to get data from database
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+
+            df = self.db_manager.get_market_data(symbol, timeframe, start_dt, end_dt)
+
+            if not df.empty:
+                self.logger.info(f"Retrieved {len(df)} candles for {symbol} from database")
+                return df
+            else:
+                self.logger.info(f"No data found in database for {symbol}, fetching from IBKR")
+
+                # Fetch from IBKR and it will automatically save to DB
+                df = self.ibkr_feed.get_futures_data(symbol, timeframe, start_date, end_date)
+                return df
+
+        except Exception as e:
+            self.logger.error(f"Error retrieving futures data for {symbol}: {str(e)}")
+            raise
+
 
 if __name__ == "__main__":
     # Example Usage (for testing purposes)
