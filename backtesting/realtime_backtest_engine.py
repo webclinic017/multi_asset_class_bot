@@ -363,6 +363,10 @@ class TradeLoggingAnalyzer(bt.Analyzer):
                 else:
                     exit_reason = 'manual'
                 
+                # Calculate correct exit price: entry_price + (pnl + commission) / size
+                commission = trade.commission if hasattr(trade, 'commission') else 0.0
+                exit_price = trade.price + ((trade.pnl + commission) / trade.size) if trade.size != 0 else trade.price
+
                 # Store trade in database
                 trade_id = self.db_manager.create_trade(
                     session_id=self.session_id,
@@ -372,10 +376,10 @@ class TradeLoggingAnalyzer(bt.Analyzer):
                     entry_price=trade.price,
                     quantity=trade.size,
                     exit_time=exit_time,
-                    exit_price=trade.price + (trade.pnl / trade.size) if trade.size != 0 else trade.price,
+                    exit_price=exit_price,
                     pnl=trade.pnl,
                     pnl_pips=trade.pnlcomm,  # Commission-adjusted P&L
-                    commission=trade.commission if hasattr(trade, 'commission') else 0.0,
+                    commission=commission,
                     duration_seconds=duration_seconds,
                     exit_reason=exit_reason,
                     status='closed'
@@ -399,26 +403,31 @@ class TradeLoggingAnalyzer(bt.Analyzer):
         }
 
 # Integration function for the API
-def create_realtime_backtest_engine(config: dict, session_id: int, 
+def create_realtime_backtest_engine(config: dict, session_id: int,
                                    update_callback=None, websocket_manager=None):
     """
     Factory function to create a real-time backtest engine
-    
+
     Args:
         config: Backtest configuration
         session_id: Trading session ID
         update_callback: Optional callback for portfolio updates
         websocket_manager: Optional WebSocket manager for broadcasting
-        
+
     Returns:
         RealTimeBacktestEngine: Configured engine instance
     """
-    from data.data_feed import OANDADataFeed
+    from data.data_feed import OANDADataFeed, DBDataFeed
     from data.preprocessing import DataPreprocessor
     from risk.risk_manager import RiskManager
-    
-    # Initialize components
-    data_feed = OANDADataFeed(config)
+
+    # Choose data feed based on asset class
+    asset_class = config.get('backtesting', {}).get('asset_class', 'forex')
+    if asset_class == 'futures':
+        data_feed = DBDataFeed(config)
+    else:
+        data_feed = OANDADataFeed(config)
+
     preprocessor = DataPreprocessor()
     risk_manager = RiskManager(config)
     

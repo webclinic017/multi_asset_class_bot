@@ -363,19 +363,23 @@ class CCXTDataFeed(DataFeed):
 
 class IBKRDataFeed(DataFeed, EWrapper):
     """Interactive Brokers data feed implementation"""
-    
+
     def __init__(self, config: dict):
         super().__init__(config)
         EWrapper.__init__(self)
-        
+
         self.host = self.config['ibkr']['host']
         self.port = self.config['ibkr']['port']
         self.client_id = self.config['ibkr']['client_id']
-        
+
         self.client = EClient(self)
         self.data = {} # To store historical data
         self.req_id_counter = 0
-        
+
+        # Initialize database manager for caching
+        from database.database_manager import DatabaseManager
+        self.db_manager = DatabaseManager()
+
         self.logger.info("IBKRDataFeed initialized")
     
     def connect(self):
@@ -419,25 +423,34 @@ class IBKRDataFeed(DataFeed, EWrapper):
     def get_futures_data(self, symbol, timeframe, start_date, end_date):
         """
         Retrieve futures data from Interactive Brokers
-        
+
         Args:
-            symbol (str): Futures contract (e.g., 'ESZ23')
+            symbol (str): Futures contract (e.g., 'ESZ23', 'NGZ4')
             timeframe (str): Timeframe (e.g., '1 min', '5 mins', '1 hour')
             start_date (str): Start date in 'YYYY-MM-DD' format
             end_date (str): End date in 'YYYY-MM-DD' format
-            
+
         Returns:
             pd.DataFrame: Historical price data
         """
         try:
+            # Validate symbol format
+            if len(symbol) < 3:
+                raise ValueError(f"Invalid futures symbol format: {symbol}. Use format like 'NGZ4' (Natural Gas Dec 2024)")
+
+            # Parse symbol: last 2 chars should be month code + year
+            month_year = symbol[-2:]
+            if not (month_year[0].isalpha() and month_year[1].isdigit()):
+                raise ValueError(f"Invalid futures symbol format: {symbol}. Last 2 chars should be month code + year (e.g., 'Z4' for Dec 2024)")
+
             self.connect()
-            
+
             contract = Contract()
-            contract.symbol = symbol[:-2] # e.g., ES from ESZ23
+            contract.symbol = symbol[:-2] # e.g., NG from NGZ4
             contract.secType = "FUT"
-            contract.exchange = "GLOBEX" # Or appropriate exchange
+            contract.exchange = "GLOBEX" # Natural Gas trades on GLOBEX
             contract.currency = "USD"
-            contract.lastTradeDateOrContractMonth = "20" + symbol[-2:] # e.g., 2023 from ESZ23
+            contract.lastTradeDateOrContractMonth = "20" + symbol[-2:] # e.g., 2024 from NGZ4
             
             # Generate unique request ID
             req_id = self.req_id_counter
@@ -466,15 +479,76 @@ class IBKRDataFeed(DataFeed, EWrapper):
             
             df = pd.DataFrame(self.data[req_id])
             df.set_index('timestamp', inplace=True)
-            
+
+            # Save to database for future use
+            if not df.empty:
+                try:
+                    self.db_manager.store_market_data(symbol, timeframe, df)
+                    self.logger.info(f"Saved {len(df)} candles for {symbol} to database")
+                except Exception as e:
+                    self.logger.warning(f"Failed to save data to database: {e}")
+
             self.disconnect()
-            
+
             self.logger.info(f"Retrieved {len(df)} candles for {symbol} from IBKR")
             return df
             
         except Exception as e:
             self.logger.error(f"Error retrieving IBKR data for {symbol}: {str(e)}")
             raise
+
+
+class DBDataFeed(DataFeed):
+    """Database-backed data feed that uses IBKR as fallback for futures"""
+
+    def __init__(self, config: dict):
+        super().__init__(config)
+
+        # Initialize database manager
+        from database.database_manager import DatabaseManager
+        self.db_manager = DatabaseManager()
+
+        # Initialize IBKR feed as fallback
+        self.ibkr_feed = IBKRDataFeed(config)
+
+        self.logger.info("DBDataFeed initialized")
+
+    def get_futures_data(self, symbol, timeframe, start_date, end_date):
+        """
+        Retrieve futures data from IBKR (bypassing cache for testing)
+
+        Args:
+            symbol (str): Futures contract (e.g., 'ESZ23', 'NGZ4')
+            timeframe (str): Timeframe (e.g., '1 min', '5 mins', '1 hour')
+            start_date (str): Start date in 'YYYY-MM-DD' format
+            end_date (str): End date in 'YYYY-MM-DD' format
+
+        Returns:
+            pd.DataFrame: Historical price data
+        """
+        try:
+            self.logger.info(f"Fetching fresh data for {symbol} from IBKR (cache bypassed)")
+            self.logger.info(f"IBKR config: host={self.ibkr_feed.host}, port={self.ibkr_feed.port}, client_id={self.ibkr_feed.client_id}")
+
+            # Always fetch from IBKR (bypassing database cache)
+            df = self.ibkr_feed.get_futures_data(symbol, timeframe, start_date, end_date)
+
+            # Still save to database for future use
+            if not df.empty:
+                try:
+                    self.db_manager.store_market_data(symbol, timeframe, df)
+                    self.logger.info(f"Saved {len(df)} candles for {symbol} to database")
+                except Exception as e:
+                    self.logger.warning(f"Failed to save data to database: {e}")
+
+            return df
+
+        except Exception as e:
+            self.logger.error(f"Error retrieving futures data for {symbol}: {str(e)}")
+            self.logger.error(f"Make sure IBKR TWS/Gateway is running and API is enabled")
+            self.logger.error(f"For futures, use specific contract symbols like 'NGZ4' (Dec 2024 Natural Gas)")
+            raise
+
 
 if __name__ == "__main__":
     # Example Usage (for testing purposes)

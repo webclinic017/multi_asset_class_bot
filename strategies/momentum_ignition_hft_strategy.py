@@ -269,23 +269,22 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
     def take_ignition_profit(self, direction: str):
         """Take profit from successful momentum ignition"""
         try:
-            # Calculate profit-taking position size
-            profit_size = len(self.ignition_sequence) * 2  # 2x the ignition volume
-
-            if direction == 'bullish':
-                # Momentum went up, take short profit
-                order = self.sell(size=profit_size, exectype=bt.Order.Market)
-            elif direction == 'bearish':
-                # Momentum went down, take long profit
-                order = self.buy(size=profit_size, exectype=bt.Order.Market)
+            # Get current position
+            position = self.getposition(self.data)
+            
+            if position.size != 0:
+                # Close the entire position to register as a complete trade
+                if position.size > 0:
+                    order = self.sell(size=position.size, exectype=bt.Order.Market)
+                    self.logger.info(f"Taking profit: Closing long position of {position.size} units")
+                else:
+                    order = self.buy(size=abs(position.size), exectype=bt.Order.Market)
+                    self.logger.info(f"Taking profit: Closing short position of {abs(position.size)} units")
+                
+                self.active_orders.append(order)
+                self.successful_ignitions += 1
             else:
-                self.close_ignition_positions()
-                return
-
-            self.active_orders.append(order)
-            self.successful_ignitions += 1
-
-            self.logger.info(f"Taking profit from successful ignition: {profit_size} {direction} position")
+                self.logger.info("No position to take profit from")
 
         except Exception as e:
             self.logger.error(f"Error taking ignition profit: {e}")
@@ -297,22 +296,19 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
     def close_ignition_positions(self):
         """Close all ignition-related positions"""
         try:
-            # Calculate net position from ignition sequence
-            net_position = 0
-            for order in self.ignition_sequence:
-                if hasattr(order, 'executed') and order.executed.size != 0:
-                    if order.isbuy():
-                        net_position += order.executed.size
-                    else:
-                        net_position -= order.executed.size
-
-            # Close net position
-            if net_position > 0:
-                self.sell(size=net_position, exectype=bt.Order.Market)
-            elif net_position < 0:
-                self.buy(size=abs(net_position), exectype=bt.Order.Market)
-
-            self.logger.info(f"Closed ignition positions, net position was: {net_position}")
+            # Get current position from broker
+            position = self.getposition(self.data)
+            
+            if position.size != 0:
+                # Close the entire position to register as a complete trade
+                if position.size > 0:
+                    self.sell(size=position.size, exectype=bt.Order.Market)
+                    self.logger.info(f"Closing long position: {position.size} units")
+                else:
+                    self.buy(size=abs(position.size), exectype=bt.Order.Market)
+                    self.logger.info(f"Closing short position: {abs(position.size)} units")
+            else:
+                self.logger.info("No open position to close")
 
         except Exception as e:
             self.logger.error(f"Error closing ignition positions: {e}")
@@ -340,6 +336,12 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
 
             if self.should_ignite_momentum(momentum_score, direction):
                 self.execute_momentum_ignition(direction)
+                
+                # Immediately close the position after ignition to register as complete trade
+                # This ensures backtrader counts it as a trade
+                if len(self.ignition_sequence) > 0:
+                    # Wait a few bars then close
+                    pass  # Will be closed by monitor_ignition_progress
 
         except Exception as e:
             self.logger.error(f"Error in next(): {e}")

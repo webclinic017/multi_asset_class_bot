@@ -7,9 +7,13 @@ const BacktestingContainer = styled.div`
   color: ${props => props.theme.colors.text};
 `;
 
+const MainContent = styled.div`
+  width: 100%;
+`;
+
 const Header = styled.div`
   display: flex;
-  justify-content: between;
+  justify-content: space-between;
   align-items: center;
   margin-bottom: 30px;
 `;
@@ -190,6 +194,7 @@ const MetricLabel = styled.div`
 const Backtesting = () => {
   const [sessions, setSessions] = useState([]);
   const [strategies, setStrategies] = useState([]);
+  const [sessionStatus, setSessionStatus] = useState({});
   const [loading, setLoading] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [formData, setFormData] = useState({
@@ -218,6 +223,7 @@ const Backtesting = () => {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws`;
+      console.log('Attempting WebSocket connection to:', wsUrl);
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
@@ -228,17 +234,24 @@ const Backtesting = () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'backtest_completed' || data.type === 'backtest_failed') {
-            // Refresh sessions when backtest completes
-            setTimeout(fetchSessions, 1000);
-          }
+          console.log('WebSocket message received:', data);
+         if (data.type === 'backtest_completed' || data.type === 'backtest_failed') {
+           console.log('Backtest status update received, refreshing sessions...');
+           // Refresh sessions when backtest completes
+           setTimeout(fetchSessions, 1000);
+         } else if (data.type === 'backtest_status') {
+           setSessionStatus(prevStatus => ({
+             ...prevStatus,
+             [data.session_id]: data.status,
+           }));
+         }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
       };
       
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      ws.onclose = (event) => {
+        console.log('WebSocket disconnected:', event.code, event.reason);
         setWsConnected(false);
         // Attempt to reconnect after 5 seconds
         setTimeout(setupWebSocket, 5000);
@@ -257,24 +270,56 @@ const Backtesting = () => {
 
   const fetchSessions = async () => {
     try {
-      const response = await axios.get('/api/sessions');
+      // Add cache-busting parameter to ensure fresh data
+      const timestamp = new Date().getTime();
+      const response = await axios.get(`/api/sessions?_t=${timestamp}`);
       console.log('=== API RESPONSE DEBUG ===');
       console.log('Full response data:', response.data);
-      const backtestSessions = response.data.filter((session) => session.session_type === 'backtest');
-      console.log('Filtered backtest sessions:', backtestSessions);
-      backtestSessions.forEach((session, index) => {
-        console.log(`Session ${index}:`, {
-          id: session.id,
-          strategy_name: session.strategy_name,
-          initial_capital: session.initial_capital,
-          final_capital: session.final_capital,
-          total_return: session.total_return,
-          total_trades: session.total_trades
+      
+      // Filter backtest sessions - backend already provides accurate data
+      const backtestSessions = response.data
+        .filter((session) => session.session_type === 'backtest')
+        .map(session => {
+          console.log(`Processing session ${session.id}:`, {
+            total_trades: session.total_trades,
+            winning_trades: session.winning_trades,
+            losing_trades: session.losing_trades,
+            final_capital: session.final_capital,
+            total_return: session.total_return,
+            status: session.status
+          });
+          
+          // Use backend-calculated values directly without overriding
+          // Only provide defaults for truly missing values
+          const processed = {
+            ...session,
+            // Ensure numeric values are properly typed
+            total_return: typeof session.total_return === 'number' ? session.total_return : 0,
+            final_capital: typeof session.final_capital === 'number' ? session.final_capital : (session.initial_capital || 0),
+            winning_trades: typeof session.winning_trades === 'number' ? session.winning_trades : 0,
+            losing_trades: typeof session.losing_trades === 'number' ? session.losing_trades : 0,
+            total_trades: typeof session.total_trades === 'number' ? session.total_trades : 0,
+          };
+          
+          console.log(`Processed session ${session.id}:`, {
+            total_trades: processed.total_trades,
+            winning_trades: processed.winning_trades,
+            losing_trades: processed.losing_trades,
+            final_capital: processed.final_capital,
+            total_return: processed.total_return,
+            status: processed.status
+          });
+          
+          return processed;
         });
-      });
+      
+      console.log('Processed backtest sessions:', backtestSessions);
+      console.log('Sample session data:', backtestSessions[0]);
+
       setSessions(backtestSessions);
     } catch (error) {
       console.error('Error fetching sessions:', error);
+      alert('Failed to fetch backtest sessions. Please check if the backend server is running.');
     }
   };
 
@@ -331,14 +376,20 @@ const Backtesting = () => {
 
     setLoading(true);
     try {
+      console.log('Starting backtest with data:', formData);
       const response = await axios.post('/api/backtest', formData);
+      console.log('Backtest response:', response.data);
+      
       alert(`✅ Real backtest started successfully!\n\nSession ID: ${response.data.session_id}\n\nUsing: ${response.data.note}\n\nResults will appear below when completed.`);
+      
       // Refresh sessions immediately to show the new running session
-      fetchSessions();
+      setTimeout(() => {
+        fetchSessions();
+      }, 1000);
     } catch (error) {
       console.error('Error running backtest:', error);
-      const errorMessage = error.response?.data?.detail || 'Error starting backtest';
-      alert(`❌ Backtest Error:\n\n${errorMessage}`);
+      const errorMessage = error.response?.data?.detail || error.message || 'Error starting backtest';
+      alert(`❌ Backtest Error:\n\n${errorMessage}\n\nPlease check:\n- Backend server is running\n- Database connection is working\n- Market data exists for selected symbol`);
     } finally {
       setLoading(false);
     }
@@ -388,7 +439,7 @@ const Backtesting = () => {
       </Header>
 
       <Card>
-        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines) - <span style={{color: '#22c55e', fontWeight: 'bold'}}>$100,000 Initial Capital</span></CardTitle>
+        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines)</CardTitle>
         <FormGrid>
           <FormGroup>
             <Label>Strategy</Label>
@@ -527,106 +578,122 @@ const Backtesting = () => {
         </Button>
       </Card>
 
-      <Card>
-        <CardTitle>Backtest Results</CardTitle>
-        {sessions.length > 0 ? (
-          <DataGrid>
-            <DataGridHeader>
-              <div>Strategy</div>
-              <div>Symbol</div>
-              <div>Period</div>
-              <div>Initial Capital</div>
-              <div>Final Capital</div>
-              <div>Return</div>
-              <div>Total Trades</div>
-              <div>Winning</div>
-              <div>Losing</div>
-              <div>Run Time</div>
-              <div>Status</div>
-            </DataGridHeader>
-            {sessions.map(session => {
-              // Use actual database values, with fallbacks only for null/undefined
-              const totalTrades = session.total_trades || 0;
-              const winningTrades = session.winning_trades || 0;
-              const losingTrades = session.losing_trades || 0;
-              const winRate = session.win_rate || 0;
-              
-              return (
-                <DataGridRow key={session.id}>
-                  <div>{session.strategy_name}</div>
-                  <div>{session.symbol}</div>
-                  <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
-                  <div>{formatCurrency(session.initial_capital)}</div>
-                  <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
-                  <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
-                    {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
-                  </div>
-                  <div>{session.total_trades}</div>
-                  <div style={{ color: '#22c55e' }}>{session.winning_trades}</div>
-                  <div style={{ color: '#ef4444' }}>{session.losing_trades}</div>
-                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                    {session.status === 'running' ?
-                      `Started: ${formatDateTime(session.start_time)}` :
-                      formatDateTime(session.end_time || session.start_time)
-                    }
-                  </div>
-                  <div>
-                    <StatusBadge className={session.status}>
-                      {session.status}
-                    </StatusBadge>
-                  </div>
-                </DataGridRow>
-              );
-            })}
-          </DataGrid>
-        ) : (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-            📊 No backtest results yet. Run your first real backtest above to see authentic results here.
-          </div>
-        )}
-        
-        {sessions.length > 0 && (
-          <MetricsGrid>
-            <MetricCard>
-              <MetricValue>{sessions.length}</MetricValue>
-              <MetricLabel>Total Backtests</MetricLabel>
-            </MetricCard>
-            <MetricCard>
-              <MetricValue>
-                {sessions.filter(s => s.status === 'completed').length}
-              </MetricValue>
-              <MetricLabel>Completed</MetricLabel>
-            </MetricCard>
-            <MetricCard>
-              <MetricValue>
-                {sessions.filter(s => (s.total_return || 0) > 0).length}
-              </MetricValue>
-              <MetricLabel>Profitable</MetricLabel>
-            </MetricCard>
-            <MetricCard>
-              <MetricValue>
-                {sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0)}
-              </MetricValue>
-              <MetricLabel>Total Trades</MetricLabel>
-            </MetricCard>
-            <MetricCard>
-              <MetricValue>
-                {sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0)}
-              </MetricValue>
-              <MetricLabel>Total Wins</MetricLabel>
-            </MetricCard>
-            <MetricCard>
-              <MetricValue>
-                {sessions.length > 0 ?
-                  ((sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0) /
-                    Math.max(1, sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0))) * 100).toFixed(1) + '%'
-                  : '0%'}
-              </MetricValue>
-              <MetricLabel>Overall Win Rate</MetricLabel>
-            </MetricCard>
-          </MetricsGrid>
-        )}
-      </Card>
+      <MainContent>
+        <Card>
+          <CardTitle>📊 Backtest Results</CardTitle>
+          {sessions.length > 0 && (
+            <MetricsGrid>
+              <MetricCard>
+                <MetricValue>{sessions.length}</MetricValue>
+                <MetricLabel>Total Backtests</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.filter(s => s.status === 'completed').length}
+                </MetricValue>
+                <MetricLabel>Completed</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.filter(s => (s.total_return || 0) > 0).length}
+                </MetricValue>
+                <MetricLabel>Profitable</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0)}
+                </MetricValue>
+                <MetricLabel>Total Trades</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0)}
+                </MetricValue>
+                <MetricLabel>Total Wins</MetricLabel>
+              </MetricCard>
+              <MetricCard>
+                <MetricValue>
+                  {sessions.length > 0 ?
+                    ((sessions.reduce((sum, s) => sum + (s.winning_trades || 0), 0) /
+                      Math.max(1, sessions.reduce((sum, s) => sum + (s.total_trades || 0), 0))) * 100).toFixed(1) + '%'
+                    : '0%'}
+                </MetricValue>
+                <MetricLabel>Overall Win Rate</MetricLabel>
+              </MetricCard>
+            </MetricsGrid>
+          )}
+
+          {sessions.length > 0 ? (
+            <DataGrid style={{ marginTop: '24px' }}>
+              <DataGridHeader>
+                <div>Strategy</div>
+                <div>Symbol</div>
+                <div>Period</div>
+                <div>Initial Capital</div>
+                <div>Final Capital</div>
+                <div>Return</div>
+                <div>Total Trades</div>
+                <div>Winning</div>
+                <div>Losing</div>
+                <div>Run Time</div>
+                <div>Status</div>
+              </DataGridHeader>
+              {sessions.map(session => {
+                // Debug log for each row render
+                console.log(`Rendering row for session ${session.id}:`, {
+                  total_trades: session.total_trades,
+                  winning_trades: session.winning_trades,
+                  losing_trades: session.losing_trades,
+                  types: {
+                    total_trades: typeof session.total_trades,
+                    winning_trades: typeof session.winning_trades,
+                    losing_trades: typeof session.losing_trades
+                  }
+                });
+                
+                return (
+                  <DataGridRow key={session.id}>
+                    <div>{session.strategy_name}</div>
+                    <div>{session.symbol}</div>
+                    <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
+                    <div>{formatCurrency(session.initial_capital)}</div>
+                    <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
+                    <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
+                      {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
+                    </div>
+                    <div title={`Raw: ${session.total_trades}, Type: ${typeof session.total_trades}`}>
+                      {Number(session.total_trades) || 0}
+                    </div>
+                    <div style={{ color: '#22c55e' }} title={`Raw: ${session.winning_trades}, Type: ${typeof session.winning_trades}`}>
+                      {Number(session.winning_trades) || 0}
+                    </div>
+                    <div style={{ color: '#ef4444' }} title={`Raw: ${session.losing_trades}, Type: ${typeof session.losing_trades}`}>
+                      {Number(session.losing_trades) || 0}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                      {session.status === 'running' ?
+                        `Started: ${formatDateTime(session.start_time)}` :
+                        session.end_time ?
+                          `${Math.round((new Date(session.end_time) - new Date(session.start_time)) / 1000)}s` :
+                          formatDateTime(session.start_time)
+                      }
+                    </div>
+                    <div>
+                      <StatusBadge className={sessionStatus[session.id] || session.status}>
+                        {sessionStatus[session.id] || session.status}
+                      </StatusBadge>
+                    </div>
+                  </DataGridRow>
+                );
+              })}
+            </DataGrid>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
+              📊 No backtest results yet. Run your first real backtest above to see authentic results here.
+            </div>
+          )}
+        </Card>
+      </MainContent>
     </BacktestingContainer>
   );
 };

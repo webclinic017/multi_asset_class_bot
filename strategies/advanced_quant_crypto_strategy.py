@@ -413,8 +413,18 @@ class AdvancedQuantCryptoStrategy(bt.Strategy):
             self.logger.info(str(txt))
 
     def stop(self):
-        """Enhanced performance reporting"""
+        """Enhanced performance reporting - close all positions"""
         try:
+            # Close any remaining positions to register complete trades
+            position = self.getposition(self.data)
+            if position.size != 0:
+                if position.size > 0:
+                    self.sell(size=position.size, exectype=bt.Order.Market)
+                    self.logger.info(f"Closing final long position: {position.size} units")
+                else:
+                    self.buy(size=abs(position.size), exectype=bt.Order.Market)
+                    self.logger.info(f"Closing final short position: {abs(position.size)} units")
+            
             final_value = self.broker.get_value()
             initial_capital = 10000
             total_return = ((final_value - initial_capital) / initial_capital) * 100

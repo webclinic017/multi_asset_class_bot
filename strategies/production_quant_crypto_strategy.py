@@ -603,7 +603,17 @@ class ProductionQuantCryptoStrategy(bt.Strategy):
         self.log(f'TRADE CLOSED - PnL: {trade.pnl:.4f}, Return: {trade_return:.4f}')
 
     def stop(self):
-        """Strategy completion"""
+        """Strategy completion - close all positions"""
+        # Close any remaining positions to register complete trades
+        position = self.getposition(self.data)
+        if position.size != 0:
+            if position.size > 0:
+                self.sell(size=position.size, exectype=bt.Order.Market)
+                self.logger.info(f"Closing final long position: {position.size} units")
+            else:
+                self.buy(size=abs(position.size), exectype=bt.Order.Market)
+                self.logger.info(f"Closing final short position: {abs(position.size)} units")
+        
         final_value = self.broker.get_value()
         initial_capital = 10000
         total_return = ((final_value - initial_capital) / initial_capital) * 100 if initial_capital > 0 else 0
