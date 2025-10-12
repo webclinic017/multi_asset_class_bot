@@ -311,16 +311,25 @@ async def get_trading_sessions(limit: int = 100, request: Request = None):
                         session['final_capital'] = initial_capital
                         session['total_return'] = 0
                     
-                    # Ensure trade counts are set
+                    # Ensure trade counts are set from stored session values
                     session['total_trades'] = session.get('total_trades', 0)
                     session['winning_trades'] = session.get('winning_trades', 0)
                     session['losing_trades'] = session.get('losing_trades', 0)
+                    
+                    logger.info(f"Session {session_id} using stored values: trades={session['total_trades']}, "
+                              f"winning={session['winning_trades']}, losing={session['losing_trades']}, "
+                              f"final=${session['final_capital']:.2f}")
             
             # Convert symbol format for frontend display (EURUSD -> EUR_USD)
             symbol = session.get('symbol', '')
             if symbol and '_' not in symbol and len(symbol) == 6:
                 # Convert EURUSD to EUR_USD format
                 session['symbol'] = f"{symbol[:3]}_{symbol[3:]}"
+            
+            # Log final session data being returned
+            logger.info(f"Returning session {session_id}: trades={session.get('total_trades')}, "
+                      f"winning={session.get('winning_trades')}, losing={session.get('losing_trades')}, "
+                      f"final=${session.get('final_capital')}, status={session.get('status')}")
             
             all_sessions.append(session)
         
@@ -1080,7 +1089,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                             win_rate = results.get('win_rate', 0.0)
                             # Keep the final_capital from backtest results (already set above from final_value)
                             # Don't recalculate - use what the engine provided
-                            logger.info(f"Using backtest engine results: final_capital=${final_capital:.2f}, total_return={total_return:.6f}")
+                            logger.info(f"Using backtest engine results: total_trades={total_trades}, winning={winning_trades}, losing={losing_trades}, final_capital=${final_capital:.2f}, total_return={total_return:.6f}")
 
                     # Get other metrics from backtest results
                     sharpe_ratio = results.get('sharpe_ratio', 0.0)

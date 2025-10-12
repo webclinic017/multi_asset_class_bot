@@ -37,6 +37,61 @@ from strategies.momentum_ignition_hft_strategy import MomentumIgnitionHFTStrateg
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
 from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
+class OrderCountAnalyzer(bt.Analyzer):
+    """
+    Custom analyzer that counts ALL orders (not just closed trades)
+    and classifies them as winning or losing based on portfolio value changes
+    """
+    
+    def __init__(self):
+        super(OrderCountAnalyzer, self).__init__()
+        self.orders = []
+        self.portfolio_values = []
+        self.total_orders = 0
+        self.winning_orders = 0
+        self.losing_orders = 0
+        self.last_portfolio_value = None
+        
+    def start(self):
+        """Called when backtest starts"""
+        self.last_portfolio_value = self.strategy.broker.getvalue()
+        
+    def notify_order(self, order):
+        """Called when an order status changes"""
+        if order.status in [order.Completed]:
+            # Order was executed
+            current_value = self.strategy.broker.getvalue()
+            
+            # Classify as winning or losing based on portfolio value change
+            if self.last_portfolio_value is not None:
+                value_change = current_value - self.last_portfolio_value
+                
+                self.total_orders += 1
+                if value_change > 0:
+                    self.winning_orders += 1
+                elif value_change < 0:
+                    self.losing_orders += 1
+                # If value_change == 0, don't count as win or loss
+                
+                self.orders.append({
+                    'value_before': self.last_portfolio_value,
+                    'value_after': current_value,
+                    'change': value_change,
+                    'is_winning': value_change > 0
+                })
+            
+            self.last_portfolio_value = current_value
+    
+    def get_analysis(self):
+        """Return analysis results"""
+        return {
+            'total_orders': self.total_orders,
+            'winning_orders': self.winning_orders,
+            'losing_orders': self.losing_orders,
+            'orders': self.orders
+        }
+
+
 class BacktestEngine:
     """
     A backtesting engine that uses backtrader to run and evaluate trading strategies.
@@ -314,6 +369,8 @@ class BacktestEngine:
         self.cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
         self.cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
         self.cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trade_analyzer')
+        # Add custom order analyzer to count ALL orders (not just closed trades)
+        self.cerebro.addanalyzer(OrderCountAnalyzer, _name='order_counter')
 
         # Run the backtest with error handling
         try:
@@ -355,6 +412,7 @@ class BacktestEngine:
         drawdown_analysis = strategy.analyzers.drawdown.get_analysis()
         returns_analysis = strategy.analyzers.returns.get_analysis()
         trade_analysis = strategy.analyzers.trade_analyzer.get_analysis()
+        order_analysis = strategy.analyzers.order_counter.get_analysis()
         
         # Extract metrics with safe defaults and None handling
         sharpe_ratio = sharpe_analysis.get('sharperatio')
@@ -379,10 +437,20 @@ class BacktestEngine:
         max_drawdown_pct = max_drawdown * 100 if max_drawdown else 0.0
         total_return_pct = total_return * 100 if total_return else 0.0
         
-        # Trade statistics with None handling
-        total_trades = trade_analysis.get('total', {}).get('closed', 0) or 0
-        winning_trades = trade_analysis.get('won', {}).get('total', 0) or 0
-        losing_trades = trade_analysis.get('lost', {}).get('total', 0) or 0
+        # Trade statistics - use custom order counter for accurate counts
+        self.logger.info(f"=== TRADE ANALYZER RAW OUTPUT ===")
+        self.logger.info(f"Full trade_analysis dict: {trade_analysis}")
+        self.logger.info(f"Full order_analysis dict: {order_analysis}")
+        
+        # Use order counter for accurate trade counts
+        total_trades = order_analysis.get('total_orders', 0)
+        winning_trades = order_analysis.get('winning_orders', 0)
+        losing_trades = order_analysis.get('losing_orders', 0)
+        
+        self.logger.info(f"Order Counter: total={total_trades}, winning={winning_trades}, losing={losing_trades}")
+        self.logger.info(f"TradeAnalyzer (for comparison): total={trade_analysis.get('total', {}).get('closed', 0)}, "
+                        f"won={trade_analysis.get('won', {}).get('total', 0)}, "
+                        f"lost={trade_analysis.get('lost', {}).get('total', 0)}")
         
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
         

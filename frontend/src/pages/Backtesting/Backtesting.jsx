@@ -280,9 +280,18 @@ const Backtesting = () => {
       const backtestSessions = response.data
         .filter((session) => session.session_type === 'backtest')
         .map(session => {
+          console.log(`Processing session ${session.id}:`, {
+            total_trades: session.total_trades,
+            winning_trades: session.winning_trades,
+            losing_trades: session.losing_trades,
+            final_capital: session.final_capital,
+            total_return: session.total_return,
+            status: session.status
+          });
+          
           // Use backend-calculated values directly without overriding
           // Only provide defaults for truly missing values
-          return {
+          const processed = {
             ...session,
             // Ensure numeric values are properly typed
             total_return: typeof session.total_return === 'number' ? session.total_return : 0,
@@ -291,6 +300,17 @@ const Backtesting = () => {
             losing_trades: typeof session.losing_trades === 'number' ? session.losing_trades : 0,
             total_trades: typeof session.total_trades === 'number' ? session.total_trades : 0,
           };
+          
+          console.log(`Processed session ${session.id}:`, {
+            total_trades: processed.total_trades,
+            winning_trades: processed.winning_trades,
+            losing_trades: processed.losing_trades,
+            final_capital: processed.final_capital,
+            total_return: processed.total_return,
+            status: processed.status
+          });
+          
+          return processed;
         });
       
       console.log('Processed backtest sessions:', backtestSessions);
@@ -618,34 +638,54 @@ const Backtesting = () => {
                 <div>Run Time</div>
                 <div>Status</div>
               </DataGridHeader>
-              {sessions.map(session => (
-                <DataGridRow key={session.id}>
-                  <div>{session.strategy_name}</div>
-                  <div>{session.symbol}</div>
-                  <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
-                  <div>{formatCurrency(session.initial_capital)}</div>
-                  <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
-                  <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
-                    {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
-                  </div>
-                  <div>{session.total_trades}</div>
-                  <div style={{ color: '#22c55e' }}>{session.winning_trades}</div>
-                  <div style={{ color: '#ef4444' }}>{session.losing_trades}</div>
-                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                    {session.status === 'running' ?
-                      `Started: ${formatDateTime(session.start_time)}` :
-                      session.end_time ?
-                        `${Math.round((new Date(session.end_time) - new Date(session.start_time)) / 1000)}s` :
-                        formatDateTime(session.start_time)
-                    }
-                  </div>
-                  <div>
-                    <StatusBadge className={sessionStatus[session.id] || session.status}>
-                      {sessionStatus[session.id] || session.status}
-                    </StatusBadge>
-                  </div>
-                </DataGridRow>
-              ))}
+              {sessions.map(session => {
+                // Debug log for each row render
+                console.log(`Rendering row for session ${session.id}:`, {
+                  total_trades: session.total_trades,
+                  winning_trades: session.winning_trades,
+                  losing_trades: session.losing_trades,
+                  types: {
+                    total_trades: typeof session.total_trades,
+                    winning_trades: typeof session.winning_trades,
+                    losing_trades: typeof session.losing_trades
+                  }
+                });
+                
+                return (
+                  <DataGridRow key={session.id}>
+                    <div>{session.strategy_name}</div>
+                    <div>{session.symbol}</div>
+                    <div>{formatDate(session.start_time)} - {session.end_time ? formatDate(session.end_time) : 'Running'}</div>
+                    <div>{formatCurrency(session.initial_capital)}</div>
+                    <div>{session.final_capital ? formatCurrency(session.final_capital) : '-'}</div>
+                    <div style={{ color: (session.total_return || 0) > 0 ? '#22c55e' : '#ef4444' }}>
+                      {session.total_return !== null && session.total_return !== undefined ? formatPercentage(session.total_return) : '-'}
+                    </div>
+                    <div title={`Raw: ${session.total_trades}, Type: ${typeof session.total_trades}`}>
+                      {Number(session.total_trades) || 0}
+                    </div>
+                    <div style={{ color: '#22c55e' }} title={`Raw: ${session.winning_trades}, Type: ${typeof session.winning_trades}`}>
+                      {Number(session.winning_trades) || 0}
+                    </div>
+                    <div style={{ color: '#ef4444' }} title={`Raw: ${session.losing_trades}, Type: ${typeof session.losing_trades}`}>
+                      {Number(session.losing_trades) || 0}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                      {session.status === 'running' ?
+                        `Started: ${formatDateTime(session.start_time)}` :
+                        session.end_time ?
+                          `${Math.round((new Date(session.end_time) - new Date(session.start_time)) / 1000)}s` :
+                          formatDateTime(session.start_time)
+                      }
+                    </div>
+                    <div>
+                      <StatusBadge className={sessionStatus[session.id] || session.status}>
+                        {sessionStatus[session.id] || session.status}
+                      </StatusBadge>
+                    </div>
+                  </DataGridRow>
+                );
+              })}
             </DataGrid>
           ) : (
             <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
