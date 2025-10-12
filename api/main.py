@@ -260,45 +260,65 @@ async def get_trading_sessions(limit: int = 100, request: Request = None):
             if session.get('session_type') != 'backtest':
                 continue
             
-            # Get detailed trade statistics from database
+            # Calculate trade statistics from portfolio snapshots (most accurate method)
             with db_manager.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) as total_trades,
-                        COUNT(CASE WHEN pnl > 0 THEN 1 END) as wins,
-                        COUNT(CASE WHEN pnl < 0 THEN 1 END) as losses,
-                        SUM(pnl) as total_pnl
-                    FROM trades
-                    WHERE session_id = ? AND pnl IS NOT NULL
-                """, (session_id,))
-
-                trade_stats = cursor.fetchone()
                 
-                if trade_stats and trade_stats[0] > 0:
-                    # We have actual trades with P&L data
-                    total_trades = trade_stats[0]
-                    winning_trades = trade_stats[1] or 0
-                    losing_trades = trade_stats[2] or 0
-                    total_pnl = trade_stats[3] or 0.0
+                # Get portfolio snapshots ordered by time
+                cursor.execute("""
+                    SELECT total_value, timestamp
+                    FROM portfolio_snapshots
+                    WHERE session_id = ?
+                    ORDER BY timestamp ASC
+                """, (session_id,))
+                
+                snapshots = cursor.fetchall()
+                
+                if len(snapshots) > 1:
+                    # Calculate trades from portfolio value changes
+                    total_trades = 0
+                    winning_trades = 0
+                    losing_trades = 0
                     
-                    # Calculate final capital from actual trade P&L
+                    for i in range(1, len(snapshots)):
+                        prev_value = snapshots[i-1][0]
+                        curr_value = snapshots[i][0]
+                        
+                        if prev_value and curr_value:
+                            value_change = curr_value - prev_value
+                            
+                            # Count as a trade if there was a significant value change (> $1)
+                            if abs(value_change) > 1.0:
+                                total_trades += 1
+                                if value_change > 0:
+                                    winning_trades += 1
+                                else:
+                                    losing_trades += 1
+                    
+                    # Get final capital from last snapshot or stored value
+                    final_capital = snapshots[-1][0] if snapshots[-1][0] else session.get('final_capital')
                     initial_capital = session.get('initial_capital', 100000)
-                    final_capital = initial_capital + total_pnl
-                    total_return = total_pnl / initial_capital if initial_capital > 0 else 0
                     
-                    # Update session with calculated values
-                    session['total_trades'] = total_trades
-                    session['winning_trades'] = winning_trades
-                    session['losing_trades'] = losing_trades
-                    session['final_capital'] = final_capital
-                    session['total_return'] = total_return
-                    
-                    logger.info(f"Session {session_id}: {total_trades} trades, "
-                              f"W/L: {winning_trades}/{losing_trades}, "
-                              f"Final: ${final_capital:.2f}, Return: {total_return*100:.2f}%")
+                    if final_capital:
+                        total_return = ((final_capital - initial_capital) / initial_capital) if initial_capital > 0 else 0
+                        
+                        # Update session with calculated values
+                        session['total_trades'] = total_trades
+                        session['winning_trades'] = winning_trades
+                        session['losing_trades'] = losing_trades
+                        session['final_capital'] = final_capital
+                        session['total_return'] = total_return
+                        
+                        logger.info(f"Session {session_id} from portfolio snapshots: {total_trades} trades, "
+                                  f"W/L: {winning_trades}/{losing_trades}, "
+                                  f"Final: ${final_capital:.2f}, Return: {total_return*100:.2f}%")
+                    else:
+                        # Fallback to stored values
+                        session['total_trades'] = session.get('total_trades', 0)
+                        session['winning_trades'] = session.get('winning_trades', 0)
+                        session['losing_trades'] = session.get('losing_trades', 0)
                 else:
-                    # No trades with P&L in database - use stored values from session
+                    # No portfolio snapshots - use stored session values
                     stored_final_capital = session.get('final_capital')
                     initial_capital = session.get('initial_capital', 100000)
                     
