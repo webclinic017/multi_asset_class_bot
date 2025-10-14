@@ -13,6 +13,8 @@
 - cd frontend, npm run build
 - python -m textblob.download_corpora(one time setup)
 - api keys through web/email from fred,eia,usda
+- python -m add_fundamental_data_table
+- python -m futures_data_loader
 
 ## 🚀 Executive Summary
 
