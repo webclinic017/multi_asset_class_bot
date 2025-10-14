@@ -20,6 +20,10 @@
 9. [Code Examples & Integration](#code-examples--integration)
 10. [Backtesting & Validation](#backtesting--validation)
 
+11. [Free & Low-Cost Data Sources](#free--low-cost-data-sources)
+12. [Commodity Futures Selection](#commodity-futures-selection)
+13. [Sentiment Analysis Integration](#sentiment-analysis-integration)
+14. [News Events Monitoring](#news-events-monitoring)
 ---
 
 ## Executive Summary
@@ -1386,6 +1390,1323 @@ def run_walk_forward_optimization(config, periods=6):
         })
     
     return results
+
+---
+
+## Free & Low-Cost Data Sources
+
+### Comprehensive Data Strategy for Cost-Effective HFT
+
+#### Primary Market Data Sources (FREE)
+
+**1. Yahoo Finance API**
+- **Cost**: FREE
+- **Data**: Historical futures prices, OHLCV data
+- **Coverage**: Major futures contracts (ES, NQ, CL, GC, etc.)
+- **Limitations**: 15-minute delayed for real-time, good for backtesting
+- **Python Integration**:
+```python
+import yfinance as yf
+
+class YahooFuturesDataFeed:
+    """Free futures data from Yahoo Finance"""
+    
+    def get_futures_data(self, symbol, start_date, end_date):
+        """
+        Get historical futures data
+        Symbol format: 'ES=F' for E-mini S&P, 'GC=F' for Gold, 'CL=F' for Crude
+        """
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(start=start_date, end=end_date, interval='1h')
+        return data
+    
+    # Supported futures symbols (FREE):
+    futures_symbols = {
+        'ES=F': 'E-mini S&P 500',
+        'NQ=F': 'E-mini NASDAQ',
+        'YM=F': 'E-mini Dow',
+        'CL=F': 'Crude Oil',
+        'GC=F': 'Gold',
+        'SI=F': 'Silver',
+        'NG=F': 'Natural Gas',
+        'ZC=F': 'Corn',
+        'ZS=F': 'Soybeans',
+        'ZW=F': 'Wheat'
+    }
+```
+
+**2. FRED API (Federal Reserve Economic Data)**
+- **Cost**: FREE
+- **Data**: Economic indicators, commodity prices, interest rates
+- **Coverage**: 800,000+ economic time series
+- **API Limit**: Unlimited with free API key
+- **Python Integration**:
+```python
+from fredapi import Fred
+
+class FREDDataIntegration:
+    """Free economic data from Federal Reserve"""
+    
+    def __init__(self, api_key):
+        self.fred = Fred(api_key=api_key)  # Get free key at fred.stlouisfed.org
+    
+    def get_commodity_indicators(self):
+        """Get commodity-related economic indicators"""
+        indicators = {
+            'crude_oil': self.fred.get_series('DCOILWTICO'),  # WTI Crude Oil
+            'gold_price': self.fred.get_series('GOLDAMGBD228NLBM'),  # Gold Price
+            'copper_price': self.fred.get_series('PCOPPUSDM'),  # Copper Price
+            'inflation_cpi': self.fred.get_series('CPIAUCSL'),  # CPI
+            'interest_rate': self.fred.get_series('DFF'),  # Fed Funds Rate
+            'dollar_index': self.fred.get_series('DTWEXBGS'),  # Dollar Index
+            'vix': self.fred.get_series('VIXCLS')  # VIX Volatility
+        }
+        return indicators
+```
+
+**3. EIA API (Energy Information Administration)**
+- **Cost**: FREE
+- **Data**: Oil inventories, natural gas storage, production data
+- **Coverage**: Comprehensive energy market data
+- **API Limit**: No limits on public data
+- **Python Integration**:
+```python
+import requests
+
+class EIADataFeed:
+
+### Complete Data Integration Example
+
+```python
+# File: data/free_futures_data_aggregator.py
+
+import yfinance as yf
+from fredapi import Fred
+import requests
+import feedparser
+from textblob import TextBlob
+import pandas as pd
+from datetime import datetime, timedelta
+import logging
+
+class FreeFuturesDataAggregator:
+    """
+    Aggregate free data sources for futures trading
+    Zero-cost data solution for HFT bot
+    """
+    
+    def __init__(self, config):
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize free APIs
+        self.fred = Fred(api_key=config.get('fred_api_key', 'YOUR_FREE_KEY'))
+        self.eia_key = config.get('eia_api_key', 'YOUR_FREE_KEY')
+        self.usda_key = config.get('usda_api_key', 'YOUR_FREE_KEY')
+        
+        # Sentiment analyzer
+        self.sentiment_analyzer = FuturesSentimentAnalyzer()
+        
+        # News monitor
+        self.news_monitor = CommodityNewsEventMonitor()
+    
+    def get_complete_market_data(self, symbol, lookback_days=30):
+        """
+        Get comprehensive market data from free sources
+        """
+        data_package = {
+            'price_data': None,
+            'fundamental_data': {},
+            'sentiment_data': {},
+            'news_events': [],
+            'economic_indicators': {}
+        }
+        
+        # 1. Price data from Yahoo Finance
+        try:
+            yahoo_symbol = self._convert_to_yahoo_symbol(symbol)
+            ticker = yf.Ticker(yahoo_symbol)
+            
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=lookback_days)
+            
+            data_package['price_data'] = ticker.history(
+                start=start_date,
+                end=end_date,
+                interval='1h'
+            )
+            
+            self.logger.info(f"Retrieved {len(data_package['price_data'])} price bars from Yahoo")
+            
+        except Exception as e:
+            self.logger.error(f"Yahoo Finance error: {e}")
+        
+        # 2. Fundamental data from government sources
+        category = self._get_commodity_category(symbol)
+        
+        if category == 'energy':
+            data_package['fundamental_data'] = self._get_energy_fundamentals()
+        elif category == 'metals':
+            data_package['fundamental_data'] = self._get_metals_fundamentals()
+        elif category == 'agriculture':
+            data_package['fundamental_data'] = self._get_agriculture_fundamentals()
+        
+        # 3. Sentiment analysis
+        data_package['sentiment_data'] = self.sentiment_analyzer.get_commodity_sentiment(
+            symbol, hours_back=24
+        )
+        
+        # 4. Upcoming news events
+        data_package['news_events'] = self.news_monitor.check_upcoming_events(symbol)
+        
+        # 5. Economic indicators from FRED
+        data_package['economic_indicators'] = self._get_economic_indicators(symbol)
+        
+        return data_package
+    
+    def _get_energy_fundamentals(self):
+        """Get energy fundamentals from EIA (FREE)"""
+        try:
+            fundamentals = {
+                'crude_inventory': self._fetch_eia_data('PET.WCRSTUS1.W'),
+                'gas_storage': self._fetch_eia_data('NG.NW2_EPG0_SWO_R48_BCF.W'),
+                'refinery_utilization': self._fetch_eia_data('PET.WPULEUS3.W')
+            }
+            return fundamentals
+        except Exception as e:
+            self.logger.error(f"EIA data error: {e}")
+            return {}
+    
+    def _get_metals_fundamentals(self):
+        """Get metals fundamentals from FRED (FREE)"""
+        try:
+            fundamentals = {
+                'gold_price': self.fred.get_series('GOLDAMGBD228NLBM', limit=30),
+                'silver_price': self.fred.get_series('SLVPRUSD', limit=30),
+                'copper_price': self.fred.get_series('PCOPPUSDM', limit=30),
+                'dollar_index': self.fred.get_series('DTWEXBGS', limit=30),
+                'real_interest_rate': self.fred.get_series('REAINTRATREARAT10Y', limit=30)
+            }
+            return fundamentals
+        except Exception as e:
+            self.logger.error(f"FRED data error: {e}")
+            return {}
+    
+    def _get_agriculture_fundamentals(self):
+        """Get agriculture fundamentals from USDA (FREE)"""
+        try:
+            # USDA Quick Stats API
+            fundamentals = {
+                'corn_production': self._fetch_usda_data('CORN', 'PRODUCTION'),
+                'soybean_production': self._fetch_usda_data('SOYBEANS', 'PRODUCTION'),
+                'wheat_production': self._fetch_usda_data('WHEAT', 'PRODUCTION')
+            }
+            return fundamentals
+        except Exception as e:
+            self.logger.error(f"USDA data error: {e}")
+            return {}
+    
+    def _convert_to_yahoo_symbol(self, symbol):
+        """Convert standard symbol to Yahoo Finance format"""
+        yahoo_map = {
+            'ES': 'ES=F', 'NQ': 'NQ=F', 'YM': 'YM=F',
+            'CL': 'CL=F', 'NG': 'NG=F', 'RB': 'RB=F',
+            'GC': 'GC=F', 'SI': 'SI=F', 'HG': 'HG=F',
+            'ZC': 'ZC=F', 'ZS': 'ZS=F', 'ZW': 'ZW=F'
+        }
+        return yahoo_map.get(symbol, f"{symbol}=F")
+    
+    def _fetch_eia_data(self, series_id):
+        """Fetch data from EIA API"""
+        url = f"https://api.eia.gov/v2/seriesid/{series_id}"
+        params = {'api_key': self.eia_key}
+        
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    
+    def _fetch_usda_data(self, commodity, statistic):
+        """Fetch data from USDA API"""
+        url = "https://quickstats.nass.usda.gov/api/api_GET/"
+        params = {
+            'key': self.usda_key,
+            'commodity_desc': commodity,
+            'statisticcat_desc': statistic,
+            'format': 'JSON'
+        }
+        
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+# Usage example:
+"""
+# In your main trading loop:
+data_aggregator = FreeFuturesDataAggregator(config)
+
+# Get all data for a symbol
+market_data = data_aggregator.get_complete_market_data('CL', lookback_days=30)
+
+# Use in strategy:
+if market_data['sentiment_data']['signal'] == 'BULLISH':
+    # Increase position size or confidence
+    pass
+
+if market_data['news_events']:
+    # Adjust risk before major events
+    pass
+"""
+```
+
+### Cost Comparison: Free vs Paid Data
+
+| Data Type | Free Source | Cost | Paid Alternative | Cost | Savings |
+|-----------|-------------|------|------------------|------|---------|
+| **Historical Prices** | Yahoo Finance | $0 | Bloomberg | $2,000/mo | $24,000/yr |
+| **Real-time Prices** | IBKR (delayed) | $4.50/mo | CME Direct | $100/mo | $1,146/yr |
+| **Economic Data** | FRED API | $0 | Refinitiv | $500/mo | $6,000/yr |
+| **Energy Data** | EIA API | $0 | Platts | $1,000/mo | $12,000/yr |
+| **Ag Data** | USDA API | $0 | DTN | $300/mo | $3,600/yr |
+| **News Sentiment** | RSS + TextBlob | $0 | RavenPack | $2,000/mo | $24,000/yr |
+| **TOTAL** | **Free Stack** | **$4.50/mo** | **Premium Stack** | **$5,900/mo** | **$70,746/yr** |
+
+**Recommendation**: Start with 100% free sources for development and backtesting, then add IBKR real-time data ($4.50/month) only when ready for live trading.
+
+    """Free energy data from EIA"""
+    
+    def __init__(self, api_key):
+        self.api_key = api_key  # Get free key at eia.gov
+        self.base_url = "https://api.eia.gov/v2"
+    
+    def get_crude_oil_inventory(self):
+        """Get weekly crude oil inventory data"""
+        endpoint = f"{self.base_url}/petroleum/stoc/wstk/data/"
+        params = {
+            'api_key': self.api_key,
+            'frequency': 'weekly',
+            'data[0]': 'value',
+            'facets[product][]': 'WCRSTUS1',  # Crude oil stocks
+            'sort[0][column]': 'period',
+            'sort[0][direction]': 'desc',
+            'length': 52  # Last year
+
+---
+
+## Quick Start Guide: Free Data Setup
+
+### Step 1: Get Free API Keys (5 minutes)
+
+```bash
+# 1. FRED API (Federal Reserve Economic Data)
+# Visit: https://fred.stlouisfed.org/docs/api/api_key.html
+# Sign up for free account, get API key instantly
+
+# 2. EIA API (Energy Information Administration)
+# Visit: https://www.eia.gov/opendata/register.php
+# Register for free, get API key via email
+
+# 3. USDA NASS API (Agricultural Data)
+# Visit: https://quickstats.nass.usda.gov/api
+# Request free API key, approved within 24 hours
+
+# 4. Alpha Vantage (OPTIONAL - $49.99/month for premium)
+# Visit: https://www.alphavantage.co/support/#api-key
+# Free tier: 500 calls/day, Premium: 75,000 calls/month
+```
+
+### Step 2: Install Required Libraries
+
+```bash
+# All FREE libraries
+pip install yfinance fredapi feedparser textblob beautifulsoup4 requests pandas numpy
+
+# Download TextBlob corpora (one-time setup)
+python -m textblob.download_corpora
+```
+
+### Step 3: Configure Your Bot
+
+```yaml
+# config/hft_futures_config.yaml
+
+# Free API Keys
+data_sources:
+  fred_api_key: "YOUR_FRED_KEY_HERE"  # FREE
+  eia_api_key: "YOUR_EIA_KEY_HERE"    # FREE
+  usda_api_key: "YOUR_USDA_KEY_HERE"  # FREE
+  alpha_vantage_key: ""  # OPTIONAL ($49.99/month)
+
+# Futures symbols to trade (using FREE Yahoo Finance data)
+futures:
+  symbols:
+    - symbol: 'ES'
+      yahoo_symbol: 'ES=F'
+      name: 'E-mini S&P 500'
+      category: 'indices'
+      
+    - symbol: 'CL'
+      yahoo_symbol: 'CL=F'
+      name: 'Crude Oil'
+      category: 'energy'
+      
+    - symbol: 'GC'
+      yahoo_symbol: 'GC=F'
+      name: 'Gold'
+      category: 'metals'
+
+# Sentiment analysis (FREE)
+sentiment:
+  enabled: true
+  sources:
+    - reuters_rss
+    - cnbc_rss
+    - bbc_rss
+    - reddit_api
+  update_interval: 3600  # 1 hour
+  min_confidence: 0.5
+
+# News events monitoring (FREE)
+news_events:
+  enabled: true
+  pre_event_action: 'REDUCE_POSITIONS'
+  post_event_delay: 300  # 5 minutes
+```
+
+### Step 4: Run Your First Backtest (FREE)
+
+```python
+# test_free_data_hft.py
+
+from data.free_futures_data_aggregator import FreeFuturesDataAggregator
+import yaml
+
+# Load config
+with open('config/hft_futures_config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+
+# Initialize free data aggregator
+data_agg = FreeFuturesDataAggregator(config['data_sources'])
+
+# Get complete market data (100% FREE)
+market_data = data_agg.get_complete_market_data('CL', lookback_days=30)
+
+print(f"Price Data Points: {len(market_data['price_data'])}")
+print(f"Sentiment Score: {market_data['sentiment_data']['sentiment_score']:.2f}")
+print(f"News Count: {market_data['sentiment_data']['news_count']}")
+print(f"Upcoming Events: {len(market_data['news_events'])}")
+
+# Run backtest with free data
+from backtesting.backtest_engine import BacktestEngine
+# ... (use your existing backtest engine)
+```
+
+### Monthly Cost Breakdown
+
+**100% Free Setup:**
+- Yahoo Finance: $0
+- FRED API: $0
+- EIA API: $0
+- USDA API: $0
+- News RSS Feeds: $0
+- TextBlob Sentiment: $0
+- **Total: $0/month** ✅
+
+**Recommended Professional Setup:**
+- All free sources above: $0
+- IBKR Real-time Data: $4.50/month
+- **Total: $4.50/month** ✅
+
+**Optional Premium Setup:**
+- All above: $4.50/month
+- Alpha Vantage Premium: $49.99/month
+- **Total: $54.49/month**
+
+**Comparison to Premium Alternatives:**
+- Bloomberg Terminal: $2,000/month ❌
+- Refinitiv Eikon: $500/month ❌
+- CME Direct: $100/month ❌
+- **Savings: $2,545.51 - $70,746/year** ✅
+
+        }
+        
+        response = requests.get(endpoint, params=params)
+        return response.json()
+    
+    def get_natural_gas_storage(self):
+        """Get natural gas storage data"""
+        endpoint = f"{self.base_url}/natural-gas/stor/wkly/data/"
+        params = {
+            'api_key': self.api_key,
+            'frequency': 'weekly'
+        }
+        
+        response = requests.get(endpoint, params=params)
+        return response.json()
+```
+
+**4. USDA NASS API (Agriculture Data)**
+- **Cost**: FREE
+- **Data**: Crop reports, planting data, harvest forecasts
+- **Coverage**: All major agricultural commodities
+- **Python Integration**:
+```python
+class USDADataFeed:
+    """Free agricultural data from USDA"""
+    
+    def __init__(self, api_key):
+        self.api_key = api_key  # Get free key at quickstats.nass.usda.gov
+        self.base_url = "https://quickstats.nass.usda.gov/api"
+    
+    def get_crop_production(self, commodity='CORN'):
+        """Get crop production data"""
+        params = {
+            'key': self.api_key,
+            'commodity_desc': commodity,
+            'statisticcat_desc': 'PRODUCTION',
+            'format': 'JSON'
+        }
+        
+        response = requests.get(f"{self.base_url}/api_GET/", params=params)
+        return response.json()
+```
+
+#### Low-Cost Professional Data ($4.50 - $99/month)
+
+**1. Interactive Brokers Market Data**
+- **Cost**: $4.50/month (US Futures Bundle)
+- **Data**: Real-time futures prices, order book depth
+- **Coverage**: All major futures exchanges (CME, NYMEX, COMEX, CBOT)
+- **Latency**: < 50ms
+- **Integration**: Use existing [`IBKRBrokerConnector`](execution/broker_connect.py:411)
+
+**2. Alpha Vantage**
+- **Cost**: $49.99/month (Premium)
+- **Data**: Real-time commodities, technical indicators, news
+- **API Calls**: 75,000/month
+- **Coverage**: Comprehensive commodity coverage
+```python
+from alpha_vantage.timeseries import TimeSeries
+from alpha_vantage.commodities import Commodities
+
+class AlphaVantageIntegration:
+    """Low-cost professional data"""
+    
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.commodities = Commodities(key=api_key)
+    
+    def get_commodity_data(self, commodity='WTI'):
+        """Get commodity price data"""
+        data, meta = self.commodities.get_crude_oil_wti()
+        return data
+```
+
+**3. Polygon.io (Optional)**
+- **Cost**: $99/month (Starter)
+- **Data**: Real-time futures, options, stocks
+- **API Calls**: Unlimited
+- **Best For**: High-frequency trading with real-time needs
+
+#### Recommended Data Budget
+
+**Minimal Setup (FREE):**
+- Yahoo Finance: $0
+- FRED API: $0
+- EIA API: $0
+- USDA API: $0
+- **Total: $0/month**
+- **Use Case**: Backtesting, strategy development
+
+**Professional Setup (Recommended):**
+- IBKR Market Data: $4.50/month
+- Alpha Vantage Premium: $49.99/month
+- Free Government APIs: $0
+- **Total: $54.49/month**
+- **Use Case**: Live trading with professional data
+
+**Premium Setup (Optional):**
+- All above sources: $54.49/month
+- Polygon.io: $99/month
+- **Total: $153.49/month**
+- **Use Case**: High-frequency trading with real-time data
+
+---
+
+## Commodity Futures Selection
+
+### Recommended Futures Contracts for HFT
+
+#### Tier 1: High Liquidity Futures (Best for HFT)
+
+**1. E-mini S&P 500 (ES)**
+- **Symbol**: ES=F (Yahoo), ES (IBKR)
+- **Exchange**: CME
+- **Contract Size**: $50 × S&P 500 Index
+- **Tick Size**: 0.25 points ($12.50)
+- **Average Daily Volume**: 2+ million contracts
+- **Trading Hours**: Nearly 24/5
+- **Why HFT Suitable**: Extremely liquid, tight spreads, high volatility
+- **Margin Requirement**: ~$12,000 per contract
+- **Best Strategies**: Market making, momentum, order flow
+
+**2. Crude Oil (CL)**
+- **Symbol**: CL=F (Yahoo), CL (IBKR)
+- **Exchange**: NYMEX
+- **Contract Size**: 1,000 barrels
+- **Tick Size**: $0.01 ($10)
+- **Average Daily Volume**: 500,000+ contracts
+- **Trading Hours**: Nearly 24/5
+- **Why HFT Suitable**: High volatility, news-driven, liquid
+- **Margin Requirement**: ~$4,400 per contract
+- **Best Strategies**: Momentum, news-based, volatility arbitrage
+- **Key News Events**: EIA inventory reports (Wednesdays 10:30 AM ET), OPEC meetings
+
+**3. Gold (GC)**
+- **Symbol**: GC=F (Yahoo), GC (IBKR)
+- **Exchange**: COMEX
+- **Contract Size**: 100 troy ounces
+- **Tick Size**: $0.10 ($10)
+- **Average Daily Volume**: 300,000+ contracts
+- **Trading Hours**: Nearly 24/5
+- **Why HFT Suitable**: Safe haven flows, dollar correlation, liquid
+- **Margin Requirement**: ~$4,400 per contract
+- **Best Strategies**: Statistical arbitrage, trend following
+- **Key News Events**: Fed announcements, inflation data, geopolitical events
+
+#### Tier 2: Medium Liquidity Futures (Good for HFT)
+
+**4. Natural Gas (NG)**
+- **Symbol**: NG=F (Yahoo), NG (IBKR)
+- **Exchange**: NYMEX
+- **Contract Size**: 10,000 MMBtu
+- **Average Daily Volume**: 200,000+ contracts
+- **Why HFT Suitable**: Weather-driven volatility, seasonal patterns
+- **Best Strategies**: Seasonal trading, weather-based signals
+- **Key News Events**: EIA storage reports (Thursdays 10:30 AM ET), weather forecasts
+
+**5. Euro FX (6E)**
+- **Symbol**: 6E=F (Yahoo), 6E (IBKR)
+- **Exchange**: CME
+- **Contract Size**: €125,000
+- **Average Daily Volume**: 250,000+ contracts
+- **Why HFT Suitable**: ECB/Fed policy divergence, high correlation with EUR/USD
+- **Best Strategies**: Interest rate arbitrage, central bank trading
+- **Key News Events**: ECB meetings, Fed meetings, economic data releases
+
+**6. 10-Year Treasury Note (ZN)**
+- **Symbol**: ZN=F (Yahoo), ZN (IBKR)
+- **Exchange**: CBOT
+- **Contract Size**: $100,000 face value
+- **Average Daily Volume**: 1+ million contracts
+- **Why HFT Suitable**: Interest rate sensitive, high liquidity
+- **Best Strategies**: Yield curve trading, macro hedging
+
+#### Tier 3: Specialized Futures (Advanced HFT)
+
+**7. Micro E-mini S&P 500 (MES)**
+- **Symbol**: MES=F (Yahoo), MES (IBKR)
+- **Contract Size**: $5 × S&P 500 (1/10th of ES)
+- **Why HFT Suitable**: Lower capital requirements, same liquidity characteristics
+- **Margin Requirement**: ~$1,200 per contract
+- **Best For**: Testing strategies with lower capital
+
+**8. Bitcoin Futures (BTC)**
+- **Symbol**: BTC=F (Yahoo), BTC (IBKR)
+- **Exchange**: CME
+- **Contract Size**: 5 Bitcoin
+- **Why HFT Suitable**: 24/7 trading, high volatility
+- **Best Strategies**: Crypto arbitrage, volatility trading
+
+### Futures Selection Criteria for HFT
+
+```python
+class FuturesSelector:
+    """Select optimal futures contracts for HFT trading"""
+    
+    def __init__(self):
+        self.selection_criteria = {
+            'min_daily_volume': 100000,  # Minimum 100k contracts/day
+            'max_spread_bps': 2,  # Maximum 2 basis points spread
+            'min_trading_hours': 18,  # Minimum 18 hours/day trading
+            'max_tick_value': 25,  # Maximum $25 per tick
+            'min_volatility': 0.01,  # Minimum 1% daily volatility
+            'max_volatility': 0.05  # Maximum 5% daily volatility
+        }
+    
+    def evaluate_contract(self, contract_data):
+        """Evaluate if contract is suitable for HFT"""
+        score = 0
+        max_score = 6
+        
+        # Volume check
+        if contract_data['avg_volume'] >= self.selection_criteria['min_daily_volume']:
+            score += 1
+        
+        # Spread check
+        if contract_data['avg_spread_bps'] <= self.selection_criteria['max_spread_bps']:
+            score += 1
+        
+        # Trading hours check
+        if contract_data['trading_hours'] >= self.selection_criteria['min_trading_hours']:
+            score += 1
+        
+        # Tick value check
+        if contract_data['tick_value'] <= self.selection_criteria['max_tick_value']:
+            score += 1
+        
+        # Volatility check
+        volatility = contract_data['daily_volatility']
+        if (self.selection_criteria['min_volatility'] <= volatility <= 
+            self.selection_criteria['max_volatility']):
+            score += 1
+        
+        # Liquidity consistency check
+        if contract_data['volume_std'] / contract_data['avg_volume'] < 0.3:
+            score += 1
+        
+        return {
+            'score': score,
+            'max_score': max_score,
+            'suitability': score / max_score,
+            'recommendation': 'EXCELLENT' if score >= 5 else 'GOOD' if score >= 4 else 'FAIR' if score >= 3 else 'POOR'
+        }
+
+# Recommended futures ranked by HFT suitability:
+recommended_futures = [
+    {'symbol': 'ES', 'name': 'E-mini S&P 500', 'score': 6, 'tier': 1},
+    {'symbol': 'CL', 'name': 'Crude Oil', 'score': 6, 'tier': 1},
+    {'symbol': 'GC', 'name': 'Gold', 'score': 5, 'tier': 1},
+    {'symbol': 'NQ', 'name': 'E-mini NASDAQ', 'score': 6, 'tier': 1},
+    {'symbol': 'NG', 'name': 'Natural Gas', 'score': 5, 'tier': 2},
+    {'symbol': '6E', 'name': 'Euro FX', 'score': 5, 'tier': 2},
+    {'symbol': 'ZN', 'name': '10-Year Note', 'score': 6, 'tier': 2},
+    {'symbol': 'MES', 'name': 'Micro E-mini S&P', 'score': 5, 'tier': 3}
+]
+```
+
+---
+
+## Sentiment Analysis Integration
+
+### Free Sentiment Analysis Framework
+
+#### 1. News-Based Sentiment Analysis
+
+```python
+# File: sentiment/futures_sentiment_analyzer.py
+
+from textblob import TextBlob
+import feedparser
+from datetime import datetime, timedelta
+import logging
+
+class FuturesSentimentAnalyzer:
+    """
+    Free sentiment analysis for futures trading
+    Integrates with existing NewsAnalyzer
+    """
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        
+        # Free news sources by commodity
+        self.commodity_news_sources = {
+            'energy': {
+                'reuters': 'https://feeds.reuters.com/reuters/businessNews',
+                'oilprice': 'https://oilprice.com/rss/main',
+                'eia': 'https://www.eia.gov/rss/todayinenergy.xml'
+            },
+            'metals': {
+                'reuters': 'https://feeds.reuters.com/reuters/UKMetalsNews',
+                'kitco': 'https://www.kitco.com/rss/KitcoNews.xml',
+                'mining': 'https://www.mining.com/feed/'
+            },
+            'agriculture': {
+                'reuters': 'https://feeds.reuters.com/reuters/UKAgricultureNews',
+                'agweb': 'https://www.agweb.com/rss.xml',
+                'usda': 'https://www.usda.gov/rss/latest-releases.xml'
+            },
+            'indices': {
+                'reuters': 'https://feeds.reuters.com/reuters/businessNews',
+                'marketwatch': 'http://feeds.marketwatch.com/marketwatch/marketpulse/',
+                'cnbc': 'https://www.cnbc.com/id/100003114/device/rss/rss.html'
+            }
+        }
+        
+        # Commodity-specific keywords
+        self.commodity_keywords = {
+            'CL': ['crude', 'oil', 'wti', 'brent', 'opec', 'petroleum', 'energy'],
+            'NG': ['natural gas', 'lng', 'gas storage', 'heating', 'weather'],
+            'GC': ['gold', 'precious metals', 'safe haven', 'inflation hedge'],
+            'SI': ['silver', 'precious metals', 'industrial demand'],
+            'ES': ['s&p', 'stocks', 'equity', 'market', 'dow', 'nasdaq'],
+            'ZC': ['corn', 'grain', 'crop', 'harvest', 'planting'],
+            'ZS': ['soybean', 'oilseed', 'crush', 'export'],
+            'ZW': ['wheat', 'grain', 'crop', 'harvest']
+        }
+    
+    def get_commodity_sentiment(self, symbol, hours_back=24):
+        """
+        Get sentiment for specific commodity futures contract
+        """
+        # Determine commodity category
+        category = self._get_commodity_category(symbol)
+        
+        # Fetch news from relevant sources
+        all_news = []
+        for source_name, source_url in self.commodity_news_sources.get(category, {}).items():
+            try:
+                news_items = self._fetch_rss_news(source_url, hours_back)
+                all_news.extend(news_items)
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch from {source_name}: {e}")
+        
+        # Filter for commodity-specific news
+        relevant_news = self._filter_commodity_news(all_news, symbol)
+        
+        # Analyze sentiment
+        sentiment_score = self._calculate_sentiment_score(relevant_news)
+        
+        return {
+            'symbol': symbol,
+            'sentiment_score': sentiment_score,  # -1 to 1
+            'news_count': len(relevant_news),
+            'confidence': min(len(relevant_news) / 10.0, 1.0),
+            'signal': self._get_sentiment_signal(sentiment_score),
+            'timestamp': datetime.now()
+        }
+    
+    def _get_commodity_category(self, symbol):
+        """Map symbol to commodity category"""
+        categories = {
+            'CL': 'energy', 'NG': 'energy', 'RB': 'energy', 'HO': 'energy',
+            'GC': 'metals', 'SI': 'metals', 'HG': 'metals', 'PL': 'metals',
+            'ZC': 'agriculture', 'ZS': 'agriculture', 'ZW': 'agriculture',
+            'ES': 'indices', 'NQ': 'indices', 'YM': 'indices'
+        }
+        return categories.get(symbol, 'energy')
+    
+    def _filter_commodity_news(self, news_items, symbol):
+        """Filter news relevant to specific commodity"""
+        keywords = self.commodity_keywords.get(symbol, [])
+        relevant_news = []
+        
+        for item in news_items:
+            content_lower = item['content'].lower()
+            keyword_matches = sum(1 for kw in keywords if kw in content_lower)
+            
+            if keyword_matches > 0:
+                item['relevance_score'] = keyword_matches
+                relevant_news.append(item)
+        
+        return sorted(relevant_news, key=lambda x: x['relevance_score'], reverse=True)
+    
+    def _calculate_sentiment_score(self, news_items):
+        """Calculate aggregate sentiment score"""
+        if not news_items:
+            return 0.0
+        
+        sentiments = []
+        for item in news_items:
+            try:
+                blob = TextBlob(item['content'])
+                sentiment = blob.sentiment.polarity
+                
+                # Weight by relevance and recency
+                relevance_weight = min(item.get('relevance_score', 1) / 3.0, 1.0)
+                time_weight = self._calculate_time_weight(item.get('published'))
+                
+                weighted_sentiment = sentiment * relevance_weight * time_weight
+                sentiments.append(weighted_sentiment)
+                
+            except Exception as e:
+                self.logger.debug(f"Error calculating sentiment: {e}")
+        
+        return sum(sentiments) / len(sentiments) if sentiments else 0.0
+    
+    def _calculate_time_weight(self, pub_date):
+        """Calculate time decay weight"""
+        if not pub_date:
+            return 0.5
+        
+        hours_ago = (datetime.now() - pub_date).total_seconds() / 3600
+        
+        if hours_ago <= 1:
+            return 1.0
+        elif hours_ago <= 6:
+            return 0.8
+        elif hours_ago <= 12:
+            return 0.6
+        elif hours_ago <= 24:
+            return 0.4
+        else:
+            return 0.2
+    
+    def _get_sentiment_signal(self, sentiment_score):
+        """Convert sentiment score to trading signal"""
+        if sentiment_score > 0.3:
+            return 'BULLISH'
+        elif sentiment_score < -0.3:
+            return 'BEARISH'
+        else:
+            return 'NEUTRAL'
+    
+    def _fetch_rss_news(self, url, hours_back):
+        """Fetch news from RSS feed"""
+        feed = feedparser.parse(url)
+        news_items = []
+        cutoff_time = datetime.now() - timedelta(hours=hours_back)
+        
+        for entry in feed.entries[:50]:
+            try:
+                pub_date = None
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    pub_date = datetime(*entry.published_parsed[:6])
+                
+                if pub_date and pub_date < cutoff_time:
+                    continue
+                
+                title = getattr(entry, 'title', '')
+                summary = getattr(entry, 'summary', '')
+                
+                news_items.append({
+                    'title': title,
+                    'content': f"{title} {summary}",
+                    'published': pub_date or datetime.now(),
+                    'url': getattr(entry, 'link', '')
+                })
+            except:
+                continue
+        
+        return news_items
+```
+
+#### 2. Social Media Sentiment (Free Sources)
+
+```python
+class SocialSentimentAnalyzer:
+    """
+    Analyze social media sentiment from free sources
+    """
+    
+    def __init__(self):
+        # Reddit API (free, no key required for public data)
+        self.reddit_base = "https://www.reddit.com"
+        
+        # Twitter/X (limited free access)
+        # StockTwits (free API)
+        self.stocktwits_base = "https://api.stocktwits.com/api/2"
+    
+    def get_reddit_sentiment(self, subreddit='wallstreetbets', keyword='oil'):
+        """
+        Get sentiment from Reddit discussions
+        """
+        import praw  # Reddit API wrapper
+        
+        try:
+            # Use Reddit's JSON API (no authentication needed)
+            url = f"{self.reddit_base}/r/{subreddit}/search.json"
+            params = {
+                'q': keyword,
+                'sort': 'new',
+                'limit': 100,
+                't': 'day'
+            }
+            
+            response = requests.get(url, params=params, headers={'User-Agent': 'TradingBot/1.0'})
+            data = response.json()
+            
+            posts = data['data']['children']
+            sentiments = []
+            
+            for post in posts:
+                title = post['data']['title']
+                selftext = post['data'].get('selftext', '')
+                content = f"{title} {selftext}"
+                
+                blob = TextBlob(content)
+                sentiments.append(blob.sentiment.polarity)
+            
+            avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0
+            
+            return {
+                'sentiment': avg_sentiment,
+                'post_count': len(posts),
+                'source': 'reddit'
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Reddit sentiment error: {e}")
+            return {'sentiment': 0, 'post_count': 0, 'source': 'reddit'}
+```
+
+---
+
+## News Events Monitoring
+
+### Critical News Events by Commodity
+
+#### Energy Futures (CL, NG, RB)
+
+**Weekly Events:**
+- **Wednesday 10:30 AM ET**: EIA Crude Oil Inventory Report
+  - Impact: HIGH (±2-5% price movement)
+  - Strategy: Fade initial spike, trade mean reversion
+  
+- **Thursday 10:30 AM ET**: EIA Natural Gas Storage Report
+  - Impact: HIGH for NG (±3-8% price movement)
+  - Strategy: Momentum trading on surprise data
+
+**Monthly Events:**
+- **First Tuesday**: OPEC Monthly Oil Market Report
+- **Mid-month**: IEA Oil Market Report
+- **Monthly**: EIA Short-Term Energy Outlook
+
+**Code Implementation:**
+```python
+class EnergyNewsMonitor:
+    """Monitor energy-specific news events"""
+    
+    def __init__(self):
+        self.eia_schedule = {
+            'crude_inventory': {'day': 'Wednesday', 'time': '10:30', 'impact': 'HIGH'},
+            'gas_storage': {'day': 'Thursday', 'time': '10:30', 'impact': 'HIGH'},
+            'petroleum_status': {'day': 'Wednesday', 'time': '10:30', 'impact': 'MEDIUM'}
+        }
+    
+    def check_upcoming_events(self, current_time):
+        """Check for upcoming high-impact events"""
+        upcoming = []
+        
+        for event_name, event_info in self.eia_schedule.items():
+            event_time = self._get_next_event_time(event_info)
+            time_until = (event_time - current_time).total_seconds() / 60
+            
+            # Alert if event within 30 minutes
+            if 0 <= time_until <= 30:
+                upcoming.append({
+                    'event': event_name,
+                    'time': event_time,
+                    'minutes_until': time_until,
+                    'impact': event_info['impact'],
+                    'action': 'REDUCE_POSITIONS' if time_until < 5 else 'PREPARE'
+                })
+        
+        return upcoming
+    
+    def get_eia_data_realtime(self):
+        """Fetch EIA data immediately after release"""
+        # Implementation to fetch latest EIA report
+        pass
+```
+
+#### Metals Futures (GC, SI, HG)
+
+**Key Events:**
+- **FOMC Meetings** (8 times/year): Major gold price driver
+  - Impact: VERY HIGH (±3-10% for gold)
+  - Strategy: Trade Fed policy expectations
+  
+- **CPI/PPI Reports** (Monthly): Inflation indicators
+  - Impact: HIGH (±2-5% for gold)
+  - Strategy: Inflation hedge trading
+
+- **Dollar Index Movements**: Real-time correlation
+  - Impact: CONTINUOUS
+  - Strategy: Dollar-gold inverse correlation
+
+#### Agricultural Futures (ZC, ZS, ZW)
+
+**Key Events:**
+- **USDA Crop Reports** (Monthly):
+  - World Agricultural Supply and Demand Estimates (WASDE)
+  - Crop Production Report
+  - Impact: VERY HIGH (±5-15% price movement)
+  
+- **Weekly Export Sales** (Thursday 8:30 AM ET)
+  - Impact: MEDIUM (±1-3%)
+
+- **Planting/Harvest Progress** (Weekly during season)
+  - Impact: MEDIUM to HIGH
+
+**Code Implementation:**
+```python
+class CommodityNewsEventMonitor:
+    """
+    Comprehensive news event monitoring for all commodities
+    """
+    
+    def __init__(self):
+        self.event_calendar = self._load_event_calendar()
+        self.sentiment_analyzer = FuturesSentimentAnalyzer()
+    
+    def _load_event_calendar(self):
+        """Load economic calendar from free sources"""
+        return {
+            'energy': {
+                'eia_crude_inventory': {
+                    'schedule': 'Wednesday 10:30 AM ET',
+                    'frequency': 'weekly',
+                    'impact': 'HIGH',
+                    'affected_symbols': ['CL', 'RB', 'HO']
+                },
+                'eia_gas_storage': {
+                    'schedule': 'Thursday 10:30 AM ET',
+                    'frequency': 'weekly',
+                    'impact': 'HIGH',
+                    'affected_symbols': ['NG']
+                },
+                'opec_meeting': {
+                    'schedule': 'Variable',
+                    'frequency': 'monthly',
+                    'impact': 'VERY_HIGH',
+                    'affected_symbols': ['CL', 'RB', 'HO']
+                }
+            },
+            'metals': {
+                'fomc_meeting': {
+                    'schedule': 'Variable (8x/year)',
+                    'frequency': 'irregular',
+                    'impact': 'VERY_HIGH',
+                    'affected_symbols': ['GC', 'SI']
+                },
+                'cpi_report': {
+                    'schedule': 'Monthly ~13th, 8:30 AM ET',
+                    'frequency': 'monthly',
+                    'impact': 'HIGH',
+                    'affected_symbols': ['GC', 'SI', 'HG']
+                },
+                'nonfarm_payrolls': {
+                    'schedule': 'First Friday, 8:30 AM ET',
+                    'frequency': 'monthly',
+                    'impact': 'HIGH',
+                    'affected_symbols': ['GC', 'SI']
+                }
+            },
+            'agriculture': {
+                'usda_wasde': {
+                    'schedule': 'Monthly ~12th, 12:00 PM ET',
+                    'frequency': 'monthly',
+                    'impact': 'VERY_HIGH',
+                    'affected_symbols': ['ZC', 'ZS', 'ZW']
+                },
+                'weekly_export_sales': {
+                    'schedule': 'Thursday 8:30 AM ET',
+                    'frequency': 'weekly',
+                    'impact': 'MEDIUM',
+                    'affected_symbols': ['ZC', 'ZS', 'ZW']
+                },
+                'crop_progress': {
+                    'schedule': 'Monday 4:00 PM ET',
+                    'frequency': 'weekly_seasonal',
+                    'impact': 'MEDIUM',
+                    'affected_symbols': ['ZC', 'ZS', 'ZW']
+                }
+            }
+        }
+    
+    def get_pre_event_strategy(self, symbol, minutes_before_event=30):
+        """
+        Get trading strategy before major news event
+        """
+        upcoming_events = self.check_upcoming_events(symbol)
+        
+        if not upcoming_events:
+            return {'action': 'NORMAL_TRADING'}
+        
+        # Find nearest high-impact event
+        nearest_event = min(upcoming_events, key=lambda x: x['minutes_until'])
+        
+        if nearest_event['minutes_until'] < 5:
+            # Very close to event - close positions
+            return {
+                'action': 'CLOSE_POSITIONS',
+                'reason': f"{nearest_event['event']} in {nearest_event['minutes_until']:.0f} minutes",
+                'urgency': 'CRITICAL'
+            }
+        elif nearest_event['minutes_until'] < 15:
+            # Close to event - reduce positions
+            return {
+                'action': 'REDUCE_POSITIONS',
+                'reduction_factor': 0.5,
+                'reason': f"{nearest_event['event']} approaching",
+                'urgency': 'HIGH'
+            }
+        elif nearest_event['minutes_until'] < 30:
+            # Event approaching - tighten stops
+            return {
+                'action': 'TIGHTEN_STOPS',
+                'stop_multiplier': 0.7,
+                'reason': f"{nearest_event['event']} in {nearest_event['minutes_until']:.0f} minutes",
+                'urgency': 'MEDIUM'
+            }
+        
+        return {'action': 'NORMAL_TRADING'}
+    
+    def get_post_event_strategy(self, symbol, event_data):
+        """
+        Get trading strategy after news event
+        """
+        # Analyze actual vs expected
+        surprise_factor = self._calculate_surprise_factor(event_data)
+        
+        if abs(surprise_factor) > 2.0:
+            # Major surprise - trade momentum
+            return {
+                'action': 'TRADE_MOMENTUM',
+                'direction': 'BUY' if surprise_factor > 0 else 'SELL',
+                'confidence': min(abs(surprise_factor) / 3.0, 1.0),
+                'hold_time': 60  # Hold for 60 minutes
+            }
+        elif abs(surprise_factor) > 1.0:
+            # Moderate surprise - cautious entry
+            return {
+                'action': 'CAUTIOUS_ENTRY',
+                'direction': 'BUY' if surprise_factor > 0 else 'SELL',
+                'position_size': 0.5,  # Half normal size
+                'hold_time': 30
+            }
+        else:
+            # No surprise - fade the move
+            return {
+                'action': 'FADE_MOVE',
+                'direction': 'SELL' if surprise_factor > 0 else 'BUY',
+                'entry_delay': 15  # Wait 15 minutes
+            }
+    
+    def _calculate_surprise_factor(self, event_data):
+        """Calculate how much event surprised market"""
+        actual = event_data.get('actual')
+        expected = event_data.get('expected')
+        
+        if actual is None or expected is None:
+            return 0.0
+        
+        # Normalize by standard deviation
+        std = event_data.get('std', abs(expected) * 0.1)
+        surprise = (actual - expected) / std if std > 0 else 0
+        
+        return surprise
+```
+
+### Integration with Trading Strategy
+
+```python
+# Enhanced strategy with sentiment integration
+
+class SentimentEnhancedHFTStrategy(HFTFuturesStrategy):
+    """
+    HFT strategy enhanced with sentiment analysis
+    """
+    
+    params = (
+        # Add sentiment parameters
+        ('use_sentiment', True),
+        ('sentiment_weight', 0.3),
+        ('min_sentiment_confidence', 0.5),
+        ('sentiment_update_interval', 3600),  # 1 hour
+    ) + HFTFuturesStrategy.params
+    
+    def __init__(self):
+        super().__init__()
+        
+        if self.p.use_sentiment:
+            self.sentiment_analyzer = FuturesSentimentAnalyzer()
+            self.news_monitor = CommodityNewsEventMonitor()
+            self.last_sentiment_update = None
+            self.current_sentiment = None
+    
+    def next(self):
+        """Enhanced next() with sentiment integration"""
+        current_time = self.datas[0].datetime.datetime(0)
+        
+        # Update sentiment periodically
+        if self.p.use_sentiment:
+            if (self.last_sentiment_update is None or
+                (current_time - self.last_sentiment_update).total_seconds() > self.p.sentiment_update_interval):
+                
+                symbol = self.datas[0]._name
+                self.current_sentiment = self.sentiment_analyzer.get_commodity_sentiment(symbol)
+                self.last_sentiment_update = current_time
+        
+        # Check for upcoming news events
+        if self.p.use_sentiment:
+            pre_event_strategy = self.news_monitor.get_pre_event_strategy(symbol)
+            
+            if pre_event_strategy['action'] == 'CLOSE_POSITIONS':
+                if self.position:
+                    self.close()
+                    self.log(f"Closing positions: {pre_event_strategy['reason']}")
+                return
+            elif pre_event_strategy['action'] == 'REDUCE_POSITIONS':
+                # Reduce position size in parent strategy
+                self.p.max_position_size *= pre_event_strategy.get('reduction_factor', 0.5)
+        
+        # Get base strategy signals
+        base_signals = super().next()
+        
+        # Enhance with sentiment if available
+        if self.p.use_sentiment and self.current_sentiment:
+            base_signals = self._enhance_with_sentiment(base_signals, self.current_sentiment)
+        
+        return base_signals
+    
+    def _enhance_with_sentiment(self, signals, sentiment):
+        """Enhance trading signals with sentiment analysis"""
+        if sentiment['confidence'] < self.p.min_sentiment_confidence:
+            return signals  # Sentiment not confident enough
+        
+        sentiment_score = sentiment['sentiment_score']
+        
+        # Boost signal if sentiment agrees
+        if signals.get('action') == 'buy' and sentiment_score > 0.2:
+            signals['confidence'] = min(signals.get('confidence', 0.5) * 1.3, 1.0)
+            signals['reason'] += ' + positive_sentiment'
+        elif signals.get('action') == 'sell' and sentiment_score < -0.2:
+            signals['confidence'] = min(signals.get('confidence', 0.5) * 1.3, 1.0)
+            signals['reason'] += ' + negative_sentiment'
+        
+        # Reduce signal if sentiment disagrees
+        elif signals.get('action') == 'buy' and sentiment_score < -0.2:
+            signals['confidence'] *= 0.7
+            signals['reason'] += ' - negative_sentiment'
+        elif signals.get('action') == 'sell' and sentiment_score > 0.2:
+            signals['confidence'] *= 0.7
+            signals['reason'] += ' - positive_sentiment'
+        
+        return signals
+```
+
+### Free Sentiment Data Sources Summary
+
+| Source | Cost | Data Type | Update Frequency | API Limit |
+|--------|------|-----------|------------------|-----------|
+| **Reuters RSS** | FREE | News headlines | Real-time | No limit |
+| **BBC Business RSS** | FREE | Business news | Real-time | No limit |
+| **CNBC RSS** | FREE | Financial news | Real-time | No limit |
+| **Reddit JSON API** | FREE | Social sentiment | Real-time | 60 req/min |
+| **EIA API** | FREE | Energy reports | Weekly | No limit |
+| **USDA API** | FREE | Ag reports | Weekly/Monthly | No limit |
+| **FRED API** | FREE | Economic data | Daily | No limit |
+| **TextBlob** | FREE | Sentiment analysis | Local processing | No limit |
+
+### Required Python Libraries
+
+```python
+# Add to requirements.txt
+feedparser>=6.0.10        # RSS feed parsing (FREE)
+textblob>=0.17.1          # Sentiment analysis (FREE)
+beautifulsoup4>=4.12.0    # HTML parsing (FREE)
+fredapi>=0.5.1            # FRED API (FREE)
+yfinance>=0.2.28          # Yahoo Finance (FREE)
+requests>=2.31.0          # HTTP requests (FREE)
+pandas>=2.0.0             # Data manipulation (FREE)
+numpy>=1.24.0             # Numerical computing (FREE)
+```
+
+**Total Cost for Sentiment Analysis: $0/month** ✅
+
 ```
 
 ---
