@@ -625,8 +625,8 @@ def main():
     
     logger.info("")
     
-    # Initialize loader with correct database path (in project root) and API keys
-    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "trading_bot.db")
+    # Initialize loader with correct database path (database/trading_bot.db - same as DatabaseManager)
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "database", "trading_bot.db")
     loader = FuturesDataLoader(
         db_path=db_path,
         fred_api_key=fred_key,
