@@ -164,33 +164,34 @@ class FuturesDataLoader:
             return None
         
         try:
-            # Map symbols to FRED series
+            # Map symbols to FRED series (verified working series IDs)
             fred_series_map = {
                 'CL': {
-                    'crude_oil_price': 'DCOILWTICO',  # WTI Crude Oil Price
-                    'crude_inventory': 'WCRSTUS1',     # Crude Oil Stocks
+                    'crude_oil_price': 'DCOILWTICO',   # WTI Crude Oil Spot Price
                 },
                 'NG': {
-                    'natural_gas_price': 'DHHNGSP',    # Natural Gas Price
+                    'natural_gas_price': 'DHHNGSP',    # Henry Hub Natural Gas Spot Price
                 },
                 'GC': {
-                    'gold_price': 'GOLDAMGBD228NLBM',  # Gold Price
-                    'real_interest_rate': 'REAINTRATREARAT10Y',  # Real Interest Rate
-                    'dollar_index': 'DTWEXBGS',        # Dollar Index
+                    'gold_price': 'GOLDAMGBD228NLBM',  # Gold Fixing Price (London)
+                    'dollar_index': 'DTWEXBGS',        # Trade Weighted U.S. Dollar Index
                 },
                 'SI': {
-                    'silver_price': 'SLVPRUSD',        # Silver Price
+                    # Silver price series may not be available, skip for now
                 },
                 'HG': {
-                    'copper_price': 'PCOPPUSDM',       # Copper Price
+                    'copper_price': 'PCOPPUSDM',       # Global Price of Copper
                 },
                 'ES': {
-                    'vix': 'VIXCLS',                   # VIX Volatility Index
+                    'vix': 'VIXCLS',                   # CBOE Volatility Index: VIX
                     'sp500': 'SP500',                  # S&P 500 Index
                 },
+                'NQ': {
+                    'nasdaq': 'NASDAQCOM',             # NASDAQ Composite Index
+                },
                 'ZN': {
-                    'treasury_10y': 'DGS10',           # 10-Year Treasury Rate
-                    'fed_funds': 'DFF',                # Fed Funds Rate
+                    'treasury_10y': 'DGS10',           # 10-Year Treasury Constant Maturity Rate
+                    'fed_funds': 'DFF',                # Federal Funds Effective Rate
                 }
             }
             
@@ -275,6 +276,36 @@ class FuturesDataLoader:
         except Exception as e:
             self.logger.error(f"Error fetching EIA data for {symbol}: {e}")
             return None
+    
+    def clear_existing_data(self, symbol: str, timeframe: str) -> bool:
+        """
+        Clear existing data for a symbol/timeframe to prevent duplicates
+        
+        Args:
+            symbol: Futures symbol
+            timeframe: Timeframe
+            
+        Returns:
+            True if successful
+        """
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    DELETE FROM market_data
+                    WHERE symbol = ? AND timeframe = ?
+                """, (symbol, timeframe))
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                if deleted_count > 0:
+                    self.logger.info(f"Cleared {deleted_count} existing records for {symbol} {timeframe}")
+                
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Error clearing data for {symbol} {timeframe}: {e}")
+            return False
     
     def fetch_usda_data(self, symbol: str) -> Optional[Dict]:
         """
@@ -413,7 +444,10 @@ class FuturesDataLoader:
             self.logger.info(f"{'='*60}")
             
             for interval in intervals:
-                # Fetch price data
+                # Clear existing data to prevent duplicates
+                self.clear_existing_data(symbol, interval)
+                
+                # Fetch fresh price data
                 df = self.fetch_futures_data(symbol, start_date, end_date, interval)
                 
                 if df is not None and not df.empty:
@@ -423,7 +457,7 @@ class FuturesDataLoader:
                     if success:
                         key = f"{symbol}_{interval}"
                         results[key] = len(df)
-                        self.logger.info(f"✓ {symbol} {interval}: {len(df)} records stored")
+                        self.logger.info(f"✓ {symbol} {interval}: {len(df)} fresh records stored")
                     else:
                         self.logger.error(f"✗ {symbol} {interval}: Failed to store")
                 else:
@@ -540,35 +574,106 @@ def main():
     logger.info("Starting Futures Data Loader")
     logger.info("="*80)
     
-    # Initialize loader
-    loader = FuturesDataLoader()
+    # Load API keys from config/config.yaml
+    fred_key = None
+    eia_key = None
+    usda_key = None
     
-    # Load data for all tiers
+    try:
+        import yaml
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', 'config.yaml')
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Try multiple possible config structures
+            # Option 1: data.fred.api_key
+            fred_key = config.get('data_sources', {}).get('fred_api_key')
+            eia_key = config.get('data_sources', {}).get('eia_api_key')
+            usda_key = config.get('data_sources', {}).get('usda_api_key')
+            
+            # Option 2: fred_api_key (top level)
+            if not fred_key:
+                fred_key = config.get('fred_api_key')
+            if not eia_key:
+                eia_key = config.get('eia_api_key')
+            if not usda_key:
+                usda_key = config.get('usda_api_key')
+            
+            # Option 3: apis.fred.key
+            if not fred_key:
+                fred_key = config.get('apis', {}).get('fred', {}).get('key')
+            if not eia_key:
+                eia_key = config.get('apis', {}).get('eia', {}).get('key')
+            if not usda_key:
+                usda_key = config.get('apis', {}).get('usda', {}).get('key')
+            
+            logger.info("\nAPI Keys Status:")
+            logger.info(f"  FRED: {'✓ Loaded' if fred_key else '✗ Not found in config'}")
+            logger.info(f"  EIA:  {'✓ Loaded' if eia_key else '✗ Not found in config'}")
+            logger.info(f"  USDA: {'✓ Loaded' if usda_key else '✗ Not found in config'}")
+            
+            if not (fred_key or eia_key or usda_key):
+                logger.warning("\n⚠ No API keys found in config/config.yaml")
+                logger.warning("  System will fetch price data only (Yahoo Finance)")
+                logger.warning("  For fundamental data, add to config/config.yaml:")
+                logger.warning("    data:")
+                logger.warning("      fred:")
+                logger.warning("        api_key: YOUR_FRED_KEY")
+                logger.warning("      eia:")
+                logger.warning("        api_key: YOUR_EIA_KEY")
+                logger.warning("      usda:")
+                logger.warning("        api_key: YOUR_USDA_KEY")
+        else:
+            logger.warning(f"Config file not found: {config_path}")
+    except Exception as e:
+        logger.warning(f"Could not load API keys from config: {e}")
+        import traceback
+        logger.debug(traceback.format_exc())
+    
+    logger.info("")
+    
+    # Initialize loader with correct database path (in project root) and API keys
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "trading_bot.db")
+    loader = FuturesDataLoader(
+        db_path=db_path,
+        fred_api_key=fred_key,
+        eia_api_key=eia_key,
+        usda_api_key=usda_key
+    )
+    
+    # Load data for all tiers with fundamental data
     # Tier 1: High liquidity (recommended for HFT)
     logger.info("\n### LOADING TIER 1 FUTURES (HIGH LIQUIDITY) ###")
+    logger.info("Fetching: Price data + FRED fundamentals + EIA data")
     results_tier1 = loader.load_all_futures_data(
         start_date='2024-01-01',
         end_date=datetime.now().strftime('%Y-%m-%d'),
         intervals=['1h', '1d'],
-        tier_filter=1
+        tier_filter=1,
+        include_fundamentals=True
     )
     
     # Tier 2: Medium liquidity
     logger.info("\n### LOADING TIER 2 FUTURES (MEDIUM LIQUIDITY) ###")
+    logger.info("Fetching: Price data + FRED fundamentals + EIA data")
     results_tier2 = loader.load_all_futures_data(
         start_date='2024-01-01',
         end_date=datetime.now().strftime('%Y-%m-%d'),
         intervals=['1h', '1d'],
-        tier_filter=2
+        tier_filter=2,
+        include_fundamentals=True
     )
     
-    # Tier 3: Specialized
-    logger.info("\n### LOADING TIER 3 FUTURES (SPECIALIZED) ###")
+    # Tier 3: Specialized (agriculture with USDA data)
+    logger.info("\n### LOADING TIER 3 FUTURES (SPECIALIZED - AGRICULTURE) ###")
+    logger.info("Fetching: Price data + USDA agricultural data")
     results_tier3 = loader.load_all_futures_data(
         start_date='2024-01-01',
         end_date=datetime.now().strftime('%Y-%m-%d'),
         intervals=['1d'],  # Only daily for tier 3
-        tier_filter=3
+        tier_filter=3,
+        include_fundamentals=True
     )
     
     # Combine results
