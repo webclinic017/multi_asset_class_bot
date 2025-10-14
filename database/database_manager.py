@@ -583,6 +583,52 @@ class DatabaseManager:
             
             conn.commit()
             
+    
+    # Fundamental Data Management
+    def store_fundamental_data(self, symbol: str, data_source: str, series_name: str,
+                              series_id: str, data: pd.Series):
+        """Store fundamental data from FRED/EIA/USDA"""
+        with self.get_connection() as conn:
+            for timestamp, value in data.items():
+                try:
+                    # Convert timestamp to string
+                    timestamp_str = timestamp.strftime('%Y-%m-%d %H:%M:%S') if hasattr(timestamp, 'strftime') else str(timestamp)
+                    
+                    conn.execute("""
+                        INSERT OR REPLACE INTO fundamental_data
+                        (symbol, data_source, series_name, series_id, timestamp, value)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (symbol, data_source, series_name, series_id, timestamp_str, float(value)))
+                except Exception as e:
+                    self.logger.error(f"Error storing fundamental data for {symbol} {series_name}: {e}")
+                    continue
+            conn.commit()
+    
+    def get_fundamental_data(self, symbol: str, data_source: str = None,
+                           series_name: str = None, limit: int = 1000) -> pd.DataFrame:
+        """Get fundamental data"""
+        with self.get_connection() as conn:
+            query = "SELECT * FROM fundamental_data WHERE symbol = ?"
+            params = [symbol]
+            
+            if data_source:
+                query += " AND data_source = ?"
+                params.append(data_source)
+            
+            if series_name:
+                query += " AND series_name = ?"
+                params.append(series_name)
+            
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            
+            if not df.empty:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+            
+            return df
             self.logger.info(f"Cleaned up data older than {days_to_keep} days")
 
 if __name__ == "__main__":

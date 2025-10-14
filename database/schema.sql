@@ -278,6 +278,24 @@ CREATE TABLE IF NOT EXISTS realtime_broker_stats (
     FOREIGN KEY (session_id) REFERENCES trading_sessions(id)
 );
 
+-- Fundamental data table for FRED/EIA/USDA data
+CREATE TABLE IF NOT EXISTS fundamental_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol VARCHAR(20) NOT NULL,
+    data_source VARCHAR(20) NOT NULL, -- 'FRED', 'EIA', 'USDA'
+    series_name VARCHAR(100) NOT NULL,
+    series_id VARCHAR(100),
+    timestamp TIMESTAMP NOT NULL,
+    value DECIMAL(15,6),
+    metadata TEXT, -- JSON string for additional data
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol, data_source, series_name, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fundamental_data_symbol ON fundamental_data(symbol);
+CREATE INDEX IF NOT EXISTS idx_fundamental_data_source ON fundamental_data(data_source);
+CREATE INDEX IF NOT EXISTS idx_fundamental_data_timestamp ON fundamental_data(timestamp);
+
 -- Backtest results table (for historical analysis)
 CREATE TABLE IF NOT EXISTS backtest_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

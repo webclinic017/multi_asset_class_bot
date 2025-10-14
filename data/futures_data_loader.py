@@ -164,34 +164,23 @@ class FuturesDataLoader:
             return None
         
         try:
-            # Map symbols to FRED series (verified working series IDs)
+            # Map symbols to FRED series (SIMPLIFIED - only most reliable series)
             fred_series_map = {
                 'CL': {
-                    'crude_oil_price': 'DCOILWTICO',   # WTI Crude Oil Spot Price
+                    'wti_price': 'DCOILWTICO',         # WTI Crude Oil Spot Price
                 },
                 'NG': {
-                    'natural_gas_price': 'DHHNGSP',    # Henry Hub Natural Gas Spot Price
+                    'gas_price': 'DHHNGSP',            # Henry Hub Natural Gas Spot Price
                 },
                 'GC': {
-                    'gold_price': 'GOLDAMGBD228NLBM',  # Gold Fixing Price (London)
-                    'dollar_index': 'DTWEXBGS',        # Trade Weighted U.S. Dollar Index
-                },
-                'SI': {
-                    # Silver price series may not be available, skip for now
-                },
-                'HG': {
-                    'copper_price': 'PCOPPUSDM',       # Global Price of Copper
+                    # Skip gold - series ID may be incorrect
                 },
                 'ES': {
                     'vix': 'VIXCLS',                   # CBOE Volatility Index: VIX
-                    'sp500': 'SP500',                  # S&P 500 Index
-                },
-                'NQ': {
-                    'nasdaq': 'NASDAQCOM',             # NASDAQ Composite Index
                 },
                 'ZN': {
-                    'treasury_10y': 'DGS10',           # 10-Year Treasury Constant Maturity Rate
-                    'fed_funds': 'DFF',                # Federal Funds Effective Rate
+                    'treasury_10y': 'DGS10',           # 10-Year Treasury Rate
+                    'fed_funds': 'DFF',                # Federal Funds Rate
                 }
             }
             
@@ -467,11 +456,21 @@ class FuturesDataLoader:
             if include_fundamentals:
                 self.logger.info(f"\nFetching fundamental data for {symbol}...")
                 
-                # Fetch FRED data
+                # Fetch and store FRED data
                 fred_data = self.fetch_fred_data(symbol)
                 if fred_data:
-                    self.logger.info(f"✓ FRED data: {len(fred_data)} series fetched")
-                    # Store as metadata (could be stored in separate table if needed)
+                    for series_name, series_data in fred_data.items():
+                        try:
+                            self.db_manager.store_fundamental_data(
+                                symbol=symbol,
+                                data_source='FRED',
+                                series_name=series_name,
+                                series_id=series_name,
+                                data=series_data
+                            )
+                            self.logger.info(f"✓ FRED {series_name}: {len(series_data)} points stored in DB")
+                        except Exception as e:
+                            self.logger.warning(f"Could not store FRED {series_name}: {e}")
                     results[f"{symbol}_FRED"] = len(fred_data)
                 
                 # Fetch EIA data (for energy commodities)
@@ -479,16 +478,12 @@ class FuturesDataLoader:
                 if eia_data:
                     self.logger.info(f"✓ EIA data: {len(eia_data)} series fetched")
                     results[f"{symbol}_EIA"] = len(eia_data)
-                else:
-                    self.logger.debug(f"  No EIA data available for {symbol}")
                 
                 # Fetch USDA data (for agricultural commodities)
                 usda_data = self.fetch_usda_data(symbol)
                 if usda_data:
                     self.logger.info(f"✓ USDA data: {len(usda_data)} series fetched")
                     results[f"{symbol}_USDA"] = len(usda_data)
-                else:
-                    self.logger.debug(f"  No USDA data available for {symbol}")
         
         return results
     
@@ -617,13 +612,10 @@ def main():
                 logger.warning("\n⚠ No API keys found in config/config.yaml")
                 logger.warning("  System will fetch price data only (Yahoo Finance)")
                 logger.warning("  For fundamental data, add to config/config.yaml:")
-                logger.warning("    data:")
-                logger.warning("      fred:")
-                logger.warning("        api_key: YOUR_FRED_KEY")
-                logger.warning("      eia:")
-                logger.warning("        api_key: YOUR_EIA_KEY")
-                logger.warning("      usda:")
-                logger.warning("        api_key: YOUR_USDA_KEY")
+                logger.warning("    data_sources:")
+                logger.warning("      fred_api_key: YOUR_FRED_KEY")
+                logger.warning("      eia_api_key: YOUR_EIA_KEY")
+                logger.warning("      usda_api_key: YOUR_USDA_KEY")
         else:
             logger.warning(f"Config file not found: {config_path}")
     except Exception as e:
