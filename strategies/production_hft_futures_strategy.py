@@ -232,7 +232,7 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
             self.close()
             self.daily_trades += 1
     
-    def _calculate_position_size(self) -> float:
+    def _calculate_position_size(self) -> int:
         """
         Calculate position size based on account value and risk parameters
         
@@ -241,11 +241,11 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
         For $100k account with 10% risk and 10-point stop:
         position_size = ($100,000 * 0.10) / (10 * $50) = $10,000 / $500 = 20 contracts
         
-        But we cap it at reasonable levels for HFT (0.1-2.0 contracts)
+        Returns integer number of contracts (minimum 1)
         """
         account_value = self.broker.getvalue()
         
-        # Calculate risk amount
+        # Calculate risk amount (10% of account)
         risk_amount = account_value * self.p.risk_per_trade
         
         # Calculate position size
@@ -255,22 +255,25 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
         if denominator > 0:
             position_size = risk_amount / denominator
         else:
-            position_size = 0.1  # Default fallback
+            position_size = 1  # Default fallback
         
         # For micro contracts (MES), multiply by 10 (since MES is 1/10th of ES)
         if self.p.use_micro_contracts:
             position_size *= 10
         
-        # Cap position size for HFT strategies (0.1 to 2.0 contracts for standard ES)
-        # This prevents over-leveraging while allowing meaningful positions
-        min_size = 0.1
-        max_size = 2.0
+        # Cap position size for HFT strategies
+        # For $100k account: max 2 contracts to limit risk
+        max_size = 2
         
-        position_size = max(min_size, min(position_size, max_size))
+        position_size = min(position_size, max_size)
+        
+        # CRITICAL: Always trade at least 1 contract
+        # Backtrader requires integer contract sizes for futures
+        position_size = max(1, int(round(position_size)))
         
         if self.p.printlog:
             self.log(f"Position sizing: Account=${account_value:.2f}, Risk=${risk_amount:.2f}, "
-                   f"Size={position_size:.4f} contracts")
+                   f"Calculated={risk_amount/denominator:.2f}, Final Size={position_size} contracts")
         
         return position_size
     
@@ -316,17 +319,23 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
                 'reason': 'momentum_down'
             }
         
-        # Exit signal if in position
+        # Exit signal if in position - using POINTS for futures
         if self.position:
-            # Simple profit target / stop loss
+            # Calculate profit/loss in points
             if self.position.size > 0:  # Long position
-                pnl_pct = (current_price - self.position.price) / self.position.price
-                if pnl_pct >= 0.003 or pnl_pct <= -0.001:
-                    return {'action': 'exit', 'confidence': 1.0, 'reason': 'target_hit'}
+                points_pnl = current_price - self.position.price
+                # Take profit at 20 points (2x stop loss), stop loss at -10 points
+                if points_pnl >= (self.p.stop_loss_points * 2):
+                    return {'action': 'exit', 'confidence': 1.0, 'reason': 'take_profit_hit'}
+                elif points_pnl <= -self.p.stop_loss_points:
+                    return {'action': 'exit', 'confidence': 1.0, 'reason': 'stop_loss_hit'}
             else:  # Short position
-                pnl_pct = (self.position.price - current_price) / self.position.price
-                if pnl_pct >= 0.003 or pnl_pct <= -0.001:
-                    return {'action': 'exit', 'confidence': 1.0, 'reason': 'target_hit'}
+                points_pnl = self.position.price - current_price
+                # Take profit at 20 points (2x stop loss), stop loss at -10 points
+                if points_pnl >= (self.p.stop_loss_points * 2):
+                    return {'action': 'exit', 'confidence': 1.0, 'reason': 'take_profit_hit'}
+                elif points_pnl <= -self.p.stop_loss_points:
+                    return {'action': 'exit', 'confidence': 1.0, 'reason': 'stop_loss_hit'}
         
         return {'action': 'hold', 'confidence': 0, 'reason': 'no_signal'}
     
