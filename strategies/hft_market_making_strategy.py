@@ -51,6 +51,9 @@ class MarketMakingHFTStrategy(bt.Strategy):
         ('volatility_window', 20),
         ('volatility_adjustment', True),
         
+        # Capital management
+        ('initial_capital', 100000),  # Initial capital (ignored, for compatibility)
+        
         # Logging
         ('printlog', False),
     )

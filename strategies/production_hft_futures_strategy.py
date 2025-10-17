@@ -62,6 +62,9 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
         ('max_latency_ms', 100),
         ('max_slippage_bps', 1),
         
+        # Capital management
+        ('initial_capital', 100000),  # Initial capital (ignored, for compatibility)
+        
         # Logging
         ('printlog', False),
     )

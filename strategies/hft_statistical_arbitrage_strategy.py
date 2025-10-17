@@ -47,6 +47,9 @@ class StatisticalArbitrageHFTStrategy(bt.Strategy):
         ('adaptive_threshold', True),  # Enable adaptive threshold adjustment
         ('pairs_update_interval', 3600),  # Pairs update interval in seconds
         
+        # Capital management
+        ('initial_capital', 100000),  # Initial capital (ignored, for compatibility)
+        
         # Logging
         ('printlog', False),
     )

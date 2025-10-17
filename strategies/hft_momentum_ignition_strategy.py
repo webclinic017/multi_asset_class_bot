@@ -54,6 +54,9 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
         ('target_sharpe', 2.3),
         ('target_daily_return', 0.012),
         
+        # Capital management
+        ('initial_capital', 100000),  # Initial capital (ignored, for compatibility)
+        
         # Logging
         ('printlog', False),
     )
