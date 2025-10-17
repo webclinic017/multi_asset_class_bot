@@ -27,11 +27,14 @@ class StatisticalArbitrageHFTStrategy(bt.Strategy):
         ('entry_threshold', 2.0),  # Z-score
         ('exit_threshold', 0.5),
         ('correlation_threshold', 0.7),
+        ('min_relationship_strength', 0.7),  # Minimum correlation strength
+        ('max_holding_time', 300),  # Maximum holding time in seconds
         
         # Risk management
         ('max_position_size', 10),
         ('max_daily_trades', 500),
         ('circuit_breaker', 0.08),  # 8% drawdown
+        ('risk_limit', 0.01),  # Risk limit as percentage
         
         # Performance targets
         ('target_sharpe', 2.5),
@@ -39,6 +42,10 @@ class StatisticalArbitrageHFTStrategy(bt.Strategy):
         
         # Pair trading
         ('hedge_ratio_update_freq', 20),  # Update hedge ratio every N bars
+        ('cointegration_test_period', 50),  # Period for cointegration testing
+        ('zscore_smoothing', 5),  # Z-score smoothing period
+        ('adaptive_threshold', True),  # Enable adaptive threshold adjustment
+        ('pairs_update_interval', 3600),  # Pairs update interval in seconds
         
         # Logging
         ('printlog', False),

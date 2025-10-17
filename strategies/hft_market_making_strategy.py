@@ -25,15 +25,23 @@ class MarketMakingHFTStrategy(bt.Strategy):
         # Market making parameters
         ('spread_width', 0.0002),  # 2 basis points
         ('min_spread', 0.0001),  # Minimum spread (1 basis point)
+        ('max_spread', 0.001),  # Maximum spread (10 basis points)
         ('max_inventory', 10),
         ('quote_refresh_time', 5),  # seconds
         ('inventory_skew_factor', 0.5),
         ('inventory_rebalance_threshold', 0.8),  # Rebalance at 80% of max inventory
+        ('volatility_lookback', 20),  # Volatility lookback period
+        ('adaptive_spread', True),  # Enable adaptive spread adjustment
+        
+        # Order management
+        ('max_orders_per_side', 3),  # Maximum orders per side
+        ('order_size', 1),  # Default order size
         
         # Risk management
         ('max_position_size', 10),
         ('max_daily_trades', 500),
         ('circuit_breaker', 0.05),  # 5% drawdown
+        ('risk_limit', 0.02),  # Risk limit as percentage
         
         # Performance targets
         ('target_sharpe', 2.0),

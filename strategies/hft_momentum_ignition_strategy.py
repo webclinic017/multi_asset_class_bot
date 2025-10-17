@@ -27,14 +27,28 @@ class MomentumIgnitionHFTStrategy(bt.Strategy):
         ('volume_threshold', 1.5),  # 1.5x average volume
         ('profit_target', 0.003),  # 0.3%
         ('stop_loss', 0.001),  # 0.1%
+        ('ignition_volume', 50),  # Volume for ignition detection
+        ('trade_interval', 0.1),  # Minimum interval between trades
+        ('max_holding_time', 30),  # Maximum holding time in seconds
         
         # Volume analysis
         ('volume_lookback', 100),
+        ('volume_surge_threshold', 2.0),  # Volume surge multiplier
+        ('momentum_decay_time', 15),  # Momentum decay time in seconds
+        ('min_market_volume', 1000),  # Minimum market volume threshold
+        
+        # Advanced parameters
+        ('max_ignition_trades', 10),  # Maximum ignition trades per session
+        ('cooldown_period', 300),  # Cooldown period in seconds
+        ('volume_multiplier', 2.0),  # Volume multiplier for sizing
+        ('adaptive_ignition', True),  # Enable adaptive ignition detection
+        ('max_trades_per_minute', 10),  # Maximum trades per minute
         
         # Risk management
         ('max_position_size', 10),
         ('max_daily_trades', 500),
         ('circuit_breaker', 0.10),  # 10% drawdown
+        ('risk_limit', 0.01),  # Risk limit as percentage
         
         # Performance targets
         ('target_sharpe', 2.3),
