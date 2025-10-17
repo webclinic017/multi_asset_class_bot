@@ -24,6 +24,7 @@ class MarketMakingHFTStrategy(bt.Strategy):
     params = (
         # Market making parameters
         ('spread_width', 0.0002),  # 2 basis points
+        ('min_spread', 0.0001),  # Minimum spread (1 basis point)
         ('max_inventory', 10),
         ('quote_refresh_time', 5),  # seconds
         ('inventory_skew_factor', 0.5),
