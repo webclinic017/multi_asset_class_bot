@@ -8,6 +8,7 @@ import backtrader as bt
 import numpy as np
 from datetime import datetime, timedelta
 from collections import deque
+from typing import Dict
 import logging
 
 # Import sub-strategies
