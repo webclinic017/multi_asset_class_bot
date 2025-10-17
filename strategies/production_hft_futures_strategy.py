@@ -47,6 +47,12 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
         ('max_daily_trades', 500),
         ('circuit_breaker', 0.10),
         ('max_order_rate', 10),  # orders per second
+        ('risk_per_trade', 0.10),  # 10% risk per trade
+        ('stop_loss_points', 10),  # Stop loss in points
+        
+        # Futures contract specifications
+        ('contract_multiplier', 50),  # ES futures: $50 per point
+        ('use_micro_contracts', False),  # Use MES (micro) instead of ES
         
         # Sentiment integration
         ('use_sentiment', True),
@@ -108,7 +114,11 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
             'order_flow': 0
         }
         
-        self.logger.info("ProductionHFTFuturesStrategy initialized")
+        # Position sizing
+        self.current_position_size = 0
+        
+        self.logger.info("ProductionHFTFuturesStrategy initialized with dynamic position sizing")
+        self.logger.info(f"Risk per trade: {self.p.risk_per_trade*100:.1f}%, Stop loss: {self.p.stop_loss_points} points")
     
     def next(self):
         """
@@ -193,22 +203,27 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
         if self.p.use_sentiment and self.current_sentiment:
             signal = self._enhance_with_sentiment(signal, self.current_sentiment)
         
-        # Execute signal
+        # Calculate position size based on account value and risk
+        position_size = self._calculate_position_size()
+        
+        # Execute signal with dynamic position sizing
         if signal['action'] == 'buy' and not self.position:
             if self.p.printlog:
-                self.log(f"BUY SIGNAL: {signal['reason']}, Confidence: {signal['confidence']:.2f}")
+                self.log(f"BUY SIGNAL: {signal['reason']}, Confidence: {signal['confidence']:.2f}, Size: {position_size:.4f}")
             
-            self.buy(size=1)
-            self.daily_trades += 1
-            self.recent_orders.append(current_time)
+            if position_size > 0:
+                self.buy(size=position_size)
+                self.daily_trades += 1
+                self.recent_orders.append(current_time)
             
         elif signal['action'] == 'sell' and not self.position:
             if self.p.printlog:
-                self.log(f"SELL SIGNAL: {signal['reason']}, Confidence: {signal['confidence']:.2f}")
+                self.log(f"SELL SIGNAL: {signal['reason']}, Confidence: {signal['confidence']:.2f}, Size: {position_size:.4f}")
             
-            self.sell(size=1)
-            self.daily_trades += 1
-            self.recent_orders.append(current_time)
+            if position_size > 0:
+                self.sell(size=position_size)
+                self.daily_trades += 1
+                self.recent_orders.append(current_time)
             
         elif signal['action'] == 'exit' and self.position:
             if self.p.printlog:
@@ -216,6 +231,48 @@ class ProductionHFTFuturesStrategy(bt.Strategy):
             
             self.close()
             self.daily_trades += 1
+    
+    def _calculate_position_size(self) -> float:
+        """
+        Calculate position size based on account value and risk parameters
+        
+        Formula: position_size = (account_value * risk_per_trade) / (stop_loss_points * contract_multiplier)
+        
+        For $100k account with 10% risk and 10-point stop:
+        position_size = ($100,000 * 0.10) / (10 * $50) = $10,000 / $500 = 20 contracts
+        
+        But we cap it at reasonable levels for HFT (0.1-2.0 contracts)
+        """
+        account_value = self.broker.getvalue()
+        
+        # Calculate risk amount
+        risk_amount = account_value * self.p.risk_per_trade
+        
+        # Calculate position size
+        # position_size = risk_amount / (stop_loss_points * contract_multiplier)
+        denominator = self.p.stop_loss_points * self.p.contract_multiplier
+        
+        if denominator > 0:
+            position_size = risk_amount / denominator
+        else:
+            position_size = 0.1  # Default fallback
+        
+        # For micro contracts (MES), multiply by 10 (since MES is 1/10th of ES)
+        if self.p.use_micro_contracts:
+            position_size *= 10
+        
+        # Cap position size for HFT strategies (0.1 to 2.0 contracts for standard ES)
+        # This prevents over-leveraging while allowing meaningful positions
+        min_size = 0.1
+        max_size = 2.0
+        
+        position_size = max(min_size, min(position_size, max_size))
+        
+        if self.p.printlog:
+            self.log(f"Position sizing: Account=${account_value:.2f}, Risk=${risk_amount:.2f}, "
+                   f"Size={position_size:.4f} contracts")
+        
+        return position_size
     
     def _extract_symbol(self) -> str:
         """Extract symbol from data feed"""
