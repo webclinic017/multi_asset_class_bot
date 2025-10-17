@@ -27,6 +27,7 @@ class MarketMakingHFTStrategy(bt.Strategy):
         ('max_inventory', 10),
         ('quote_refresh_time', 5),  # seconds
         ('inventory_skew_factor', 0.5),
+        ('inventory_rebalance_threshold', 0.8),  # Rebalance at 80% of max inventory
         
         # Risk management
         ('max_position_size', 10),
@@ -181,7 +182,7 @@ class MarketMakingHFTStrategy(bt.Strategy):
                 self.last_quote_time = current_time
         
         # Inventory rebalancing - close positions if inventory exceeds thresholds
-        if abs(self.current_inventory) >= self.p.max_inventory * 0.8:
+        if abs(self.current_inventory) >= self.p.max_inventory * self.p.inventory_rebalance_threshold:
             if self.p.printlog:
                 self.log(f"Rebalancing inventory: {self.current_inventory}")
             
