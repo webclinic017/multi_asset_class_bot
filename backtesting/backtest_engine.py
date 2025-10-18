@@ -34,6 +34,11 @@ from strategies.market_making_hft_strategy import MarketMakingHFTStrategy
 from strategies.statistical_arbitrage_hft_strategy import StatisticalArbitrageHFTStrategy
 from strategies.latency_arbitrage_hft_strategy import LatencyArbitrageHFTStrategy
 from strategies.momentum_ignition_hft_strategy import MomentumIgnitionHFTStrategy
+from strategies.hft_market_making_strategy import MarketMakingHFTStrategy as NewMarketMakingHFTStrategy
+from strategies.hft_statistical_arbitrage_strategy import StatisticalArbitrageHFTStrategy as NewStatArbHFTStrategy
+from strategies.hft_momentum_ignition_strategy import MomentumIgnitionHFTStrategy as NewMomentumHFTStrategy
+from strategies.hft_order_flow_strategy import OrderFlowImbalanceHFTStrategy
+from strategies.production_hft_futures_strategy import ProductionHFTFuturesStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
 from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
@@ -349,6 +354,17 @@ class BacktestEngine:
             strategy_class = LatencyArbitrageHFTStrategy
         elif strategy_name == 'MomentumIgnitionHFTStrategy':
             strategy_class = MomentumIgnitionHFTStrategy
+        # New HFT Futures Strategies
+        elif strategy_name == 'NewMarketMakingHFTStrategy':
+            strategy_class = NewMarketMakingHFTStrategy
+        elif strategy_name == 'NewStatisticalArbitrageHFTStrategy':
+            strategy_class = NewStatArbHFTStrategy
+        elif strategy_name == 'NewMomentumIgnitionHFTStrategy':
+            strategy_class = NewMomentumHFTStrategy
+        elif strategy_name == 'OrderFlowImbalanceHFTStrategy':
+            strategy_class = OrderFlowImbalanceHFTStrategy
+        elif strategy_name == 'ProductionHFTFuturesStrategy':
+            strategy_class = ProductionHFTFuturesStrategy
         else:
             raise ValueError(f"Unknown strategy: {strategy_name}")
             

@@ -478,49 +478,31 @@ const Backtesting = () => {
               <option value="ETH_USD">ETH/USD (Crypto)</option>
               <option value="SOL_USD">SOL/USD (Crypto)</option>
 
-              {/* Futures - Energy */}
-              <option value="WTI_CRUDE_OIL">WTI Crude Oil (Futures)</option>
-              <option value="BRENT_CRUDE_OIL">Brent Crude Oil (Futures)</option>
-              <option value="NATURAL_GAS">Natural Gas (Futures)</option>
+              {/* Futures - Tier 1: High Liquidity (Best for HFT) */}
+              <optgroup label="🔥 Tier 1 Futures - High Liquidity (HFT Recommended)">
+                <option value="ES">ES - E-mini S&P 500</option>
+                <option value="NQ">NQ - E-mini NASDAQ</option>
+                <option value="CL">CL - Crude Oil (WTI)</option>
+                <option value="GC">GC - Gold</option>
+                <option value="YM">YM - E-mini Dow</option>
+              </optgroup>
 
-              {/* Futures - Metals */}
-              <option value="GOLD">Gold (Futures)</option>
-              <option value="SILVER">Silver (Futures)</option>
-              <option value="COPPER">Copper (Futures)</option>
-              <option value="PLATINUM">Platinum (Futures)</option>
-              <option value="PALLADIUM">Palladium (Futures)</option>
+              {/* Futures - Tier 2: Medium Liquidity */}
+              <optgroup label="⚡ Tier 2 Futures - Medium Liquidity">
+                <option value="NG">NG - Natural Gas</option>
+                <option value="SI">SI - Silver</option>
+                <option value="HG">HG - Copper</option>
+                <option value="ZN">ZN - 10-Year T-Note</option>
+                <option value="RB">RB - RBOB Gasoline</option>
+                <option value="HO">HO - Heating Oil</option>
+              </optgroup>
 
-              {/* Futures - Agriculture */}
-              <option value="CORN">Corn (Futures)</option>
-              <option value="WHEAT">Wheat (Futures)</option>
-              <option value="SOYBEANS">Soybeans (Futures)</option>
-              <option value="COFFEE">Coffee (Futures)</option>
-              <option value="COTTON">Cotton (Futures)</option>
-              <option value="SUGAR">Sugar (Futures)</option>
-
-              {/* Futures - Livestock */}
-              <option value="LIVE_CATTLE">Live Cattle (Futures)</option>
-              <option value="FEEDER_CATTLE">Feeder Cattle (Futures)</option>
-              <option value="LEAN_HOGS">Lean Hogs (Futures)</option>
-
-              {/* Futures - Financial */}
-              <option value="E_MINI_S&P">E-mini S&P 500 (Futures)</option>
-              <option value="E_MINI_NASDAQ">E-mini Nasdaq-100 (Futures)</option>
-              <option value="E_MINI_RUSSELL">E-mini Russell 2000 (Futures)</option>
-              <option value="E_MINI_DOW">E-mini Dow Jones (Futures)</option>
-              <option value="T_BOND">30-Year T-Bond (Futures)</option>
-              <option value="T_NOTE">10-Year T-Note (Futures)</option>
-              <option value="FIVE_YEAR">5-Year T-Note (Futures)</option>
-              <option value="TWO_YEAR">2-Year T-Note (Futures)</option>
-
-              {/* Currency Futures */}
-              <option value="EURO_FX">Euro FX (Futures)</option>
-              <option value="BRITISH_POUND">British Pound (Futures)</option>
-              <option value="JAPANESE_YEN">Japanese Yen (Futures)</option>
-              <option value="AUSTRALIAN_DOLLAR">Australian Dollar (Futures)</option>
-              <option value="CANADIAN_DOLLAR">Canadian Dollar (Futures)</option>
-              <option value="NEW_ZEALAND_DOLLAR">New Zealand Dollar (Futures)</option>
-              <option value="SWISS_FRANC">Swiss Franc (Futures)</option>
+              {/* Futures - Tier 3: Specialized */}
+              <optgroup label="📊 Tier 3 Futures - Specialized">
+                <option value="ZC">ZC - Corn</option>
+                <option value="ZS">ZS - Soybeans</option>
+                <option value="ZW">ZW - Wheat</option>
+              </optgroup>
             </Select>
           </FormGroup>
           
