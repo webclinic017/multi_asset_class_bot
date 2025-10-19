@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchSentiment, updateSentiment } from '../../store/slices/backtestingSlice';
+import SentimentIndicator from '../../components/Sentiment/SentimentIndicator';
 
 const BacktestingContainer = styled.div`
   padding: 20px;
@@ -192,6 +195,9 @@ const MetricLabel = styled.div`
 `;
 
 const Backtesting = () => {
+  const dispatch = useDispatch();
+  const { sentiment, sentimentLoading, sentimentError } = useSelector(state => state.backtesting);
+  
   const [sessions, setSessions] = useState([]);
   const [strategies, setStrategies] = useState([]);
   const [sessionStatus, setSessionStatus] = useState({});
@@ -207,9 +213,15 @@ const Backtesting = () => {
   });
 
   useEffect(() => {
-    fetchSessions();
+    fetchSessionsData();
     fetchStrategies();
     setupWebSocket();
+    
+    // Fetch initial sentiment for default symbol
+    if (formData.symbol) {
+      const symbolForSentiment = formData.symbol.replace('_', '');
+      dispatch(fetchSentiment(symbolForSentiment));
+    }
     
     // Cleanup WebSocket on unmount
     return () => {
@@ -218,6 +230,14 @@ const Backtesting = () => {
       }
     };
   }, []);
+
+  // Fetch sentiment when symbol changes
+  useEffect(() => {
+    if (formData.symbol) {
+      const symbolForSentiment = formData.symbol.replace('_', '');
+      dispatch(fetchSentiment(symbolForSentiment));
+    }
+  }, [formData.symbol, dispatch]);
 
   const setupWebSocket = () => {
     try {
@@ -238,12 +258,16 @@ const Backtesting = () => {
          if (data.type === 'backtest_completed' || data.type === 'backtest_failed') {
            console.log('Backtest status update received, refreshing sessions...');
            // Refresh sessions when backtest completes
-           setTimeout(fetchSessions, 1000);
+           setTimeout(fetchSessionsData, 1000);
          } else if (data.type === 'backtest_status') {
            setSessionStatus(prevStatus => ({
              ...prevStatus,
              [data.session_id]: data.status,
            }));
+         } else if (data.type === 'sentiment_update') {
+           // Update sentiment from WebSocket
+           console.log('Sentiment update received:', data.sentiment);
+           dispatch(updateSentiment(data.sentiment));
          }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -268,7 +292,7 @@ const Backtesting = () => {
     }
   };
 
-  const fetchSessions = async () => {
+  const fetchSessionsData = async () => {
     try {
       // Add cache-busting parameter to ensure fresh data
       const timestamp = new Date().getTime();
@@ -339,7 +363,7 @@ const Backtesting = () => {
       [name]: name === 'initial_capital' ? parseFloat(value) : value
     }));
     
-    // Reset strategy selection when symbol changes
+    // Reset strategy selection and fetch sentiment when symbol changes
     if (name === 'symbol') {
       setFormData(prev => ({
         ...prev,
@@ -384,7 +408,7 @@ const Backtesting = () => {
       
       // Refresh sessions immediately to show the new running session
       setTimeout(() => {
-        fetchSessions();
+        fetchSessionsData();
       }, 1000);
     } catch (error) {
       console.error('Error running backtest:', error);
@@ -433,14 +457,17 @@ const Backtesting = () => {
             WebSocket: {wsConnected ? 'Connected' : 'Disconnected'}
           </div>
         </div>
-        <Button onClick={fetchSessions} style={{ padding: '8px 16px', fontSize: '13px' }}>
-          🔄 Refresh Results
-        </Button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <Button onClick={fetchSessionsData} style={{ padding: '8px 16px', fontSize: '13px' }}>
+            🔄 Refresh Results
+          </Button>
+        </div>
       </Header>
 
-      <Card>
-        <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines)</CardTitle>
-        <FormGrid>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+        <Card>
+          <CardTitle>🚀 Run Real Backtest (GPU/Backtrader Engines)</CardTitle>
+          <FormGrid>
           <FormGroup>
             <Label>Strategy</Label>
             <Select
@@ -555,10 +582,19 @@ const Backtesting = () => {
           </FormGroup>
         </FormGrid>
         
-        <Button onClick={handleRunBacktest} disabled={loading}>
-          {loading ? '⚡ Running Real Backtest...' : '🚀 Run Real Backtest (No Simulation)'}
-        </Button>
-      </Card>
+          <Button onClick={handleRunBacktest} disabled={loading}>
+            {loading ? '⚡ Running Real Backtest...' : '🚀 Run Real Backtest (No Simulation)'}
+          </Button>
+        </Card>
+
+        <Card>
+          <SentimentIndicator
+            sentiment={sentiment}
+            loading={sentimentLoading}
+            error={sentimentError}
+          />
+        </Card>
+      </div>
 
       <MainContent>
         <Card>
