@@ -644,17 +644,74 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             logger.info(f"No futures data found in database for {actual_symbol}, attempting to fetch from IBKR TWS...")
             try:
                 from data.data_feed import DBDataFeed
-                db_feed = DBDataFeed(config)
+                from datetime import datetime
+                
+                # Determine the correct futures contract symbol
+                # Futures contracts need month code + year (e.g., ESZ4 for ES Dec 2024)
+                contract_symbol = actual_symbol
+                
+                # Check if symbol is just the root (2-3 chars like ES, CL, NG)
+                if len(actual_symbol) <= 3:
+                    logger.info(f"Converting root symbol {actual_symbol} to specific futures contract...")
+                    
+                    # Get current date for contract determination
+                    now = datetime.now()
+                    current_month = now.month
+                    current_year = now.year
+                    
+                    # Futures contract month codes (quarterly contracts for most futures)
+                    # H=March, M=June, U=September, Z=December
+                    month_codes = {
+                        3: 'H',   # March
+                        6: 'M',   # June
+                        9: 'U',   # September
+                        12: 'Z'   # December
+                    }
+                    
+                    # Find the next quarterly contract month
+                    next_contract_month = None
+                    for month in sorted(month_codes.keys()):
+                        if month >= current_month:
+                            next_contract_month = month
+                            break
+                    
+                    # If we're past December, use next year's March contract
+                    if next_contract_month is None:
+                        next_contract_month = 3
+                        current_year += 1
+                    
+                    contract_code = month_codes[next_contract_month]
+                    year_code = str(current_year)[-1]  # Last digit of year (2024 -> 4)
+                    
+                    # Build contract symbol (e.g., ES + Z + 4 = ESZ4)
+                    contract_symbol = f"{actual_symbol}{contract_code}{year_code}"
+                    logger.info(f"Determined futures contract: {contract_symbol} (month: {next_contract_month}, year: {current_year})")
+                
+                # Fetch data using the specific contract
+                db_feed = DBDataFeed(config_s)
                 df = db_feed.get_futures_data(
-                    actual_symbol,
+                    contract_symbol,
                     actual_timeframe,
                     backtest_request.start_date,
                     backtest_request.end_date
                 )
-                logger.info(f"Successfully fetched {len(df)} candles from IBKR for {actual_symbol}")
+                
+                if not df.empty:
+                    logger.info(f"Successfully fetched {len(df)} candles from IBKR for {contract_symbol}")
+                    
+                    # Save to database using the root symbol for future backtests
+                    try:
+                        db_manager.store_market_data(actual_symbol, actual_timeframe, df)
+                        logger.info(f"Saved {len(df)} candles to database as {actual_symbol}")
+                    except Exception as save_error:
+                        logger.warning(f"Could not save data to database: {save_error}")
+                else:
+                    logger.warning(f"IBKR returned empty dataframe for {contract_symbol}")
+                    
             except Exception as ibkr_error:
                 logger.error(f"Failed to fetch futures data from IBKR: {ibkr_error}")
-                raise Exception(f"No market data available for {actual_symbol} in database and IBKR fetch failed")
+                logger.error(f"Make sure IBKR TWS/Gateway is running on {config_s.get('ibkr', {}).get('host', '127.0.0.1')}:{config_s.get('ibkr', {}).get('port', 7497)}")
+                raise Exception(f"No market data available for {actual_symbol} in database and IBKR fetch failed: {ibkr_error}")
 
         if df.empty:
             raise Exception(f"No market data retrieved for {actual_symbol}")
