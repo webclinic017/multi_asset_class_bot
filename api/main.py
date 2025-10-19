@@ -1430,6 +1430,118 @@ async def get_database_stats():
         logger.error(f"Error getting database stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Sentiment Analysis Endpoints - MUST BE BEFORE CATCH-ALL ROUTES
+
+class SentimentRequest(BaseModel):
+    symbol: str
+    hours_back: int = 24
+
+class SentimentResponse(BaseModel):
+    symbol: str
+    sentiment_score: float
+    news_count: int
+    confidence: float
+    signal: str
+    timestamp: str
+    category: str
+
+@app.get("/api/sentiment/{symbol}", response_model=SentimentResponse)
+async def get_sentiment(symbol: str, hours_back: int = 24):
+    """Get sentiment analysis for a symbol"""
+    try:
+        if not sentiment_analyzer:
+            raise HTTPException(
+                status_code=503,
+                detail="Sentiment analyzer not available. Install dependencies: pip install textblob feedparser"
+            )
+        
+        sentiment_data = sentiment_analyzer.get_commodity_sentiment(symbol, hours_back)
+        
+        return SentimentResponse(
+            symbol=sentiment_data['symbol'],
+            sentiment_score=sentiment_data['sentiment_score'],
+            news_count=sentiment_data['news_count'],
+            confidence=sentiment_data['confidence'],
+            signal=sentiment_data['signal'],
+            timestamp=sentiment_data['timestamp'].isoformat(),
+            category=sentiment_data['category']
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting sentiment for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sentiment/{symbol}/events")
+async def get_upcoming_events(symbol: str, minutes_ahead: int = 60):
+    """Get upcoming news events for a symbol"""
+    try:
+        if not news_monitor:
+            raise HTTPException(status_code=503, detail="News monitor not available")
+        
+        events = news_monitor.check_upcoming_events(symbol, minutes_ahead)
+        
+        return {
+            "symbol": symbol,
+            "events": events,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting events for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sentiment/{symbol}/pre-event-strategy")
+async def get_pre_event_strategy(symbol: str, minutes_before: int = 30):
+    """Get pre-event trading strategy for a symbol"""
+    try:
+        if not news_monitor:
+            raise HTTPException(status_code=503, detail="News monitor not available")
+        
+        strategy = news_monitor.get_pre_event_strategy(symbol, minutes_before)
+        
+        return {
+            "symbol": symbol,
+            "strategy": strategy,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting pre-event strategy for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sessions/{session_id}/sentiment")
+async def get_session_sentiment_history(session_id: int):
+    """Get sentiment data history for a backtest session"""
+    try:
+        # Get session info to extract symbol
+        sessions = db_manager.get_trading_sessions(limit=1000)
+        session = next((s for s in sessions if s['id'] == session_id), None)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        symbol = session.get('symbol', '')
+        
+        # For historical backtests, we can't get real historical sentiment
+        # But we can provide current sentiment as reference
+        if sentiment_analyzer:
+            current_sentiment = sentiment_analyzer.get_commodity_sentiment(symbol, hours_back=24)
+            
+            return {
+                "session_id": session_id,
+                "symbol": symbol,
+                "current_sentiment": current_sentiment,
+                "note": "Historical sentiment data not available for backtests. Showing current sentiment for reference.",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            raise HTTPException(status_code=503, detail="Sentiment analyzer not available")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting sentiment history for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Serve React app at root and for all non-API routes
 @app.get("/", response_class=HTMLResponse)
 async def serve_react_root():
@@ -1749,110 +1861,3 @@ async def websocket_logs_endpoint(websocket: WebSocket):
         print(f"Error in logs websocket: {e}")
     finally:
         await websocket.close()
-
-# Sentiment Analysis Endpoints
-
-class SentimentRequest(BaseModel):
-    symbol: str
-    hours_back: int = 24
-
-class SentimentResponse(BaseModel):
-    symbol: str
-    sentiment_score: float
-    news_count: int
-    confidence: float
-    signal: str
-    timestamp: str
-    category: str
-
-@app.get("/api/sentiment/{symbol}", response_model=SentimentResponse)
-async def get_sentiment(symbol: str, hours_back: int = 24):
-    """Get sentiment analysis for a symbol"""
-    try:
-        if not sentiment_analyzer:
-            raise HTTPException(status_code=503, detail="Sentiment analyzer not available")
-        
-        sentiment_data = sentiment_analyzer.get_commodity_sentiment(symbol, hours_back)
-        
-        return SentimentResponse(
-            symbol=sentiment_data['symbol'],
-            sentiment_score=sentiment_data['sentiment_score'],
-            news_count=sentiment_data['news_count'],
-            confidence=sentiment_data['confidence'],
-            signal=sentiment_data['signal'],
-            timestamp=sentiment_data['timestamp'].isoformat(),
-            category=sentiment_data['category']
-        )
-    except Exception as e:
-        logger.error(f"Error getting sentiment for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/sentiment/{symbol}/events")
-async def get_upcoming_events(symbol: str, minutes_ahead: int = 60):
-    """Get upcoming news events for a symbol"""
-    try:
-        if not news_monitor:
-            raise HTTPException(status_code=503, detail="News monitor not available")
-        
-        events = news_monitor.check_upcoming_events(symbol, minutes_ahead)
-        
-        return {
-            "symbol": symbol,
-            "events": events,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error getting events for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/sentiment/{symbol}/pre-event-strategy")
-async def get_pre_event_strategy(symbol: str, minutes_before: int = 30):
-    """Get pre-event trading strategy for a symbol"""
-    try:
-        if not news_monitor:
-            raise HTTPException(status_code=503, detail="News monitor not available")
-        
-        strategy = news_monitor.get_pre_event_strategy(symbol, minutes_before)
-        
-        return {
-            "symbol": symbol,
-            "strategy": strategy,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error getting pre-event strategy for {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/sessions/{session_id}/sentiment")
-async def get_session_sentiment_history(session_id: int):
-    """Get sentiment data history for a backtest session"""
-    try:
-        # Get session info to extract symbol
-        sessions = db_manager.get_trading_sessions(limit=1000)
-        session = next((s for s in sessions if s['id'] == session_id), None)
-        
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        symbol = session.get('symbol', '')
-        
-        # For historical backtests, we can't get real historical sentiment
-        # But we can provide current sentiment as reference
-        if sentiment_analyzer:
-            current_sentiment = sentiment_analyzer.get_commodity_sentiment(symbol, hours_back=24)
-            
-            return {
-                "session_id": session_id,
-                "symbol": symbol,
-                "current_sentiment": current_sentiment,
-                "note": "Historical sentiment data not available for backtests. Showing current sentiment for reference.",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        else:
-            raise HTTPException(status_code=503, detail="Sentiment analyzer not available")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting sentiment history for session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
