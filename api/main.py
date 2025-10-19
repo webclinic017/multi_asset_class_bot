@@ -656,7 +656,6 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             logger.info(f"No futures data found in database for {actual_symbol}, attempting to fetch from IBKR TWS...")
             try:
                 from data.data_feed import DBDataFeed
-                from datetime import datetime
                 
                 # Determine the correct futures contract symbol
                 # Futures contracts need month code + year (e.g., ESZ4 for ES Dec 2024)
