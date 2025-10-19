@@ -631,11 +631,23 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         logger.info(f"Using real market data: {actual_symbol} {actual_timeframe} ({data_count} records from {data_start} to {data_end})")
         
         # Get actual market data from database
+        # Convert dates for proper comparison
+        request_start_dt = datetime.fromisoformat(backtest_request.start_date)
+        request_end_dt = datetime.fromisoformat(backtest_request.end_date)
+        db_start_dt = datetime.fromisoformat(data_start)
+        db_end_dt = datetime.fromisoformat(data_end)
+        
+        # Use the later start date and earlier end date to stay within available data
+        actual_start_dt = request_start_dt if request_start_dt >= db_start_dt else db_start_dt
+        actual_end_dt = request_end_dt if request_end_dt <= db_end_dt else db_end_dt
+        
+        logger.info(f"Date range: requested {request_start_dt} to {request_end_dt}, using {actual_start_dt} to {actual_end_dt}")
+        
         df = db_manager.get_market_data(
             actual_symbol,
             actual_timeframe,
-            datetime.fromisoformat(backtest_request.start_date) if backtest_request.start_date >= data_start else datetime.fromisoformat(data_start),
-            datetime.fromisoformat(backtest_request.end_date) if backtest_request.end_date <= data_end else datetime.fromisoformat(data_end),
+            actual_start_dt,
+            actual_end_dt,
             limit=10000
         )
 
