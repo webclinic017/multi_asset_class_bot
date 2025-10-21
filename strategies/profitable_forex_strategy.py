@@ -1,6 +1,6 @@
 """
 Simplified Profitable Forex Strategy
-Focus on actual profitability with simpler, more reliable signals
+Focus on actual profitability with proper position sizing and risk management
 """
 
 import backtrader as bt
@@ -14,6 +14,7 @@ class ProfitableForexStrategy(bt.Strategy):
     2. RSI for momentum confirmation
     3. Proper risk management with better risk/reward ratios
     4. Less restrictive entry conditions
+    5. Dynamic position sizing for meaningful returns
     """
     params = (
         # Moving Average Parameters - Optimized for trends
@@ -33,6 +34,12 @@ class ProfitableForexStrategy(bt.Strategy):
         # Risk Management - Higher reward ratios
         ('stop_loss_percent', 0.008),    # 0.8% stop loss
         ('take_profit_percent', 0.024),  # 2.4% take profit (3:1 reward/risk)
+        
+        # Position Sizing - CRITICAL FIX: Add proper position sizing
+        ('risk_per_trade', 0.02),        # 2% risk per trade
+        ('position_size_percent', 0.04), # 4% position size per trade
+        ('max_position_size', 0.10),     # Maximum 10% position size
+        ('dynamic_sizing', True),         # Enable dynamic position sizing
         
         # Strategy Filters - Enhanced for profitability
         ('use_rsi_filter', True),
@@ -102,8 +109,13 @@ class ProfitableForexStrategy(bt.Strategy):
         # Trend strength
         self.adx = bt.indicators.DirectionalMovementIndex(self.datas[0], period=14)
 
+        # Performance tracking
+        self.trade_count = 0
+        self.winning_trades = 0
+        self.total_pnl = 0.0
+
         self.logger = logging.getLogger(__name__)
-        self.logger.info("ProfitableForexStrategy initialized")
+        self.logger.info("ProfitableForexStrategy initialized with dynamic position sizing")
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
@@ -128,7 +140,60 @@ class ProfitableForexStrategy(bt.Strategy):
         if not trade.isclosed:
             return
         
+        self.trade_count += 1
+        if trade.pnlcomm > 0:
+            self.winning_trades += 1
+        self.total_pnl += trade.pnlcomm
+        
         self.log(f'TRADE CLOSED - P&L: {trade.pnlcomm:.2f}, Return: {(trade.pnlcomm/10000)*100:.3f}%')
+
+    def calculate_position_size(self, signal_strength: float = 1.0) -> float:
+        """
+        Calculate position size based on account value and risk parameters
+        Uses dynamic sizing based on signal strength and volatility
+        """
+        if not self.p.dynamic_sizing:
+            return self.p.position_size_percent
+        
+        try:
+            # Base position size
+            base_size = self.p.position_size_percent
+            
+            # Signal strength adjustment
+            signal_multiplier = signal_strength * 2.0  # Scale with signal strength
+            
+            # Volatility adjustment
+            volatility_factor = 1.0
+            if hasattr(self, 'atr') and len(self.atr) > 0:
+                volatility_factor = max(0.5, min(2.0, 1.0 / (self.atr[0] / self.dataclose[0])))
+            
+            # Performance-based adjustment
+            performance_factor = 1.0
+            if self.trade_count > 0:
+                win_rate = self.winning_trades / self.trade_count
+                if win_rate > 0.6:
+                    performance_factor = 1.2  # Increase size for good performance
+                elif win_rate < 0.4:
+                    performance_factor = 0.8  # Decrease size for poor performance
+            
+            # Calculate final position size
+            position_size = base_size * signal_multiplier * volatility_factor * performance_factor
+            
+            # Apply maximum position size limit
+            position_size = min(position_size, self.p.max_position_size)
+            
+            # Ensure minimum position size
+            position_size = max(position_size, 0.01)  # Minimum 1%
+            
+            self.log(f'Position Size Calculation: Base={base_size:.4f}, Signal={signal_multiplier:.2f}, '
+                   f'Volatility={volatility_factor:.2f}, Performance={performance_factor:.2f}, '
+                   f'Final={position_size:.4f}')
+            
+            return position_size
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating position size: {e}")
+            return self.p.position_size_percent  # Fallback to base size
 
     def next(self):
         # Track daily trades
@@ -198,8 +263,11 @@ class ProfitableForexStrategy(bt.Strategy):
             
             # Execute LONG if multiple signals align
             if len(long_signals) >= 3:  # Require at least 3 confirmations
-                self.log(f'STRONG BUY - Price: {current_price:.5f}, Signals: {long_signals}, RSI: {self.rsi[0]:.1f}')
-                self.order = self.buy()
+                signal_strength = len(long_signals) / 6.0  # Normalize to 0-1
+                position_size = self.calculate_position_size(signal_strength)
+                self.log(f'STRONG BUY - Price: {current_price:.5f}, Signals: {long_signals}, '
+                       f'RSI: {self.rsi[0]:.1f}, Position Size: {position_size:.4f}')
+                self.order = self.buy(size=position_size)
                 self.last_trade_bar = len(self)
                 self.trades_today += 1
             
@@ -239,8 +307,11 @@ class ProfitableForexStrategy(bt.Strategy):
             
             # Execute SHORT if multiple signals align
             if len(short_signals) >= 3:  # Require at least 3 confirmations
-                self.log(f'STRONG SELL - Price: {current_price:.5f}, Signals: {short_signals}, RSI: {self.rsi[0]:.1f}')
-                self.order = self.sell()
+                signal_strength = len(short_signals) / 6.0  # Normalize to 0-1
+                position_size = self.calculate_position_size(signal_strength)
+                self.log(f'STRONG SELL - Price: {current_price:.5f}, Signals: {short_signals}, '
+                       f'RSI: {self.rsi[0]:.1f}, Position Size: {position_size:.4f}')
+                self.order = self.sell(size=position_size)
                 self.last_trade_bar = len(self)
                 self.trades_today += 1
 

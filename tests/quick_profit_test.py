@@ -3,6 +3,10 @@
 Quick test to validate the enhanced profitable strategy
 """
 
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import backtrader as bt
 import pandas as pd
 import numpy as np
@@ -166,16 +170,16 @@ def test_enhanced_strategy():
             
             # Success criteria
             if total_return >= 1.0:
-                print("🎉 SUCCESS: Achieved 1%+ target return!")
+                print("SUCCESS: Achieved 1%+ target return!")
                 return True
             elif total_return >= 0.5:
-                print("✅ GOOD: Close to target (0.5%+)")
+                print("GOOD: Close to target (0.5%+)")
                 return True
             elif total_return > 0:
-                print("📈 POSITIVE: Making progress (positive return)")
+                print("POSITIVE: Making progress (positive return)")
                 return True
             else:
-                print("❌ NEEDS IMPROVEMENT: Negative return")
+                print("NEEDS IMPROVEMENT: Negative return")
                 return False
         else:
             print("No strategies executed")
@@ -190,6 +194,6 @@ def test_enhanced_strategy():
 if __name__ == "__main__":
     success = test_enhanced_strategy()
     if success:
-        print("\n✅ Enhanced strategy shows promise for 1%+ returns!")
+        print("\nEnhanced strategy shows promise for 1%+ returns!")
     else:
-        print("\n⚠️ Strategy needs further optimization.")
+        print("\nStrategy needs further optimization.")

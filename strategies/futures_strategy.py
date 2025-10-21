@@ -21,6 +21,13 @@ class FuturesStrategy(bt.Strategy):
         ('rsi_oversold', 30),
         ('stop_loss_percent', 0.02), # 2% stop loss
         ('take_profit_percent', 0.05), # 5% take profit
+        
+        # Position Sizing - CRITICAL FIX: Add proper position sizing
+        ('risk_per_trade', 0.02),      # 2% risk per trade
+        ('position_size_percent', 0.05), # 5% position size per trade
+        ('max_position_size', 0.10),   # Maximum 10% position size
+        ('dynamic_sizing', True),       # Enable dynamic position sizing
+        
         ('printlog', False)
     )
 
@@ -36,12 +43,17 @@ class FuturesStrategy(bt.Strategy):
         self.buyprice = None
         self.buycomm = None
 
+        # Performance tracking
+        self.trade_count = 0
+        self.winning_trades = 0
+        self.total_pnl = 0.0
+
         # Indicators
         self.sma = bt.indicators.SMA(self.datas[0], period=self.p.sma_period)
         self.rsi = bt.indicators.RSI(self.datas[0], period=self.p.rsi_period)
 
         self.logger = logging.getLogger(__name__)
-        self.logger.info("FuturesStrategy initialized")
+        self.logger.info("FuturesStrategy initialized with dynamic position sizing")
 
     def notify_order(self, order):
         if order.status in [order.Submitted, order.Accepted]:
@@ -74,8 +86,55 @@ class FuturesStrategy(bt.Strategy):
         if not trade.isclosed:
             return
 
+        self.trade_count += 1
+        if trade.pnlcomm > 0:
+            self.winning_trades += 1
+        self.total_pnl += trade.pnlcomm
+
         self.log('OPERATION PROFIT, GROSS %.2f, NET %.2f' %
                  (trade.pnl, trade.pnlcomm))
+
+    def calculate_position_size(self, signal_strength: float = 1.0) -> float:
+        """
+        Calculate position size based on account value and risk parameters
+        Uses dynamic sizing based on signal strength and performance
+        """
+        if not self.p.dynamic_sizing:
+            return self.p.position_size_percent
+        
+        try:
+            # Base position size
+            base_size = self.p.position_size_percent
+            
+            # Signal strength adjustment
+            signal_multiplier = signal_strength * 1.5  # Scale with signal strength
+            
+            # Performance-based adjustment
+            performance_factor = 1.0
+            if self.trade_count > 0:
+                win_rate = self.winning_trades / self.trade_count
+                if win_rate > 0.6:
+                    performance_factor = 1.1  # Increase size for good performance
+                elif win_rate < 0.4:
+                    performance_factor = 0.9  # Decrease size for poor performance
+            
+            # Calculate final position size
+            position_size = base_size * signal_multiplier * performance_factor
+            
+            # Apply maximum position size limit
+            position_size = min(position_size, self.p.max_position_size)
+            
+            # Ensure minimum position size
+            position_size = max(position_size, 0.01)  # Minimum 1%
+            
+            self.log(f'Position Size: Base={base_size:.4f}, Signal={signal_multiplier:.2f}, '
+                   f'Performance={performance_factor:.2f}, Final={position_size:.4f}')
+            
+            return position_size
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating position size: {e}")
+            return self.p.position_size_percent  # Fallback to base size
 
     def next(self):
         self.log('Close, %.2f' % self.dataclose[0])
@@ -84,14 +143,31 @@ class FuturesStrategy(bt.Strategy):
             return
 
         if not self.position:  # Not in the market
+            # Calculate signal strength
+            signal_strength = 1.0
+            if self.dataclose[0] > self.sma[0]:
+                signal_strength *= 1.2
+            if self.rsi[0] < self.p.rsi_oversold:
+                signal_strength *= 1.3
+            
             # Buy signal: Close price above SMA and RSI oversold
             if self.dataclose[0] > self.sma[0] and self.rsi[0] < self.p.rsi_oversold:
-                self.log('BUY CREATE (Trend-following), %.2f' % self.dataclose[0])
-                self.order = self.buy()
+                position_size = self.calculate_position_size(signal_strength)
+                self.log('BUY CREATE (Trend-following), %.2f, Position Size: %.4f' % (self.dataclose[0], position_size))
+                self.order = self.buy(size=position_size)
+            
+            # Calculate signal strength for sell
+            signal_strength = 1.0
+            if self.dataclose[0] < self.sma[0]:
+                signal_strength *= 1.2
+            if self.rsi[0] > self.p.rsi_overbought:
+                signal_strength *= 1.3
+            
             # Sell signal: Close price below SMA and RSI overbought
             elif self.dataclose[0] < self.sma[0] and self.rsi[0] > self.p.rsi_overbought:
-                self.log('SELL CREATE (Trend-following), %.2f' % self.dataclose[0])
-                self.order = self.sell()
+                position_size = self.calculate_position_size(signal_strength)
+                self.log('SELL CREATE (Trend-following), %.2f, Position Size: %.4f' % (self.dataclose[0], position_size))
+                self.order = self.sell(size=position_size)
         else:  # Already in the market
             # Implement stop loss and take profit
             if self.position.islong:
