@@ -857,7 +857,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 if 'Production HFT Futures' in strategy_name:
                     strategy_class_name = 'ProductionHFTFuturesStrategy'
                 elif 'Market Making HFT' in strategy_name:
-                    strategy_class_name = 'NewMarketMakingHFTStrategy'
+                    strategy_class_name = 'MarketMakingHFTStrategy'
                 elif 'Statistical Arbitrage HFT' in strategy_name:
                     strategy_class_name = 'NewStatisticalArbitrageHFTStrategy'
                 elif 'Momentum Ignition HFT' in strategy_name:
@@ -961,6 +961,53 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 logger.info("=== MODIFYING STRATEGY PARAMETERS ===")
                 logger.info(f"Setting printlog=False (was: {strategy_params.get('printlog', 'not set')})")
                 strategy_params['printlog'] = False
+                
+                # === PARAMETER COMPATIBILITY FILTERING ===
+                logger.info("=== FILTERING PARAMETERS FOR STRATEGY COMPATIBILITY ===")
+                
+                # Define parameter compatibility by strategy type
+                forex_strategy_params = {
+                    'initial_capital', 'fast_length', 'slow_length', 'signal_length', 'rsi_period',
+                    'rsi_oversold', 'rsi_overbought', 'rsi_divergence_lookback', 'macd_fast', 'macd_slow',
+                    'macd_signal', 'bb_period', 'bb_std', 'bb_squeeze_threshold', 'atr_period',
+                    'volatility_lookback', 'volatility_threshold', 'base_stop_loss', 'base_take_profit',
+                    'dynamic_sizing', 'max_risk_per_trade', 'volatility_adjustment', 'stop_loss_percent',
+                    'take_profit_percent', 'trailing_stop_percent', 'position_size_percent', 'max_position_size',
+                    'min_volatility', 'max_volatility', 'trend_strength_threshold', 'regime_lookback',
+                    'trend_threshold', 'mean_reversion_threshold', 'pivot_period', 'zone_lookback',
+                    'min_zone_strength', 'zone_buffer', 'max_zones', 'volume_period', 'volume_levels',
+                    'volume_confirmation', 'use_higher_tf', 'higher_tf_multiplier', 'use_ml_features',
+                    'feature_lookback', 'momentum_periods', 'use_regime_filter', 'use_volatility_filter',
+                    'use_correlation_filter', 'use_momentum_filter', 'min_sharpe_threshold',
+                    'max_drawdown_threshold', 'profit_factor_threshold', 'sentiment_weight',
+                    'sentiment_threshold', 'news_impact_decay', 'momentum_acceleration', 'trend_following_boost',
+                    'breakout_multiplier', 'mean_reversion_factor', 'volatility_expansion_threshold',
+                    'use_gpu', 'gpu_batch_size', 'gpu_lookback', 'signal_strength_threshold',
+                    'high_confidence_threshold', 'price_action_weight', 'technical_weight',
+                    'max_trades_per_hour', 'min_time_between_trades', 'quick_exit_threshold', 'printlog'
+                }
+                
+                hft_strategy_params = {
+                    'spread_width', 'max_inventory', 'inventory_rebalance_threshold', 'quote_refresh_time',
+                    'min_spread', 'max_spread', 'volatility_lookback', 'risk_limit', 'max_orders_per_side',
+                    'order_size', 'adaptive_spread', 'printlog'
+                }
+                
+                # Filter parameters based on strategy type
+                if strategy_class_name == 'EnhancedForexStrategy':
+                    # Remove HFT-specific parameters
+                    filtered_params = {k: v for k, v in strategy_params.items() if k in forex_strategy_params}
+                    removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
+                    if removed_params:
+                        logger.info(f"Removed incompatible parameters for EnhancedForexStrategy: {removed_params}")
+                    strategy_params = filtered_params
+                elif strategy_class_name in ['MarketMakingHFTStrategy', 'ProductionHFTFuturesStrategy']:
+                    # Remove forex-specific parameters
+                    filtered_params = {k: v for k, v in strategy_params.items() if k in hft_strategy_params}
+                    removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
+                    if removed_params:
+                        logger.info(f"Removed incompatible parameters for HFT strategy: {removed_params}")
+                    strategy_params = filtered_params
                 
                 logger.info(f"Final strategy parameters dictionary: {strategy_params}")
                 logger.info(f"Final parameters type: {type(strategy_params)}")

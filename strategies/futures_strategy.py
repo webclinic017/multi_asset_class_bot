@@ -15,18 +15,22 @@ class FuturesStrategy(bt.Strategy):
     A simple futures trading strategy based on a combination of SMA and RSI.
     """
     params = (
-        ('sma_period', 50),
+        ('sma_period', 20),              # Shorter period for more responsive signals
         ('rsi_period', 14),
-        ('rsi_overbought', 70),
-        ('rsi_oversold', 30),
-        ('stop_loss_percent', 0.02), # 2% stop loss
-        ('take_profit_percent', 0.05), # 5% take profit
+        ('rsi_overbought', 75),          # More aggressive overbought level
+        ('rsi_oversold', 25),            # More aggressive oversold level
+        ('stop_loss_percent', 0.015),    # Tighter 1.5% stop loss
+        ('take_profit_percent', 0.03),   # 3% take profit for better risk-reward
         
-        # Position Sizing - CRITICAL FIX: Add proper position sizing
-        ('risk_per_trade', 0.02),      # 2% risk per trade
-        ('position_size_percent', 0.05), # 5% position size per trade
-        ('max_position_size', 0.10),   # Maximum 10% position size
-        ('dynamic_sizing', True),       # Enable dynamic position sizing
+        # Position Sizing - Enhanced for better risk management
+        ('risk_per_trade', 0.015),       # 1.5% risk per trade
+        ('position_size_percent', 0.08), # 8% position size per trade
+        ('max_position_size', 0.15),     # Maximum 15% position size
+        ('dynamic_sizing', True),        # Enable dynamic position sizing
+        
+        # Market Regime Detection
+        ('use_regime_filter', True),     # Enable market regime filter
+        ('volatility_lookback', 20),     # Lookback period for volatility calculation
         
         ('printlog', False)
     )
@@ -51,6 +55,11 @@ class FuturesStrategy(bt.Strategy):
         # Indicators
         self.sma = bt.indicators.SMA(self.datas[0], period=self.p.sma_period)
         self.rsi = bt.indicators.RSI(self.datas[0], period=self.p.rsi_period)
+        
+        # Volatility indicator for market regime detection
+        if self.p.use_regime_filter:
+            self.atr = bt.indicators.ATR(self.datas[0], period=self.p.volatility_lookback)
+            self.volatility = 0.0
 
         self.logger = logging.getLogger(__name__)
         self.logger.info("FuturesStrategy initialized with dynamic position sizing")
@@ -138,9 +147,19 @@ class FuturesStrategy(bt.Strategy):
 
     def next(self):
         self.log('Close, %.2f' % self.dataclose[0])
+        
+        # Update volatility measure for market regime detection
+        if self.p.use_regime_filter and len(self) > self.p.volatility_lookback:
+            self.volatility = self.atr[0] / self.dataclose[0]
 
         if self.order:
             return
+
+        # Market regime filter - only trade in favorable conditions
+        if self.p.use_regime_filter:
+            # Avoid trading in high volatility regimes
+            if self.volatility > 0.02:  # Adjust threshold as needed
+                return
 
         if not self.position:  # Not in the market
             # Calculate signal strength

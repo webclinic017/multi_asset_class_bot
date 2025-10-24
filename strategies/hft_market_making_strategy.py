@@ -22,26 +22,26 @@ class MarketMakingHFTStrategy(bt.Strategy):
     """
     
     params = (
-        # Market making parameters
-        ('spread_width', 0.0002),  # 2 basis points
-        ('min_spread', 0.0001),  # Minimum spread (1 basis point)
-        ('max_spread', 0.001),  # Maximum spread (10 basis points)
-        ('max_inventory', 10),
-        ('quote_refresh_time', 5),  # seconds
-        ('inventory_skew_factor', 0.5),
+        # Market making parameters - Updated for ES futures
+        ('spread_width', 0.25),      # 0.25 points for ES futures
+        ('min_spread', 0.25),        # Minimum spread (0.25 points)
+        ('max_spread', 2.0),         # Maximum spread (2.0 points)
+        ('max_inventory', 10),        # Maximum inventory positions
+        ('quote_refresh_time', 5),   # seconds
+        ('inventory_skew_factor', 0.5),  # Inventory skew factor
         ('inventory_rebalance_threshold', 0.8),  # Rebalance at 80% of max inventory
-        ('volatility_lookback', 20),  # Volatility lookback period
-        ('adaptive_spread', True),  # Enable adaptive spread adjustment
+        ('volatility_lookback', 20), # Volatility lookback period
+        ('adaptive_spread', True),   # Enable adaptive spread adjustment
         
         # Order management
         ('max_orders_per_side', 3),  # Maximum orders per side
-        ('order_size', 1),  # Default order size
+        ('order_size', 1),           # Default order size
         
         # Risk management
-        ('max_position_size', 10),
-        ('max_daily_trades', 500),
-        ('circuit_breaker', 0.05),  # 5% drawdown
-        ('risk_limit', 0.02),  # Risk limit as percentage
+        ('max_position_size', 10),   # Maximum position size
+        ('max_daily_trades', 500),   # Maximum daily trades
+        ('circuit_breaker', 0.05),   # 5% drawdown limit
+        ('risk_limit', 0.02),        # 2% risk limit
         
         # Performance targets
         ('target_sharpe', 2.0),
@@ -85,7 +85,11 @@ class MarketMakingHFTStrategy(bt.Strategy):
         self.ask_order = None
         self.last_quote_time = None
         
-        self.logger.info("MarketMakingHFTStrategy initialized")
+        # Track executed orders for proper inventory management
+        self.executed_bids = []  # Track executed buy orders
+        self.executed_asks = []  # Track executed sell orders
+        
+        self.logger.info("Market Making HFT Strategy initialized")
     
     def calculate_quotes(self, mid_price, current_inventory, volatility):
         """
@@ -99,6 +103,9 @@ class MarketMakingHFTStrategy(bt.Strategy):
             base_spread = self.p.spread_width * (1 + volatility * 10)
         else:
             base_spread = self.p.spread_width
+        
+        # Ensure spread is within bounds
+        base_spread = max(self.p.min_spread, min(base_spread, self.p.max_spread))
         
         # Inventory skew - widen spread on side with inventory
         inventory_ratio = current_inventory / self.p.max_inventory if self.p.max_inventory > 0 else 0
@@ -117,12 +124,13 @@ class MarketMakingHFTStrategy(bt.Strategy):
     
     def _calculate_quote_size(self, inventory_ratio, side):
         """Calculate quote size based on inventory"""
-        base_size = 1
+        base_size = self.p.order_size
         
+        # Reduce size when inventory is high in the same direction
         if side == 'bid' and inventory_ratio > 0.5:
-            return base_size * 0.5  # Reduce bid size when long
+            return max(1, base_size * 0.5)  # Reduce bid size when long
         elif side == 'ask' and inventory_ratio < -0.5:
-            return base_size * 0.5  # Reduce ask size when short
+            return max(1, base_size * 0.5)  # Reduce ask size when short
         
         return base_size
     
@@ -150,7 +158,7 @@ class MarketMakingHFTStrategy(bt.Strategy):
                 self.log("Daily trade limit reached")
             return
         
-        # Update inventory
+        # Update inventory from position
         self.current_inventory = self.position.size
         
         # Get current volatility
@@ -198,12 +206,15 @@ class MarketMakingHFTStrategy(bt.Strategy):
             if self.p.printlog:
                 self.log(f"Rebalancing inventory: {self.current_inventory}")
             
+            # Close positions to reduce inventory
             if self.current_inventory > 0:
                 # Long inventory - sell to reduce
-                self.sell(size=abs(self.current_inventory) // 2)
+                # Use market order for faster execution
+                self.sell(size=min(abs(self.current_inventory), 2), exectype=bt.Order.Market)
             elif self.current_inventory < 0:
                 # Short inventory - buy to reduce
-                self.buy(size=abs(self.current_inventory) // 2)
+                # Use market order for faster execution
+                self.buy(size=min(abs(self.current_inventory), 2), exectype=bt.Order.Market)
     
     def notify_order(self, order):
         """Handle order notifications"""
@@ -211,12 +222,23 @@ class MarketMakingHFTStrategy(bt.Strategy):
             self.daily_trades += 1
             self.trade_count += 1
             
+            # Track executed orders for inventory management
             if order.isbuy():
                 if self.p.printlog:
                     self.log(f'BUY EXECUTED, Price: {order.executed.price:.5f}, Size: {order.executed.size}')
+                self.executed_bids.append({
+                    'price': order.executed.price,
+                    'size': order.executed.size,
+                    'time': self.data.datetime.datetime(0)
+                })
             else:
                 if self.p.printlog:
                     self.log(f'SELL EXECUTED, Price: {order.executed.price:.5f}, Size: {order.executed.size}')
+                self.executed_asks.append({
+                    'price': order.executed.price,
+                    'size': order.executed.size,
+                    'time': self.data.datetime.datetime(0)
+                })
     
     def notify_trade(self, trade):
         """Handle trade notifications"""
@@ -234,5 +256,17 @@ class MarketMakingHFTStrategy(bt.Strategy):
     
     def stop(self):
         """Called when strategy stops"""
+        # Calculate final metrics
+        total_spread_captured = sum(
+            (ask['price'] - bid['price']) * min(bid['size'], ask['size'])
+            for bid, ask in zip(self.executed_bids, self.executed_asks)
+        )
+        
         if self.p.printlog:
             self.log(f'Strategy stopped. Total trades: {self.trade_count}, Daily P&L: {self.daily_pnl:.2f}')
+            self.log(f'=== MARKET MAKING HFT STRATEGY RESULTS ===')
+            self.log(f'Total Trades: {self.trade_count}')
+            self.log(f'Spread Captured: ${total_spread_captured:.2f}')
+            self.log(f'Final Inventory: {self.position.size}')
+            self.log(f'Win Rate: {((self.trade_count - len([t for t in self.executed_asks if t.get("pnl", 0) < 0])) / max(self.trade_count, 1) * 100):.1f}%')
+            self.log(f'Final Portfolio Value: ${self.broker.getvalue():.2f}')
