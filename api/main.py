@@ -854,7 +854,10 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 strategy_name = strategy.get('name', 'ForexStrategy')
                 logger.info(f"Original strategy name from DB: '{strategy_name}'")
 
-                if 'Production HFT Futures' in strategy_name:
+                # CRITICAL FIX: Proper strategy mapping for futures strategies
+                if 'ES-Enhanced Market Making' in strategy_name:
+                    strategy_class_name = 'ESEnhancedMarketMakingHFTStrategy'
+                elif 'Production HFT Futures' in strategy_name:
                     strategy_class_name = 'ProductionHFTFuturesStrategy'
                 elif 'Market Making HFT' in strategy_name:
                     strategy_class_name = 'MarketMakingHFTStrategy'
@@ -866,6 +869,8 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     strategy_class_name = 'OrderFlowImbalanceHFTStrategy'
                 elif 'Latency Arbitrage HFT' in strategy_name:
                     strategy_class_name = 'LatencyArbitrageHFTStrategy'
+                elif 'Enhanced' in strategy_name and 'Forex' in strategy_name:
+                    strategy_class_name = 'EnhancedForexStrategy'
                 elif 'Enhanced' in strategy_name:
                     strategy_class_name = 'EnhancedForexStrategy'
                 elif 'Realtime Scalping 1M' in strategy_name:
