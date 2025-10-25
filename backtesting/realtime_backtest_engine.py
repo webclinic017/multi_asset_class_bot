@@ -404,7 +404,7 @@ class TradeLoggingAnalyzer(bt.Analyzer):
 
 # Integration function for the API
 def create_realtime_backtest_engine(config: dict, session_id: int,
-                                   update_callback=None, websocket_manager=None):
+                                    update_callback=None, websocket_manager=None):
     """
     Factory function to create a real-time backtest engine
 
@@ -430,8 +430,13 @@ def create_realtime_backtest_engine(config: dict, session_id: int,
 
     preprocessor = DataPreprocessor()
     risk_manager = RiskManager(config)
-    
-    # Create real-time engine
+
+    # Use dates from config if provided, otherwise use defaults
+    backtest_config = config.get('backtesting', {})
+    start_date = backtest_config.get('start_date', '2023-01-01')
+    end_date = backtest_config.get('end_date', '2023-12-31')
+
+    # Create real-time engine with proper date configuration
     engine = RealTimeBacktestEngine(
         data_feed=data_feed,
         preprocessor=preprocessor,
@@ -441,7 +446,12 @@ def create_realtime_backtest_engine(config: dict, session_id: int,
         websocket_manager=websocket_manager,
         session_id=session_id
     )
-    
+
+    # Override default dates with config values
+    from datetime import datetime
+    engine.start_date = datetime.strptime(start_date, '%Y-%m-%d')
+    engine.end_date = datetime.strptime(end_date, '%Y-%m-%d')
+
     return engine
 
 if __name__ == "__main__":
