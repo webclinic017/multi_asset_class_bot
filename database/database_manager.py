@@ -117,6 +117,23 @@ class DatabaseManager:
                 return strategy
             return None
     
+    def update_strategy(self, strategy_id: int, **kwargs):
+        """Update strategy"""
+        if not kwargs:
+            return
+        
+        set_clause = ", ".join([f"{key} = ?" for key in kwargs.keys()])
+        values = list(kwargs.values()) + [strategy_id]
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                UPDATE strategies
+                SET {set_clause}
+                WHERE id = ?
+            """, values)
+            conn.commit()
+    
     # Trading Session Management
     def create_trading_session(self, session_type: str, strategy_id: int, symbol: str,
                               initial_capital: float, start_time: datetime = None) -> int:

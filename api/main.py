@@ -25,6 +25,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.database_manager import DatabaseManager
 from utils.logger import setup_logging
+from sentiment.futures_sentiment_analyzer import FuturesSentimentAnalyzer, CommodityNewsEventMonitor
 
 # Pydantic models for API requests/responses
 class StrategyCreate(BaseModel):
@@ -161,6 +162,18 @@ except Exception as e:
     print(f"Could not setup advanced logging: {e}. Using basic logging.")
 
 logger = logging.getLogger(__name__)
+
+# Initialize sentiment analyzer
+sentiment_analyzer = None
+news_monitor = None
+try:
+    sentiment_analyzer = FuturesSentimentAnalyzer()
+    news_monitor = CommodityNewsEventMonitor()
+    logger.info("Sentiment analyzer initialized for API")
+except Exception as e:
+    logger.warning(f"Could not initialize sentiment analyzer: {e}")
+
+
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -523,6 +536,34 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         logger.info(f"=== STARTING REAL-TIME BACKTEST SESSION {session_id} ===")
         logger.info(f"Backtest request details: {backtest_request.dict()}")
         
+        # Get initial sentiment for the symbol if available
+        initial_sentiment = None
+        if sentiment_analyzer:
+            try:
+                # Extract base symbol (e.g., EUR_USD -> EURUSD or ES)
+                symbol_for_sentiment = backtest_request.symbol.replace('_', '')
+                if len(symbol_for_sentiment) > 6:
+                    # Likely a futures symbol like ES, CL, etc.
+                    symbol_for_sentiment = symbol_for_sentiment[:2]
+                
+                initial_sentiment = sentiment_analyzer.get_commodity_sentiment(symbol_for_sentiment, hours_back=24)
+                logger.info(f"Initial sentiment for {symbol_for_sentiment}: {initial_sentiment['signal']} (score: {initial_sentiment['sentiment_score']:.2f})")
+                
+                # Broadcast sentiment data
+                await manager.broadcast(json.dumps({
+                    "type": "sentiment_update",
+                    "session_id": session_id,
+                    "sentiment": {
+                        "symbol": initial_sentiment['symbol'],
+                        "score": initial_sentiment['sentiment_score'],
+                        "signal": initial_sentiment['signal'],
+                        "confidence": initial_sentiment['confidence'],
+                        "news_count": initial_sentiment['news_count']
+                    }
+                }))
+            except Exception as sentiment_error:
+                logger.warning(f"Could not fetch initial sentiment: {sentiment_error}")
+        
         # Get strategy with detailed logging
         logger.info(f"Fetching strategy with ID: {backtest_request.strategy_id}")
         strategy = db_manager.get_strategy(backtest_request.strategy_id)
@@ -590,11 +631,23 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         logger.info(f"Using real market data: {actual_symbol} {actual_timeframe} ({data_count} records from {data_start} to {data_end})")
         
         # Get actual market data from database
+        # Convert dates for proper comparison
+        request_start_dt = datetime.fromisoformat(backtest_request.start_date)
+        request_end_dt = datetime.fromisoformat(backtest_request.end_date)
+        db_start_dt = datetime.fromisoformat(data_start)
+        db_end_dt = datetime.fromisoformat(data_end)
+        
+        # Use the later start date and earlier end date to stay within available data
+        actual_start_dt = request_start_dt if request_start_dt >= db_start_dt else db_start_dt
+        actual_end_dt = request_end_dt if request_end_dt <= db_end_dt else db_end_dt
+        
+        logger.info(f"Date range: requested {request_start_dt} to {request_end_dt}, using {actual_start_dt} to {actual_end_dt}")
+        
         df = db_manager.get_market_data(
             actual_symbol,
             actual_timeframe,
-            datetime.fromisoformat(backtest_request.start_date) if backtest_request.start_date >= data_start else datetime.fromisoformat(data_start),
-            datetime.fromisoformat(backtest_request.end_date) if backtest_request.end_date <= data_end else datetime.fromisoformat(data_end),
+            actual_start_dt,
+            actual_end_dt,
             limit=10000
         )
 
@@ -603,17 +656,73 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
             logger.info(f"No futures data found in database for {actual_symbol}, attempting to fetch from IBKR TWS...")
             try:
                 from data.data_feed import DBDataFeed
-                db_feed = DBDataFeed(config)
+                
+                # Determine the correct futures contract symbol
+                # Futures contracts need month code + year (e.g., ESZ4 for ES Dec 2024)
+                contract_symbol = actual_symbol
+                
+                # Check if symbol is just the root (2-3 chars like ES, CL, NG)
+                if len(actual_symbol) <= 3:
+                    logger.info(f"Converting root symbol {actual_symbol} to specific futures contract...")
+                    
+                    # Get current date for contract determination
+                    now = datetime.now()
+                    current_month = now.month
+                    current_year = now.year
+                    
+                    # Futures contract month codes (quarterly contracts for most futures)
+                    # H=March, M=June, U=September, Z=December
+                    month_codes = {
+                        3: 'H',   # March
+                        6: 'M',   # June
+                        9: 'U',   # September
+                        12: 'Z'   # December
+                    }
+                    
+                    # Find the next quarterly contract month
+                    next_contract_month = None
+                    for month in sorted(month_codes.keys()):
+                        if month >= current_month:
+                            next_contract_month = month
+                            break
+                    
+                    # If we're past December, use next year's March contract
+                    if next_contract_month is None:
+                        next_contract_month = 3
+                        current_year += 1
+                    
+                    contract_code = month_codes[next_contract_month]
+                    year_code = str(current_year)[-1]  # Last digit of year (2024 -> 4)
+                    
+                    # Build contract symbol (e.g., ES + Z + 4 = ESZ4)
+                    contract_symbol = f"{actual_symbol}{contract_code}{year_code}"
+                    logger.info(f"Determined futures contract: {contract_symbol} (month: {next_contract_month}, year: {current_year})")
+                
+                # Fetch data using the specific contract
+                db_feed = DBDataFeed(config_s)
                 df = db_feed.get_futures_data(
-                    actual_symbol,
+                    contract_symbol,
                     actual_timeframe,
                     backtest_request.start_date,
                     backtest_request.end_date
                 )
-                logger.info(f"Successfully fetched {len(df)} candles from IBKR for {actual_symbol}")
+                
+                if not df.empty:
+                    logger.info(f"Successfully fetched {len(df)} candles from IBKR for {contract_symbol}")
+                    
+                    # Save to database using the root symbol for future backtests
+                    try:
+                        db_manager.store_market_data(actual_symbol, actual_timeframe, df)
+                        logger.info(f"Saved {len(df)} candles to database as {actual_symbol}")
+                    except Exception as save_error:
+                        logger.warning(f"Could not save data to database: {save_error}")
+                else:
+                    logger.warning(f"IBKR returned empty dataframe for {contract_symbol}")
+                    
             except Exception as ibkr_error:
                 logger.error(f"Failed to fetch futures data from IBKR: {ibkr_error}")
-                raise Exception(f"No market data available for {actual_symbol} in database and IBKR fetch failed")
+                logger.error(f"Make sure IBKR TWS/Gateway is running on {config_s.get('ibkr', {}).get('host', '127.0.0.1')}:{config_s.get('ibkr', {}).get('port', 7497)}")
+                raise Exception(f"No market data available for {actual_symbol} in database and IBKR fetch failed: {ibkr_error}")
 
         if df.empty:
             raise Exception(f"No market data retrieved for {actual_symbol}")
@@ -745,10 +854,13 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 strategy_name = strategy.get('name', 'ForexStrategy')
                 logger.info(f"Original strategy name from DB: '{strategy_name}'")
 
-                if 'Production HFT Futures' in strategy_name:
+                # CRITICAL FIX: Proper strategy mapping for futures strategies
+                if 'ES-Enhanced Market Making' in strategy_name:
+                    strategy_class_name = 'ESEnhancedMarketMakingHFTStrategy'
+                elif 'Production HFT Futures' in strategy_name:
                     strategy_class_name = 'ProductionHFTFuturesStrategy'
                 elif 'Market Making HFT' in strategy_name:
-                    strategy_class_name = 'NewMarketMakingHFTStrategy'
+                    strategy_class_name = 'MarketMakingHFTStrategy'
                 elif 'Statistical Arbitrage HFT' in strategy_name:
                     strategy_class_name = 'NewStatisticalArbitrageHFTStrategy'
                 elif 'Momentum Ignition HFT' in strategy_name:
@@ -757,6 +869,8 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     strategy_class_name = 'OrderFlowImbalanceHFTStrategy'
                 elif 'Latency Arbitrage HFT' in strategy_name:
                     strategy_class_name = 'LatencyArbitrageHFTStrategy'
+                elif 'Enhanced' in strategy_name and 'Forex' in strategy_name:
+                    strategy_class_name = 'EnhancedForexStrategy'
                 elif 'Enhanced' in strategy_name:
                     strategy_class_name = 'EnhancedForexStrategy'
                 elif 'Realtime Scalping 1M' in strategy_name:
@@ -852,6 +966,53 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 logger.info("=== MODIFYING STRATEGY PARAMETERS ===")
                 logger.info(f"Setting printlog=False (was: {strategy_params.get('printlog', 'not set')})")
                 strategy_params['printlog'] = False
+                
+                # === PARAMETER COMPATIBILITY FILTERING ===
+                logger.info("=== FILTERING PARAMETERS FOR STRATEGY COMPATIBILITY ===")
+                
+                # Define parameter compatibility by strategy type
+                forex_strategy_params = {
+                    'initial_capital', 'fast_length', 'slow_length', 'signal_length', 'rsi_period',
+                    'rsi_oversold', 'rsi_overbought', 'rsi_divergence_lookback', 'macd_fast', 'macd_slow',
+                    'macd_signal', 'bb_period', 'bb_std', 'bb_squeeze_threshold', 'atr_period',
+                    'volatility_lookback', 'volatility_threshold', 'base_stop_loss', 'base_take_profit',
+                    'dynamic_sizing', 'max_risk_per_trade', 'volatility_adjustment', 'stop_loss_percent',
+                    'take_profit_percent', 'trailing_stop_percent', 'position_size_percent', 'max_position_size',
+                    'min_volatility', 'max_volatility', 'trend_strength_threshold', 'regime_lookback',
+                    'trend_threshold', 'mean_reversion_threshold', 'pivot_period', 'zone_lookback',
+                    'min_zone_strength', 'zone_buffer', 'max_zones', 'volume_period', 'volume_levels',
+                    'volume_confirmation', 'use_higher_tf', 'higher_tf_multiplier', 'use_ml_features',
+                    'feature_lookback', 'momentum_periods', 'use_regime_filter', 'use_volatility_filter',
+                    'use_correlation_filter', 'use_momentum_filter', 'min_sharpe_threshold',
+                    'max_drawdown_threshold', 'profit_factor_threshold', 'sentiment_weight',
+                    'sentiment_threshold', 'news_impact_decay', 'momentum_acceleration', 'trend_following_boost',
+                    'breakout_multiplier', 'mean_reversion_factor', 'volatility_expansion_threshold',
+                    'use_gpu', 'gpu_batch_size', 'gpu_lookback', 'signal_strength_threshold',
+                    'high_confidence_threshold', 'price_action_weight', 'technical_weight',
+                    'max_trades_per_hour', 'min_time_between_trades', 'quick_exit_threshold', 'printlog'
+                }
+                
+                hft_strategy_params = {
+                    'spread_width', 'max_inventory', 'inventory_rebalance_threshold', 'quote_refresh_time',
+                    'min_spread', 'max_spread', 'volatility_lookback', 'risk_limit', 'max_orders_per_side',
+                    'order_size', 'adaptive_spread', 'printlog'
+                }
+                
+                # Filter parameters based on strategy type
+                if strategy_class_name == 'EnhancedForexStrategy':
+                    # Remove HFT-specific parameters
+                    filtered_params = {k: v for k, v in strategy_params.items() if k in forex_strategy_params}
+                    removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
+                    if removed_params:
+                        logger.info(f"Removed incompatible parameters for EnhancedForexStrategy: {removed_params}")
+                    strategy_params = filtered_params
+                elif strategy_class_name in ['MarketMakingHFTStrategy', 'ProductionHFTFuturesStrategy']:
+                    # Remove forex-specific parameters
+                    filtered_params = {k: v for k, v in strategy_params.items() if k in hft_strategy_params}
+                    removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
+                    if removed_params:
+                        logger.info(f"Removed incompatible parameters for HFT strategy: {removed_params}")
+                    strategy_params = filtered_params
                 
                 logger.info(f"Final strategy parameters dictionary: {strategy_params}")
                 logger.info(f"Final parameters type: {type(strategy_params)}")
@@ -1387,6 +1548,118 @@ async def get_database_stats():
     
     except Exception as e:
         logger.error(f"Error getting database stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Sentiment Analysis Endpoints - MUST BE BEFORE CATCH-ALL ROUTES
+
+class SentimentRequest(BaseModel):
+    symbol: str
+    hours_back: int = 24
+
+class SentimentResponse(BaseModel):
+    symbol: str
+    sentiment_score: float
+    news_count: int
+    confidence: float
+    signal: str
+    timestamp: str
+    category: str
+
+@app.get("/api/sentiment/{symbol}", response_model=SentimentResponse)
+async def get_sentiment(symbol: str, hours_back: int = 24):
+    """Get sentiment analysis for a symbol"""
+    try:
+        if not sentiment_analyzer:
+            raise HTTPException(
+                status_code=503,
+                detail="Sentiment analyzer not available. Install dependencies: pip install textblob feedparser"
+            )
+        
+        sentiment_data = sentiment_analyzer.get_commodity_sentiment(symbol, hours_back)
+        
+        return SentimentResponse(
+            symbol=sentiment_data['symbol'],
+            sentiment_score=sentiment_data['sentiment_score'],
+            news_count=sentiment_data['news_count'],
+            confidence=sentiment_data['confidence'],
+            signal=sentiment_data['signal'],
+            timestamp=sentiment_data['timestamp'].isoformat(),
+            category=sentiment_data['category']
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting sentiment for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sentiment/{symbol}/events")
+async def get_upcoming_events(symbol: str, minutes_ahead: int = 60):
+    """Get upcoming news events for a symbol"""
+    try:
+        if not news_monitor:
+            raise HTTPException(status_code=503, detail="News monitor not available")
+        
+        events = news_monitor.check_upcoming_events(symbol, minutes_ahead)
+        
+        return {
+            "symbol": symbol,
+            "events": events,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting events for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sentiment/{symbol}/pre-event-strategy")
+async def get_pre_event_strategy(symbol: str, minutes_before: int = 30):
+    """Get pre-event trading strategy for a symbol"""
+    try:
+        if not news_monitor:
+            raise HTTPException(status_code=503, detail="News monitor not available")
+        
+        strategy = news_monitor.get_pre_event_strategy(symbol, minutes_before)
+        
+        return {
+            "symbol": symbol,
+            "strategy": strategy,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting pre-event strategy for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sessions/{session_id}/sentiment")
+async def get_session_sentiment_history(session_id: int):
+    """Get sentiment data history for a backtest session"""
+    try:
+        # Get session info to extract symbol
+        sessions = db_manager.get_trading_sessions(limit=1000)
+        session = next((s for s in sessions if s['id'] == session_id), None)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        symbol = session.get('symbol', '')
+        
+        # For historical backtests, we can't get real historical sentiment
+        # But we can provide current sentiment as reference
+        if sentiment_analyzer:
+            current_sentiment = sentiment_analyzer.get_commodity_sentiment(symbol, hours_back=24)
+            
+            return {
+                "session_id": session_id,
+                "symbol": symbol,
+                "current_sentiment": current_sentiment,
+                "note": "Historical sentiment data not available for backtests. Showing current sentiment for reference.",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            raise HTTPException(status_code=503, detail="Sentiment analyzer not available")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting sentiment history for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Serve React app at root and for all non-API routes

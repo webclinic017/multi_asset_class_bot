@@ -425,7 +425,7 @@ class IBKRDataFeed(DataFeed, EWrapper):
         Retrieve futures data from Interactive Brokers
 
         Args:
-            symbol (str): Futures contract (e.g., 'ESZ23', 'NGZ4')
+            symbol (str): Futures contract (e.g., 'ESZ4', 'NGZ4', 'CLZ4')
             timeframe (str): Timeframe (e.g., '1 min', '5 mins', '1 hour')
             start_date (str): Start date in 'YYYY-MM-DD' format
             end_date (str): End date in 'YYYY-MM-DD' format
@@ -436,21 +436,69 @@ class IBKRDataFeed(DataFeed, EWrapper):
         try:
             # Validate symbol format
             if len(symbol) < 3:
-                raise ValueError(f"Invalid futures symbol format: {symbol}. Use format like 'NGZ4' (Natural Gas Dec 2024)")
+                raise ValueError(f"Invalid futures symbol format: {symbol}. Use format like 'ESZ4' (E-mini S&P Dec 2024)")
 
             # Parse symbol: last 2 chars should be month code + year
             month_year = symbol[-2:]
             if not (month_year[0].isalpha() and month_year[1].isdigit()):
                 raise ValueError(f"Invalid futures symbol format: {symbol}. Last 2 chars should be month code + year (e.g., 'Z4' for Dec 2024)")
 
+            # Extract root symbol (e.g., ES from ESZ4, NG from NGZ4)
+            root_symbol = symbol[:-2]
+            
+            # Map futures symbols to their exchanges
+            exchange_map = {
+                'ES': 'CME',      # E-mini S&P 500
+                'NQ': 'CME',      # E-mini NASDAQ
+                'YM': 'CBOT',     # E-mini Dow
+                'RTY': 'CME',     # E-mini Russell 2000
+                'CL': 'NYMEX',    # Crude Oil
+                'NG': 'NYMEX',    # Natural Gas
+                'GC': 'COMEX',    # Gold
+                'SI': 'COMEX',    # Silver
+                'HG': 'COMEX',    # Copper
+                'ZB': 'CBOT',     # 30-Year T-Bond
+                'ZN': 'CBOT',     # 10-Year T-Note
+                'ZF': 'CBOT',     # 5-Year T-Note
+                'ZC': 'CBOT',     # Corn
+                'ZS': 'CBOT',     # Soybeans
+                'ZW': 'CBOT',     # Wheat
+            }
+            
+            # Determine exchange (default to CME if not found)
+            exchange = exchange_map.get(root_symbol, 'CME')
+            
+            self.logger.info(f"Fetching {symbol} from IBKR: root={root_symbol}, exchange={exchange}")
+            
             self.connect()
 
             contract = Contract()
-            contract.symbol = symbol[:-2] # e.g., NG from NGZ4
+            contract.symbol = root_symbol
             contract.secType = "FUT"
-            contract.exchange = "GLOBEX" # Natural Gas trades on GLOBEX
+            contract.exchange = exchange
             contract.currency = "USD"
-            contract.lastTradeDateOrContractMonth = "20" + symbol[-2:] # e.g., 2024 from NGZ4
+            
+            # Parse contract month/year (e.g., Z4 -> 202412 for December 2024)
+            month_code = month_year[0]
+            year_digit = month_year[1]
+            
+            # Month code mapping
+            month_map = {
+                'F': '01', 'G': '02', 'H': '03', 'J': '04', 'K': '05', 'M': '06',
+                'N': '07', 'Q': '08', 'U': '09', 'V': '10', 'X': '11', 'Z': '12'
+            }
+            
+            month_num = month_map.get(month_code)
+            if not month_num:
+                raise ValueError(f"Invalid month code: {month_code}")
+            
+            # Determine full year (assuming 2020s decade)
+            full_year = f"202{year_digit}"
+            
+            # IBKR format: YYYYMM
+            contract.lastTradeDateOrContractMonth = f"{full_year}{month_num}"
+            
+            self.logger.info(f"Contract details: {root_symbol} {exchange} {contract.lastTradeDateOrContractMonth}")
             
             # Generate unique request ID
             req_id = self.req_id_counter

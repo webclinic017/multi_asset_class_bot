@@ -365,6 +365,12 @@ class BacktestEngine:
             strategy_class = OrderFlowImbalanceHFTStrategy
         elif strategy_name == 'ProductionHFTFuturesStrategy':
             strategy_class = ProductionHFTFuturesStrategy
+        elif strategy_name == 'EnhancedMarketMakingHFTStrategy':
+            from strategies.enhanced_market_making_hft_strategy import EnhancedMarketMakingHFTStrategy
+            strategy_class = EnhancedMarketMakingHFTStrategy
+        elif strategy_name == 'ESEnhancedMarketMakingHFTStrategy':
+            from strategies.es_enhanced_market_making_hft_strategy import ESEnhancedMarketMakingHFTStrategy
+            strategy_class = ESEnhancedMarketMakingHFTStrategy
         else:
             raise ValueError(f"Unknown strategy: {strategy_name}")
             
