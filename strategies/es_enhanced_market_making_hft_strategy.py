@@ -17,12 +17,12 @@ class ESEnhancedMarketMakingHFTStrategy(bt.Strategy):
 
     params = (
         # Core Market Making Parameters (ES-optimized)
-        ('spread_width', 0.0001),  # Reduced spread for ES (0.01%)
+        ('spread_width', 0.003),   # FIXED: Increased to 0.3% for ES futures (was 0.01%)
         ('max_inventory', 2),      # Much lower inventory for ES
         ('inventory_rebalance_threshold', 1),  # Tighter threshold
         ('quote_refresh_time', 3),  # Faster refresh
-        ('min_spread', 0.00005),   # Minimum spread for ES
-        ('max_spread', 0.0005),    # Maximum spread for ES
+        ('min_spread', 0.001),     # FIXED: Increased minimum spread to 0.1% (was 0.005%)
+        ('max_spread', 0.01),      # FIXED: Increased maximum spread to 1.0% (was 0.05%)
         ('volatility_lookback', 10),  # Shorter lookback for ES
         ('risk_limit', 0.005),     # Much lower risk per trade (0.5%)
         ('max_orders_per_side', 1), # Single order per side for ES
@@ -41,7 +41,7 @@ class ESEnhancedMarketMakingHFTStrategy(bt.Strategy):
         ('volatility_regime_threshold', 0.015),
         
         # Performance Optimization
-        ('min_profit_threshold', 0.0001),  # Lower profit threshold
+        ('min_profit_threshold', 0.00005), # FIXED: Lowered to 0.005% for realistic expectations (was 0.01%)
         ('max_holding_time', 180),         # Shorter holding time (3 min)
         ('rebalance_frequency', 3),        # Faster rebalancing
         
@@ -190,7 +190,7 @@ class ESEnhancedMarketMakingHFTStrategy(bt.Strategy):
             return 'neutral'
 
     def calculate_es_enhanced_spread(self) -> float:
-        """Calculate ES-enhanced adaptive spread"""
+        """Calculate ES-enhanced adaptive spread with safeguards against zero spread"""
         if not self.p.adaptive_spread:
             return self.p.spread_width
 
@@ -199,21 +199,21 @@ class ESEnhancedMarketMakingHFTStrategy(bt.Strategy):
             if current_price <= 0:
                 return self.p.spread_width
             
-            # Base spread (much tighter for ES)
+            # Base spread (realistic for ES futures)
             base_spread = self.p.spread_width
             
             # Volatility adjustment (more conservative for ES)
             current_volatility = self.atr[0] / current_price if current_price > 0 else 0
-            vol_multiplier = 1.0 + (current_volatility * 5)  # More conservative scaling
+            vol_multiplier = max(0.5, 1.0 + (current_volatility * 5))  # FIXED: Minimum 0.5x multiplier
             
             # Inventory adjustment (much more aggressive for ES)
             inventory_ratio = abs(self.inventory) / self.p.max_inventory
-            inventory_multiplier = 1.0 + (inventory_ratio * 0.5)  # More aggressive widening
+            inventory_multiplier = max(0.8, 1.0 + (inventory_ratio * 0.5))  # FIXED: Minimum 0.8x multiplier
             
             # Market regime adjustment for ES
             regime_multipliers = {
                 'high_volatility': 2.0,    # Wider in high vol
-                'low_volatility': 0.7,     # Tighter in low vol
+                'low_volatility': 0.9,     # FIXED: Changed from 0.7 to 0.9 to prevent too-tight spreads
                 'trending': 1.3,           # Wider in trending
                 'downtrend': 1.5,          # Much wider in downtrend
                 'neutral': 1.0
@@ -222,14 +222,14 @@ class ESEnhancedMarketMakingHFTStrategy(bt.Strategy):
             
             # Volume adjustment for ES
             if self.volume_ratio[0] > 2.0:
-                volume_multiplier = 0.8  # Tighter in high volume
+                volume_multiplier = 0.9  # FIXED: Changed from 0.8 to 0.9 to prevent too-tight spreads
             elif self.volume_ratio[0] < 0.5:
                 volume_multiplier = 1.3  # Wider in low volume
             else:
                 volume_multiplier = 1.0
             
             # Calculate final spread
-            adaptive_spread = (base_spread * vol_multiplier * inventory_multiplier * 
+            adaptive_spread = (base_spread * vol_multiplier * inventory_multiplier *
                              regime_multiplier * volume_multiplier)
             
             # Apply commission and slippage adjustment
@@ -237,8 +237,21 @@ class ESEnhancedMarketMakingHFTStrategy(bt.Strategy):
                 commission_impact = self.p.slippage_buffer * 2
                 adaptive_spread += commission_impact
             
-            # Constrain to limits
-            adaptive_spread = max(self.p.min_spread, min(self.p.max_spread, adaptive_spread))
+            # FIXED: Constrain to limits with absolute minimum based on ES tick size
+            # ES tick = 0.25 points, so minimum spread should be at least 1 tick
+            min_tick_spread = 0.25 / current_price  # Convert tick to percentage
+            absolute_min_spread = max(self.p.min_spread, min_tick_spread)
+            
+            adaptive_spread = max(absolute_min_spread, min(self.p.max_spread, adaptive_spread))
+            
+            # Final validation: ensure spread is never zero or negative
+            if adaptive_spread <= 0:
+                self.logger.warning(f"ES Adaptive spread calculated as {adaptive_spread:.6f}, using base spread instead")
+                adaptive_spread = self.p.spread_width
+            
+            self.log(f"ES Adaptive spread: {adaptive_spread:.6f} (base={base_spread:.6f}, "
+                    f"vol={vol_multiplier:.2f}, inv={inventory_multiplier:.2f}, "
+                    f"regime={regime_multiplier:.2f}, volume={volume_multiplier:.2f})")
             
             return adaptive_spread
             
@@ -321,22 +334,37 @@ class ESEnhancedMarketMakingHFTStrategy(bt.Strategy):
             # Calculate enhanced quotes
             current_price = self.dataclose[0]
             if current_price <= 0:
+                self.logger.warning(f"ES Invalid current price: {current_price}")
                 return
 
             self.spread = self.calculate_es_enhanced_spread()
             half_spread = self.spread / 2
-            bid_price = current_price - half_spread
-            ask_price = current_price + half_spread
+            bid_price = current_price * (1 - half_spread)  # FIXED: Use percentage-based calculation
+            ask_price = current_price * (1 + half_spread)  # FIXED: Use percentage-based calculation
+            
+            # Log quote calculation for debugging
+            self.log(f"ES Quote calculation: Price=${current_price:.2f}, Spread={self.spread:.6f} ({self.spread*100:.4f}%), "
+                    f"Half={half_spread:.6f}, Bid=${bid_price:.2f}, Ask=${ask_price:.2f}, "
+                    f"Absolute spread=${ask_price - bid_price:.2f}")
 
             # Calculate ES-adjusted position size (now much more conservative)
             bid_size = self.calculate_es_adjusted_position_size()
             ask_size = self.calculate_es_adjusted_position_size()
 
-            # CRITICAL FIX: Much higher minimum profit threshold for ES
+            # FIXED: Validate spread profit with realistic threshold
             spread_profit = (ask_price - bid_price) / bid_price
-            min_threshold = max(self.p.min_profit_threshold, 0.0005)  # At least 0.05%
-            if spread_profit < min_threshold:
-                self.logger.info(f"ES Spread profit too low: {spread_profit:.6f} < {min_threshold:.6f}")
+            
+            # Use configured threshold without hardcoded override
+            if spread_profit < self.p.min_profit_threshold:
+                self.logger.info(f"ES Spread profit too low: {spread_profit:.6f} < {self.p.min_profit_threshold:.6f}")
+                return
+            
+            # Additional validation: ensure spread is meaningful in absolute terms
+            # ES tick size is 0.25 points = $12.50, so minimum spread should be at least 1 tick
+            min_absolute_spread = 0.25  # 1 tick for ES
+            actual_spread = ask_price - bid_price
+            if actual_spread < min_absolute_spread:
+                self.logger.info(f"ES Absolute spread too small: ${actual_spread:.2f} < ${min_absolute_spread:.2f} (1 tick)")
                 return
 
             # CRITICAL FIX: Skip if position sizes are too small to be meaningful
