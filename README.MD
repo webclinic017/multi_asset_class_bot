@@ -17,6 +17,8 @@
 - python -m data/futures_data_loader
 - create_realtime_backtest_engine is the api/main function being called
 - RealTimeBacktestEngine class for backtest engine in api/main
+- backtesting/enhanced_realtime_broker.py for broker
+- strategies/ directory for strategies
 
 ### 📝 **run_webserver.bat Contents**
 - Substitute eshk venv with your python virtual env, sample bat file to run in windows cmd
