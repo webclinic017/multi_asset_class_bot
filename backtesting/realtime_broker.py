@@ -23,27 +23,29 @@ class RealTimeBroker(bt.brokers.BackBroker):
         self.pending_orders = []
         
     def submit(self, order, check=True):
-        """Override submit to force immediate execution of market orders"""
+        """Override submit to force immediate execution of ALL orders (market, limit, stop)"""
         self.logger.info(f"=== BROKER SUBMIT CALLED ===")
         self.logger.info(f"Order ref: {order.ref}")
         self.logger.info(f"Order type: {order.ordtype}")
         self.logger.info(f"Order size: {order.size}")
         self.logger.info(f"Order price: {order.price}")
         self.logger.info(f"Is market order: {order.ordtype == bt.Order.Market}")
+        self.logger.info(f"Is BUY: {order.isbuy()}, Is SELL: {order.issell()}")
         
         # Call parent submit first
         result = super().submit(order)
         
-        # Force immediate execution for market orders
-        if order.ordtype == bt.Order.Market and order.alive():
-            self.logger.info(f"*** FORCING IMMEDIATE MARKET ORDER EXECUTION ***")
+        # Force immediate execution for ALL order types to ensure both BUY and SELL execute
+        if order.alive():
+            order_type_name = "MARKET" if order.ordtype == bt.Order.Market else "LIMIT/STOP"
+            self.logger.info(f"*** FORCING IMMEDIATE {order_type_name} ORDER EXECUTION ***")
             self.logger.info(f"  Order status before: {order.getstatusname()}")
             self.logger.info(f"  Broker cash before: {self.get_cash():.2f}")
             self.logger.info(f"  Broker value before: {self.get_value():.2f}")
             
             try:
                 # Force execution by calling the broker's internal execution method
-                self._execute_market_order_immediately(order)
+                self._execute_order_immediately(order)
                 
                 self.logger.info(f"  Order status after: {order.getstatusname()}")
                 self.logger.info(f"  Broker cash after: {self.get_cash():.2f}")
@@ -54,8 +56,8 @@ class RealTimeBroker(bt.brokers.BackBroker):
         
         return result
     
-    def _execute_market_order_immediately(self, order):
-        """Force immediate execution of a market order"""
+    def _execute_order_immediately(self, order):
+        """Force immediate execution of any order (market, limit, stop)"""
         try:
             # Get current price from the data feed
             data = order.data
@@ -131,8 +133,8 @@ class RealTimeBroker(bt.brokers.BackBroker):
             if stuck_orders:
                 self.logger.warning(f"Found {len(stuck_orders)} stuck orders - forcing execution")
                 for order in stuck_orders:
-                    if order.ordtype == bt.Order.Market:
-                        self._execute_market_order_immediately(order)
+                    # Execute ALL stuck orders, not just market orders
+                    self._execute_order_immediately(order)
         
         return result
     
