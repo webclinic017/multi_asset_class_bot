@@ -3,8 +3,8 @@
 ### 📈 **Running in windows cmd**
 - Activate python venv and install pip -r requirements.txt
 - Web app frontend at http://localhost:8000/backtesting
-- python historical_data.py to save historical data to sql lite db to avoid api calls for backtesting
-- python load_real_data.py
+- python scripts/historical_data.py to save historical data to sql lite db to avoid api calls for backtesting
+- python scripts/load_real_data.py
 - netstat -ano | findstr :8000
 - taskkill /PID <PID> /F
 - run_webserver.bat --mode server-only
@@ -13,8 +13,10 @@
 - cd frontend, npm run build
 - python -m textblob.download_corpora(one time setup)
 - api keys through web/email from fred,eia,usda
-- python -m add_fundamental_data_table
-- python -m futures_data_loader
+- python -m database/add_fundamental_data_table
+- python -m data/futures_data_loader
+- create_realtime_backtest_engine is the api/main function being called
+- RealTimeBacktestEngine class for backtest engine in api/main
 
 ## 🚀 Executive Summary
 

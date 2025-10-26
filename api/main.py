@@ -148,8 +148,8 @@ try:
             'logging': {
                 'level': 'INFO',
                 'file': 'logs/trading_bot.log',
-                'max_file_size': '10MB',
-                'backup_count': 5
+                'max_file_size': '50MB',
+                'backup_count': 50
             }
         }
         setup_logging(default_config)
