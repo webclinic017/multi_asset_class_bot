@@ -18,6 +18,69 @@
 - create_realtime_backtest_engine is the api/main function being called
 - RealTimeBacktestEngine class for backtest engine in api/main
 
+### 📝 **run_webserver.bat Contents**
+- Substitute eshk venv with your python virtual env, sample bat file to run in windows cmd
+```batch
+@echo off
+echo ========================================
+echo Starting Web Server
+echo ========================================
+echo.
+
+REM Activate the eshk virtual environment
+echo Activating eshk virtual environment...
+call eshk\Scripts\activate.bat
+if errorlevel 1 (
+    echo ERROR: Failed to activate virtual environment!
+    echo Please ensure eshk virtual environment exists.
+    echo Run: python -m venv eshk
+    pause
+    exit /b 1
+)
+echo Virtual environment activated successfully!
+echo.
+
+REM Display Python version
+echo Python version:
+python --version
+echo.
+
+REM Check if web_server.py exists
+if not exist "web_server.py" (
+    echo ERROR: web_server.py not found!
+    echo Please ensure you're running this from the project root directory.
+    pause
+    exit /b 1
+)
+
+REM Run the web server with arguments
+echo ========================================
+if "%1"=="" (
+    echo Usage: run_webserver.bat [--mode server-only/backtest/live] [other arguments]
+    echo Example: run_webserver.bat --mode server-only
+    echo Example: run_webserver.bat --mode backtest
+    echo Example: run_webserver.bat --mode live
+    echo Example: run_webserver.bat --mode backtest --port 8080
+    echo.
+    echo Starting with default settings...
+    echo Running: python web_server.py
+    echo ========================================
+    echo.
+    python web_server.py
+) else (
+    echo Running: python web_server.py %*
+    echo ========================================
+    echo.
+    python web_server.py %*
+)
+
+echo.
+echo ========================================
+echo Web server stopped.
+echo ========================================
+pause
+```
+
 ## 🚀 Executive Summary
 
 This is a sophisticated, quantitative multi-asset trading system optimized for maximum returns using advanced genetic algorithms, dynamic parameter management, and comprehensive risk-adjusted performance metrics. The system features automatic optimization, multi-asset intelligence, and GPU-accelerated parameter tuning.

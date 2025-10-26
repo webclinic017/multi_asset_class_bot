@@ -275,20 +275,21 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
         # Log order submission
         self.log_order_activity(order, OrderStatus.SUBMITTED, "Order submitted to broker")
         
-        # Force immediate execution for market orders
-        if order.ordtype == bt.Order.Market and order.alive():
-            self.logger.info(f"*** FORCING IMMEDIATE MARKET ORDER EXECUTION ***")
+        # Force immediate execution for ALL order types to ensure both BUY and SELL execute
+        if order.alive():
+            order_type_name = "MARKET" if order.ordtype == bt.Order.Market else "LIMIT/STOP"
+            self.logger.info(f"*** FORCING IMMEDIATE {order_type_name} ORDER EXECUTION ***")
             
             try:
-                self._execute_market_order_immediately(order)
+                self._execute_order_immediately(order)
             except Exception as e:
                 self.logger.error(f"Failed to force immediate execution: {e}")
                 self.log_order_activity(order, OrderStatus.REJECTED, f"Execution failed: {e}")
         
         return result
     
-    def _execute_market_order_immediately(self, order):
-        """Force immediate execution of a market order with detailed logging"""
+    def _execute_order_immediately(self, order):
+        """Force immediate execution of any order (market, limit, stop) with detailed logging"""
         try:
             # Get current price from the data feed
             data = order.data
@@ -366,11 +367,11 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
             if stuck_orders:
                 self.logger.warning(f"Found {len(stuck_orders)} stuck orders - forcing execution")
                 for order in stuck_orders:
-                    if order.ordtype == bt.Order.Market:
-                        try:
-                            self._execute_market_order_immediately(order)
-                        except Exception as e:
-                            self.logger.error(f"Failed to execute stuck order {order.ref}: {e}")
+                    # Execute ALL stuck orders, not just market orders
+                    try:
+                        self._execute_order_immediately(order)
+                    except Exception as e:
+                        self.logger.error(f"Failed to execute stuck order {order.ref}: {e}")
         
         return result
     
