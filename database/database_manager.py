@@ -85,10 +85,11 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT * FROM strategies
-                WHERE is_active = 1
-                ORDER BY name, created_at DESC
-            """)
+            SELECT * FROM strategies
+            WHERE is_active = 1
+            --Change from created_at to updated_at
+            ORDER BY name, updated_at DESC
+        """)
             rows = cursor.fetchall()
             
             strategies = []
