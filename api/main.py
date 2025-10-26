@@ -855,7 +855,9 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 logger.info(f"Original strategy name from DB: '{strategy_name}'")
 
                 # CRITICAL FIX: Proper strategy mapping for futures strategies
-                if 'ES-Enhanced Market Making' in strategy_name:
+                if 'Backtest Market Making' in strategy_name:
+                    strategy_class_name = 'BacktestMarketMakingStrategy'
+                elif 'ES-Enhanced Market Making' in strategy_name:
                     strategy_class_name = 'ESEnhancedMarketMakingHFTStrategy'
                 elif 'Production HFT Futures' in strategy_name:
                     strategy_class_name = 'ProductionHFTFuturesStrategy'
