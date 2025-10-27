@@ -22,6 +22,7 @@
 - TO DO: Generate more trades, look into startegy params for backtesting generating high returns
 - Check sentiment integration, fred, eia, usda fundamental data integration
 - Check broker compatibility in production, with ibkr
+- Broker should trade with forex, crypto and futures in backtesting instead of just futures
 
 
 ### 📝 **run_webserver.bat Contents**
