@@ -30,6 +30,251 @@ class ESFuturesCommission(bt.CommissionInfo):
         """Calculate commission for ES futures"""
         return abs(size) * self.p.commission
 
+class NQFuturesCommission(bt.CommissionInfo):
+    """
+    NQ (E-mini Nasdaq-100) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $20 per point
+    - Margin: $17,600 per contract (CME 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 20.0),
+        ('margin', 17600.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class YMFuturesCommission(bt.CommissionInfo):
+    """
+    YM (E-mini Dow) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $5 per point
+    - Margin: $9,900 per contract (CME 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 5.0),
+        ('margin', 9900.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class RTYFuturesCommission(bt.CommissionInfo):
+    """
+    RTY (E-mini Russell 2000) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $50 per point
+    - Margin: $7,700 per contract (CME 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 50.0),
+        ('margin', 7700.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class CLFuturesCommission(bt.CommissionInfo):
+    """
+    CL (Crude Oil) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $1,000 per point (1000 barrels)
+    - Margin: $6,600 per contract (NYMEX 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 1000.0),
+        ('margin', 6600.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class GCFuturesCommission(bt.CommissionInfo):
+    """
+    GC (Gold) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $100 per point (100 troy ounces)
+    - Margin: $10,450 per contract (COMEX 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 100.0),
+        ('margin', 10450.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class SIFuturesCommission(bt.CommissionInfo):
+    """
+    SI (Silver) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $5,000 per point (5000 troy ounces)
+    - Margin: $14,300 per contract (COMEX 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 5000.0),
+        ('margin', 14300.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class NGFuturesCommission(bt.CommissionInfo):
+    """
+    NG (Natural Gas) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $10,000 per point (10,000 MMBtu)
+    - Margin: $3,300 per contract (NYMEX 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 10000.0),
+        ('margin', 3300.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class ZBFuturesCommission(bt.CommissionInfo):
+    """
+    ZB (30-Year T-Bond) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $1,000 per point
+    - Margin: $4,950 per contract (CBOT 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 1000.0),
+        ('margin', 4950.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class ZNFuturesCommission(bt.CommissionInfo):
+    """
+    ZN (10-Year T-Note) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $1,000 per point
+    - Margin: $1,650 per contract (CBOT 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 1000.0),
+        ('margin', 1650.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class ZCFuturesCommission(bt.CommissionInfo):
+    """
+    ZC (Corn) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $50 per point (5000 bushels, $0.01 per bushel)
+    - Margin: $1,980 per contract (CBOT 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 50.0),
+        ('margin', 1980.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class ZSFuturesCommission(bt.CommissionInfo):
+    """
+    ZS (Soybeans) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $50 per point (5000 bushels, $0.01 per bushel)
+    - Margin: $3,300 per contract (CBOT 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 50.0),
+        ('margin', 3300.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+class ZWFuturesCommission(bt.CommissionInfo):
+    """
+    ZW (Wheat) Futures Commission Info
+    - Commission: $2.50 per contract round-trip
+    - Multiplier: $50 per point (5000 bushels, $0.01 per bushel)
+    - Margin: $2,970 per contract (CBOT 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),
+        ('mult', 50.0),
+        ('margin', 2970.0),
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        return abs(size) * self.p.commission
+
+
+# Mapping of futures symbols to their commission classes
+FUTURES_COMMISSION_MAP = {
+    'ES': ESFuturesCommission,      # E-mini S&P 500
+    'NQ': NQFuturesCommission,      # E-mini Nasdaq-100
+    'YM': YMFuturesCommission,      # E-mini Dow
+    'RTY': RTYFuturesCommission,    # E-mini Russell 2000
+    'CL': CLFuturesCommission,      # Crude Oil
+    'GC': GCFuturesCommission,      # Gold
+    'SI': SIFuturesCommission,      # Silver
+    'NG': NGFuturesCommission,      # Natural Gas
+    'ZB': ZBFuturesCommission,      # 30-Year T-Bond
+    'ZN': ZNFuturesCommission,      # 10-Year T-Note
+    'ZC': ZCFuturesCommission,      # Corn
+    'ZS': ZSFuturesCommission,      # Soybeans
+    'ZW': ZWFuturesCommission,      # Wheat
+}
+
 
 class OrderStatus(Enum):
     CREATED = "created"
@@ -462,8 +707,8 @@ def create_enhanced_realtime_broker(initial_cash=100000.0, commission=0.001, sym
     
     Args:
         initial_cash: Initial cash amount
-        commission: Commission rate (only used for non-ES futures)
-        symbol: Trading symbol (e.g., 'ES', 'GC', 'WTI', 'EUR_USD')
+        commission: Commission rate (only used for non-futures instruments)
+        symbol: Trading symbol (e.g., 'ES', 'NQ', 'GC', 'CL', 'EUR_USD')
         
     Returns:
         EnhancedRealTimeBroker: Configured broker instance
@@ -473,15 +718,28 @@ def create_enhanced_realtime_broker(initial_cash=100000.0, commission=0.001, sym
     
     logger = logging.getLogger(__name__)
     
-    # Apply ES Futures commission only for ES symbol
-    if symbol and symbol.upper().startswith('ES'):
-        # Use ESFuturesCommission for ES futures
-        es_commission = ESFuturesCommission()
-        broker.addcommissioninfo(es_commission)
-        logger.info(f"EnhancedRealTimeBroker created with ES Futures commission ($2.50 per contract)")
-        logger.info(f"ES Futures margin: $12,500 per contract, multiplier: $50 per point")
-    else:
-        # Use standard commission for other instruments
+    # Check if symbol is a futures contract and apply appropriate commission
+    futures_applied = False
+    if symbol:
+        # Extract base symbol (remove month/year codes like ESH24 -> ES)
+        base_symbol = ''.join(c for c in symbol.upper() if c.isalpha())[:2]
+        
+        # Check if it's a known futures contract
+        if base_symbol in FUTURES_COMMISSION_MAP:
+            commission_class = FUTURES_COMMISSION_MAP[base_symbol]
+            futures_commission = commission_class()
+            broker.addcommissioninfo(futures_commission)
+            
+            # Get commission details for logging
+            params = futures_commission.p
+            logger.info(f"EnhancedRealTimeBroker created with {base_symbol} Futures commission")
+            logger.info(f"  Commission: ${params.commission} per contract round-trip")
+            logger.info(f"  Margin: ${params.margin:,.0f} per contract")
+            logger.info(f"  Multiplier: ${params.mult} per point")
+            futures_applied = True
+    
+    if not futures_applied:
+        # Use standard percentage commission for non-futures instruments
         broker.setcommission(commission=commission)
         logger.info(f"EnhancedRealTimeBroker created with standard commission: {commission}")
     
