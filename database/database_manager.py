@@ -609,8 +609,24 @@ class DatabaseManager:
         with self.get_connection() as conn:
             for timestamp, value in data.items():
                 try:
-                    # Convert timestamp to string
-                    timestamp_str = timestamp.strftime('%Y-%m-%d %H:%M:%S') if hasattr(timestamp, 'strftime') else str(timestamp)
+                    # Properly convert pandas Timestamp to datetime string
+                    if isinstance(timestamp, pd.Timestamp):
+                        # Convert pandas Timestamp to Python datetime, then to string
+                        timestamp_dt = timestamp.to_pydatetime()
+                        timestamp_str = timestamp_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    elif hasattr(timestamp, 'strftime'):
+                        # Regular datetime object
+                        timestamp_str = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        # Try to parse string timestamp
+                        try:
+                            timestamp_dt = pd.to_datetime(timestamp)
+                            timestamp_str = timestamp_dt.strftime('%Y-%m-%d %H:%M:%S')
+                        except:
+                            # Last resort: use string representation
+                            timestamp_str = str(timestamp)
+                    
+                    self.logger.debug(f"Storing fundamental data: {symbol} {series_name} at {timestamp_str} = {value}")
                     
                     conn.execute("""
                         INSERT OR REPLACE INTO fundamental_data
@@ -618,7 +634,8 @@ class DatabaseManager:
                         VALUES (?, ?, ?, ?, ?, ?)
                     """, (symbol, data_source, series_name, series_id, timestamp_str, float(value)))
                 except Exception as e:
-                    self.logger.error(f"Error storing fundamental data for {symbol} {series_name}: {e}")
+                    self.logger.error(f"Error storing fundamental data for {symbol} {series_name} at {timestamp}: {e}")
+                    self.logger.error(f"  Timestamp type: {type(timestamp)}, Value: {timestamp}")
                     continue
             conn.commit()
     

@@ -36,9 +36,10 @@ try:
 except ImportError:
     SENTIMENT_AVAILABLE = False
 
-class EnhancedForexStrategy(bt.Strategy):
+class OriginalMarketMakingStrategy(bt.Strategy):
     """
-    Advanced quantitative forex trading strategy with:
+    Original Market Making Strategy (formerly EnhancedForexStrategy)
+    Advanced quantitative trading strategy with:
     - Multi-timeframe analysis
     - Regime detection
     - Dynamic position sizing
@@ -46,6 +47,8 @@ class EnhancedForexStrategy(bt.Strategy):
     - Machine learning features
     - Volatility clustering
     - Mean reversion detection
+    
+    Works for both forex and futures markets with automatic commission detection.
     """
     
     params = (
@@ -2365,4 +2368,8 @@ class EnhancedForexStrategy(bt.Strategy):
             self.logger.info("Trade opened but not yet closed")
 
 if __name__ == '__main__':
-    print("Enhanced Forex Strategy with Advanced Quantitative Features loaded successfully")
+    print("Original Market Making Strategy with Advanced Quantitative Features loaded successfully")
+
+
+# Maintain backward compatibility alias
+EnhancedForexStrategy = OriginalMarketMakingStrategy

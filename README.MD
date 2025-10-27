@@ -9,7 +9,7 @@
 - taskkill /PID <PID> /F
 - run_webserver.bat --mode server-only
 - python.exe web_server.py --mode server-only
-- python -m futures_data_loader
+- python -m futures_data_loader (to load market data+fred+eia+usda)
 - cd frontend, npm run build
 - python -m textblob.download_corpora(one time setup)
 - api keys through web/email from fred,eia,usda
@@ -19,6 +19,10 @@
 - RealTimeBacktestEngine class for backtest engine in api/main
 - backtesting/enhanced_realtime_broker.py for broker
 - strategies/ directory for strategies
+- TO DO: Generate more trades, look into startegy params for backtesting generating high returns
+- Check sentiment integration, fred, eia, usda fundamental data integration
+- Check broker compatibility in production, with ibkr
+- Broker should trade with forex, crypto and futures in backtesting instead of just futures
 
 
 ### 📝 **run_webserver.bat Contents**

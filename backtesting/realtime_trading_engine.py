@@ -64,8 +64,15 @@ class RealTimeTradingEngine:
             # Create Cerebro engine
             self.cerebro = bt.Cerebro()
             
-            # Create enhanced real-time broker
-            self.broker = create_enhanced_realtime_broker(initial_capital, commission)
+            # Extract symbol from config for commission setup
+            symbol = self.config.get('symbol')
+            if not symbol:
+                # Try to get from backtesting config
+                backtest_config = self.config.get('backtesting', {})
+                symbol = backtest_config.get('symbol')
+            
+            # Create enhanced real-time broker with symbol for proper commission
+            self.broker = create_enhanced_realtime_broker(initial_capital, commission, symbol=symbol)
             self.broker.set_websocket_manager(self.websocket_manager)
             self.broker.set_database_manager(self.db_manager)
             self.broker.set_session_id(self.session_id)
@@ -116,6 +123,9 @@ class RealTimeTradingEngine:
             elif strategy_class_name == 'EnhancedRealtimeScalping5MStrategy':
                 from strategies.enhanced_realtime_scalping_5m_strategy import EnhancedRealtimeScalping5MStrategy
                 return EnhancedRealtimeScalping5MStrategy
+            elif strategy_class_name == 'OriginalMarketMakingStrategy':
+                from strategies.enhanced_forex_strategy import OriginalMarketMakingStrategy
+                return OriginalMarketMakingStrategy
             elif strategy_class_name == 'EnhancedForexStrategy':
                 from strategies.enhanced_forex_strategy import EnhancedForexStrategy
                 return EnhancedForexStrategy
