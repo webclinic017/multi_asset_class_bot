@@ -21,6 +21,7 @@
 - strategies/ directory for strategies
 - TO DO: Generate more trades, look into startegy params for backtesting generating high returns
 - Check sentiment integration, fred, eia, usda fundamental data integration
+- Check broker compatibility in production, with ibkr
 
 
 ### 📝 **run_webserver.bat Contents**
