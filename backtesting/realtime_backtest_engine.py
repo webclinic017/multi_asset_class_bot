@@ -44,12 +44,21 @@ class RealTimeBacktestEngine(BacktestEngine):
         self.session_id = session_id
         self.logger = logging.getLogger(__name__)
         
-        # Replace default broker with real-time broker for immediate execution
-        from backtesting.realtime_broker import create_realtime_broker
-        realtime_broker = create_realtime_broker(
+        # Replace default broker with enhanced real-time broker for immediate execution
+        # This includes the sell order fix from commit 4cecf62c
+        from backtesting.enhanced_realtime_broker import create_enhanced_realtime_broker
+        realtime_broker = create_enhanced_realtime_broker(
             initial_cash=self.initial_capital,
             commission=self.commission
         )
+        
+        # Set additional managers for enhanced broker functionality
+        if websocket_manager:
+            realtime_broker.set_websocket_manager(websocket_manager)
+        if session_id:
+            realtime_broker.set_session_id(session_id)
+        
+        # Database manager will be set later by the API
         self.cerebro.broker = realtime_broker
 
         # Ensure cerebro has correct initial capital for analyzers
@@ -77,7 +86,11 @@ class RealTimeBacktestEngine(BacktestEngine):
         self.is_running = False
         self.stop_event = threading.Event()
         
+        # Store broker reference for later database manager setup
+        self.realtime_broker = realtime_broker
+        
         self.logger.info(f"RealTimeBacktestEngine initialized for session {session_id}")
+        self.logger.info(f"Using EnhancedRealTimeBroker with sell order fix from commit 4cecf62c")
     
     def run_with_realtime_updates(self):
         """
@@ -106,6 +119,11 @@ class RealTimeBacktestEngine(BacktestEngine):
             
             # Store engine reference for analyzer access
             self.cerebro._engine_ref = self
+            
+            # Set database manager on enhanced broker if available
+            if hasattr(self, 'db_manager') and hasattr(self.cerebro.broker, 'set_database_manager'):
+                self.cerebro.broker.set_database_manager(self.db_manager)
+                self.logger.info("Database manager set on enhanced broker")
             
             # Run the standard backtest
             results = super().run()
