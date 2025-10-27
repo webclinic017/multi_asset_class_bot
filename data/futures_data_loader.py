@@ -150,12 +150,13 @@ class FuturesDataLoader:
             self.logger.error(f"Error fetching data for {symbol}: {e}")
             return None
     
-    def fetch_fred_data(self, symbol: str) -> Optional[Dict]:
+    def fetch_fred_data(self, symbol: str, start_date: str = '2020-01-01') -> Optional[Dict]:
         """
         Fetch fundamental data from FRED API
         
         Args:
             symbol: Futures symbol
+            start_date: Start date for historical data (default: 2020-01-01)
             
         Returns:
             Dictionary with FRED data series
@@ -173,14 +174,24 @@ class FuturesDataLoader:
                     'gas_price': 'DHHNGSP',            # Henry Hub Natural Gas Spot Price
                 },
                 'GC': {
-                    # Skip gold - series ID may be incorrect
+                    'gold_price': 'GOLDAMGBD228NLBM',  # Gold Fixing Price
                 },
                 'ES': {
                     'vix': 'VIXCLS',                   # CBOE Volatility Index: VIX
+                    'fed_funds': 'DFF',                # Federal Funds Rate
+                },
+                'NQ': {
+                    'vix': 'VIXCLS',                   # CBOE Volatility Index: VIX
+                    'fed_funds': 'DFF',                # Federal Funds Rate
+                },
+                'YM': {
+                    'vix': 'VIXCLS',                   # CBOE Volatility Index: VIX
+                    'fed_funds': 'DFF',                # Federal Funds Rate
                 },
                 'ZN': {
                     'treasury_10y': 'DGS10',           # 10-Year Treasury Rate
                     'fed_funds': 'DFF',                # Federal Funds Rate
+                    'treasury_2y': 'DGS2',             # 2-Year Treasury Rate
                 }
             }
             
@@ -188,12 +199,19 @@ class FuturesDataLoader:
             if not series_ids:
                 return None
             
+            # Convert start_date to datetime
+            start_dt = pd.to_datetime(start_date)
+            
             fred_data = {}
             for series_name, series_id in series_ids.items():
                 try:
-                    data = self.fred.get_series(series_id, limit=365)  # Last year
+                    # Fetch historical data from start_date to now
+                    data = self.fred.get_series(
+                        series_id,
+                        observation_start=start_dt
+                    )
                     fred_data[series_name] = data
-                    self.logger.info(f"Fetched FRED data: {series_name} ({len(data)} points)")
+                    self.logger.info(f"Fetched FRED data: {series_name} ({len(data)} points from {data.index.min()} to {data.index.max()})")
                 except Exception as e:
                     self.logger.warning(f"Could not fetch FRED series {series_id}: {e}")
             
@@ -203,12 +221,13 @@ class FuturesDataLoader:
             self.logger.error(f"Error fetching FRED data for {symbol}: {e}")
             return None
     
-    def fetch_eia_data(self, symbol: str) -> Optional[Dict]:
+    def fetch_eia_data(self, symbol: str, start_date: str = '2020-01-01') -> Optional[Dict]:
         """
         Fetch energy data from EIA API
         
         Args:
             symbol: Futures symbol (energy commodities only)
+            start_date: Start date for historical data (default: 2020-01-01)
             
         Returns:
             Dictionary with EIA data
@@ -223,6 +242,12 @@ class FuturesDataLoader:
         try:
             eia_data = {}
             
+            # Calculate number of weeks from start_date to now
+            start_dt = pd.to_datetime(start_date)
+            weeks_since_start = int((datetime.now() - start_dt.to_pydatetime()).days / 7)
+            # Cap at reasonable limit (EIA API limits)
+            weeks_to_fetch = min(weeks_since_start, 1000)
+            
             if symbol == 'CL':
                 # Crude oil inventory
                 url = "https://api.eia.gov/v2/petroleum/stoc/wstk/data/"
@@ -233,14 +258,14 @@ class FuturesDataLoader:
                     'facets[product][]': 'WCRSTUS1',
                     'sort[0][column]': 'period',
                     'sort[0][direction]': 'desc',
-                    'length': 52
+                    'length': weeks_to_fetch
                 }
                 
                 response = requests.get(url, params=params, timeout=10)
                 if response.status_code == 200:
                     data = response.json()
                     eia_data['crude_inventory'] = data
-                    self.logger.info(f"Fetched EIA crude inventory data")
+                    self.logger.info(f"Fetched EIA crude inventory data ({weeks_to_fetch} weeks)")
             
             elif symbol == 'NG':
                 # Natural gas storage
@@ -251,14 +276,14 @@ class FuturesDataLoader:
                     'data[0]': 'value',
                     'sort[0][column]': 'period',
                     'sort[0][direction]': 'desc',
-                    'length': 52
+                    'length': weeks_to_fetch
                 }
                 
                 response = requests.get(url, params=params, timeout=10)
                 if response.status_code == 200:
                     data = response.json()
                     eia_data['gas_storage'] = data
-                    self.logger.info(f"Fetched EIA natural gas storage data")
+                    self.logger.info(f"Fetched EIA natural gas storage data ({weeks_to_fetch} weeks)")
             
             return eia_data if eia_data else None
             
@@ -296,12 +321,52 @@ class FuturesDataLoader:
             self.logger.error(f"Error clearing data for {symbol} {timeframe}: {e}")
             return False
     
-    def fetch_usda_data(self, symbol: str) -> Optional[Dict]:
+    def clear_existing_fundamental_data(self, symbol: str, data_source: str = None) -> bool:
+        """
+        Clear existing fundamental data for a symbol to prevent duplicates
+        
+        Args:
+            symbol: Futures symbol
+            data_source: Optional data source filter ('FRED', 'EIA', 'USDA')
+            
+        Returns:
+            True if successful
+        """
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                if data_source:
+                    cursor.execute("""
+                        DELETE FROM fundamental_data
+                        WHERE symbol = ? AND data_source = ?
+                    """, (symbol, data_source))
+                else:
+                    cursor.execute("""
+                        DELETE FROM fundamental_data
+                        WHERE symbol = ?
+                    """, (symbol,))
+                
+                deleted_count = cursor.rowcount
+                conn.commit()
+                
+                if deleted_count > 0:
+                    source_str = f" from {data_source}" if data_source else ""
+                    self.logger.info(f"Cleared {deleted_count} existing fundamental records for {symbol}{source_str}")
+                
+                return True
+                
+        except Exception as e:
+            self.logger.error(f"Error clearing fundamental data for {symbol}: {e}")
+            return False
+    
+    def fetch_usda_data(self, symbol: str, start_date: str = '2020-01-01') -> Optional[Dict]:
         """
         Fetch agricultural data from USDA NASS API
         
         Args:
             symbol: Futures symbol (agriculture commodities only)
+            start_date: Start date for historical data (default: 2020-01-01)
             
         Returns:
             Dictionary with USDA data
@@ -327,6 +392,9 @@ class FuturesDataLoader:
             if not commodity:
                 return None
             
+            # Extract year from start_date
+            start_year = pd.to_datetime(start_date).year
+            
             # Fetch production data
             url = "https://quickstats.nass.usda.gov/api/api_GET/"
             params = {
@@ -334,7 +402,7 @@ class FuturesDataLoader:
                 'commodity_desc': commodity,
                 'statisticcat_desc': 'PRODUCTION',
                 'format': 'JSON',
-                'year__GE': '2023'  # Last 2 years
+                'year__GE': str(start_year)  # From start year to present
             }
             
             response = requests.get(url, params=params, timeout=15)
@@ -456,8 +524,11 @@ class FuturesDataLoader:
             if include_fundamentals:
                 self.logger.info(f"\nFetching fundamental data for {symbol}...")
                 
-                # Fetch and store FRED data
-                fred_data = self.fetch_fred_data(symbol)
+                # Clear existing fundamental data for this symbol to prevent old data
+                self.clear_existing_fundamental_data(symbol)
+                
+                # Fetch and store FRED data with historical range matching market data
+                fred_data = self.fetch_fred_data(symbol, start_date=start_date)
                 if fred_data:
                     for series_name, series_data in fred_data.items():
                         try:
@@ -473,14 +544,14 @@ class FuturesDataLoader:
                             self.logger.warning(f"Could not store FRED {series_name}: {e}")
                     results[f"{symbol}_FRED"] = len(fred_data)
                 
-                # Fetch EIA data (for energy commodities)
-                eia_data = self.fetch_eia_data(symbol)
+                # Fetch EIA data (for energy commodities) with historical range
+                eia_data = self.fetch_eia_data(symbol, start_date=start_date)
                 if eia_data:
                     self.logger.info(f"✓ EIA data: {len(eia_data)} series fetched")
                     results[f"{symbol}_EIA"] = len(eia_data)
                 
-                # Fetch USDA data (for agricultural commodities)
-                usda_data = self.fetch_usda_data(symbol)
+                # Fetch USDA data (for agricultural commodities) with historical range
+                usda_data = self.fetch_usda_data(symbol, start_date=start_date)
                 if usda_data:
                     self.logger.info(f"✓ USDA data: {len(usda_data)} series fetched")
                     results[f"{symbol}_USDA"] = len(usda_data)
@@ -639,7 +710,7 @@ def main():
     logger.info("\n### LOADING TIER 1 FUTURES (HIGH LIQUIDITY) ###")
     logger.info("Fetching: Price data + FRED fundamentals + EIA data")
     results_tier1 = loader.load_all_futures_data(
-        start_date='2024-01-01',
+        start_date='2020-01-01',  # Historical data from 2020 to match market data
         end_date=datetime.now().strftime('%Y-%m-%d'),
         intervals=['1h', '1d'],
         tier_filter=1,
@@ -650,7 +721,7 @@ def main():
     logger.info("\n### LOADING TIER 2 FUTURES (MEDIUM LIQUIDITY) ###")
     logger.info("Fetching: Price data + FRED fundamentals + EIA data")
     results_tier2 = loader.load_all_futures_data(
-        start_date='2024-01-01',
+        start_date='2020-01-01',  # Historical data from 2020 to match market data
         end_date=datetime.now().strftime('%Y-%m-%d'),
         intervals=['1h', '1d'],
         tier_filter=2,
@@ -661,7 +732,7 @@ def main():
     logger.info("\n### LOADING TIER 3 FUTURES (SPECIALIZED - AGRICULTURE) ###")
     logger.info("Fetching: Price data + USDA agricultural data")
     results_tier3 = loader.load_all_futures_data(
-        start_date='2024-01-01',
+        start_date='2020-01-01',  # Historical data from 2020 to match market data
         end_date=datetime.now().strftime('%Y-%m-%d'),
         intervals=['1d'],  # Only daily for tier 3
         tier_filter=3,

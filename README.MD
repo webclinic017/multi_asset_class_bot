@@ -9,7 +9,7 @@
 - taskkill /PID <PID> /F
 - run_webserver.bat --mode server-only
 - python.exe web_server.py --mode server-only
-- python -m futures_data_loader
+- python -m futures_data_loader (to load market data+fred+eia+usda)
 - cd frontend, npm run build
 - python -m textblob.download_corpora(one time setup)
 - api keys through web/email from fred,eia,usda
