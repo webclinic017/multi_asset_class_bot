@@ -19,6 +19,8 @@
 - RealTimeBacktestEngine class for backtest engine in api/main
 - backtesting/enhanced_realtime_broker.py for broker
 - strategies/ directory for strategies
+- TO DO: Generate more trades, look into startegy params for backtesting generating high returns
+- Check sentiment integration, fred, eia, usda fundamental data integration
 
 
 ### 📝 **run_webserver.bat Contents**
