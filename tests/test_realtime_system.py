@@ -47,7 +47,7 @@ class TestRealTimeSystem(unittest.TestCase):
         """Test enhanced real-time broker creation and basic functionality"""
         self.logger.info("Testing enhanced broker creation...")
         
-        broker = create_enhanced_realtime_broker(10000.0, 0.001)
+        broker = create_enhanced_realtime_broker(10000.0, 0.001, symbol='EUR_USD')
         broker.set_websocket_manager(self.websocket_manager)
         broker.set_database_manager(self.db_manager)
         broker.set_session_id(self.session_id)
@@ -327,7 +327,7 @@ class TestRealTimeSystem(unittest.TestCase):
         self.logger.info("Testing complete integration flow...")
         
         # 1. Create enhanced broker
-        broker = create_enhanced_realtime_broker(10000.0, 0.001)
+        broker = create_enhanced_realtime_broker(10000.0, 0.001, symbol='EUR_USD')
         broker.set_websocket_manager(self.websocket_manager)
         broker.set_database_manager(self.db_manager)
         broker.set_session_id(self.session_id)

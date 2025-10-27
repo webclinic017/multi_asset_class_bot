@@ -24,7 +24,7 @@ def force_reset_all_capital():
     # Test broker creation
     print("2. Testing broker creation...")
     from backtesting.enhanced_realtime_broker import create_enhanced_realtime_broker
-    broker = create_enhanced_realtime_broker(100000.0)
+    broker = create_enhanced_realtime_broker(100000.0, symbol='EUR_USD')
     print(f"   ✓ Enhanced Broker Cash: ${broker.get_cash():,}")
     print(f"   ✓ Enhanced Broker Value: ${broker.get_value():,}")
     

@@ -47,9 +47,25 @@ class RealTimeBacktestEngine(BacktestEngine):
         # Replace default broker with enhanced real-time broker for immediate execution
         # This includes the sell order fix from commit 4cecf62c
         from backtesting.enhanced_realtime_broker import create_enhanced_realtime_broker
+        
+        # Extract symbol from config for commission setup
+        symbol = None
+        if config:
+            # Try to get symbol from various config locations
+            symbol = config.get('symbol')
+            if not symbol:
+                backtest_config = config.get('backtesting', {})
+                symbol = backtest_config.get('symbol')
+            if not symbol:
+                # Try to get from symbols list
+                symbols = backtest_config.get('symbols', [])
+                if symbols and len(symbols) > 0:
+                    symbol = symbols[0].get('name') if isinstance(symbols[0], dict) else symbols[0]
+        
         realtime_broker = create_enhanced_realtime_broker(
             initial_cash=self.initial_capital,
-            commission=self.commission
+            commission=self.commission,
+            symbol=symbol
         )
         
         # Set additional managers for enhanced broker functionality

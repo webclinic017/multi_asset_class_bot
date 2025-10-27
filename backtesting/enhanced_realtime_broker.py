@@ -11,6 +11,26 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+class ESFuturesCommission(bt.CommissionInfo):
+    """
+    ES Futures Commission Info
+    - Commission: $2.50 per contract round-trip (typical broker + CME fees)
+    - Multiplier: $50 per point
+    - Margin: $12,500 per contract (CME 2024)
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommissionInfo.COMM_FIXED),
+        ('commission', 2.50),  # $2.50 per contract round-trip
+        ('mult', 50.0),  # $50 per point
+        ('margin', 12500.0),  # Initial margin per contract
+    )
+    
+    def _getcommission(self, size, price, pseudoexec):
+        """Calculate commission for ES futures"""
+        return abs(size) * self.p.commission
+
+
 class OrderStatus(Enum):
     CREATED = "created"
     SUBMITTED = "submitted"
@@ -433,24 +453,39 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
             "completed_orders": len([a for a in self.order_activities if a.status == OrderStatus.COMPLETED]),
             "rejected_orders": len([a for a in self.order_activities if a.status == OrderStatus.REJECTED])
         }
+    
 
-def create_enhanced_realtime_broker(initial_cash=100000.0, commission=0.001):
+
+def create_enhanced_realtime_broker(initial_cash=100000.0, commission=0.001, symbol=None):
     """
     Factory function to create an enhanced real-time broker
     
     Args:
         initial_cash: Initial cash amount
-        commission: Commission rate
+        commission: Commission rate (only used for non-ES futures)
+        symbol: Trading symbol (e.g., 'ES', 'GC', 'WTI', 'EUR_USD')
         
     Returns:
         EnhancedRealTimeBroker: Configured broker instance
     """
     broker = EnhancedRealTimeBroker()
     broker.set_cash(initial_cash)
-    broker.setcommission(commission=commission)
     
     logger = logging.getLogger(__name__)
-    logger.info(f"EnhancedRealTimeBroker created with ${initial_cash:,.2f} initial cash")
+    
+    # Apply ES Futures commission only for ES symbol
+    if symbol and symbol.upper().startswith('ES'):
+        # Use ESFuturesCommission for ES futures
+        es_commission = ESFuturesCommission()
+        broker.addcommissioninfo(es_commission)
+        logger.info(f"EnhancedRealTimeBroker created with ES Futures commission ($2.50 per contract)")
+        logger.info(f"ES Futures margin: $12,500 per contract, multiplier: $50 per point")
+    else:
+        # Use standard commission for other instruments
+        broker.setcommission(commission=commission)
+        logger.info(f"EnhancedRealTimeBroker created with standard commission: {commission}")
+    
+    logger.info(f"Initial cash: ${initial_cash:,.2f}")
     
     return broker
 
@@ -458,10 +493,17 @@ if __name__ == "__main__":
     # Test the enhanced real-time broker
     logging.basicConfig(level=logging.INFO)
     
-    broker = create_enhanced_realtime_broker(100000.0, 0.001)
+    # Test with ES futures
+    print("=== Testing ES Futures Commission ===")
+    es_broker = create_enhanced_realtime_broker(100000.0, 0.001, symbol='ES')
+    print(f"ES Broker stats: {es_broker.get_broker_stats()}")
+    
+    # Test with standard commission (forex)
+    print("\n=== Testing Standard Commission (Forex) ===")
+    forex_broker = create_enhanced_realtime_broker(100000.0, 0.001, symbol='EUR_USD')
     
     # Test signal logging
-    signal_id = broker.log_trading_signal(
+    signal_id = forex_broker.log_trading_signal(
         SignalType.BUY,
         0.75,
         0.85,
@@ -475,4 +517,4 @@ if __name__ == "__main__":
     )
     
     print(f"Logged signal with ID: {signal_id}")
-    print(f"Broker stats: {broker.get_broker_stats()}")
+    print(f"Forex Broker stats: {forex_broker.get_broker_stats()}")
