@@ -39,6 +39,7 @@ from strategies.hft_statistical_arbitrage_strategy import StatisticalArbitrageHF
 from strategies.hft_momentum_ignition_strategy import MomentumIgnitionHFTStrategy as NewMomentumHFTStrategy
 from strategies.hft_order_flow_strategy import OrderFlowImbalanceHFTStrategy
 from strategies.production_hft_futures_strategy import ProductionHFTFuturesStrategy
+from strategies.backtest_market_making_strategy import BacktestMarketMakingStrategy
 from risk.risk_manager import RiskManager # For integrating risk management into backtesting
 from utils.multi_asset_analyzer import MultiAssetAnalyzer
 
@@ -371,6 +372,8 @@ class BacktestEngine:
         elif strategy_name == 'ESEnhancedMarketMakingHFTStrategy':
             from strategies.es_enhanced_market_making_hft_strategy import ESEnhancedMarketMakingHFTStrategy
             strategy_class = ESEnhancedMarketMakingHFTStrategy
+        elif strategy_name == 'BacktestMarketMakingStrategy':
+            strategy_class = BacktestMarketMakingStrategy
         else:
             raise ValueError(f"Unknown strategy: {strategy_name}")
             
