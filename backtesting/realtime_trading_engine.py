@@ -123,6 +123,9 @@ class RealTimeTradingEngine:
             elif strategy_class_name == 'EnhancedRealtimeScalping5MStrategy':
                 from strategies.enhanced_realtime_scalping_5m_strategy import EnhancedRealtimeScalping5MStrategy
                 return EnhancedRealtimeScalping5MStrategy
+            elif strategy_class_name == 'OriginalMarketMakingStrategy':
+                from strategies.enhanced_forex_strategy import OriginalMarketMakingStrategy
+                return OriginalMarketMakingStrategy
             elif strategy_class_name == 'EnhancedForexStrategy':
                 from strategies.enhanced_forex_strategy import EnhancedForexStrategy
                 return EnhancedForexStrategy

@@ -22,7 +22,7 @@ from strategies.improved_forex_strategy import ImprovedForexStrategy
 from strategies.profitable_forex_strategy import ProfitableForexStrategy
 from strategies.crypto_strategy import CryptoStrategy, SOLStrategy
 from strategies.futures_strategy import FuturesStrategy
-from strategies.enhanced_forex_strategy import EnhancedForexStrategy
+from strategies.enhanced_forex_strategy import OriginalMarketMakingStrategy, EnhancedForexStrategy
 from strategies.enhanced_crypto_strategy import EnhancedCryptoStrategy
 from strategies.simple_crypto_strategy import SimpleCryptoStrategy
 from strategies.ultra_simple_crypto_strategy import UltraSimpleCryptoStrategy
@@ -325,6 +325,8 @@ class BacktestEngine:
             strategy_class = ImprovedForexStrategy
         elif strategy_name == 'ProfitableForexStrategy':
             strategy_class = ProfitableForexStrategy
+        elif strategy_name == 'OriginalMarketMakingStrategy':
+            strategy_class = OriginalMarketMakingStrategy
         elif strategy_name == 'EnhancedForexStrategy':
             strategy_class = EnhancedForexStrategy
         elif strategy_name == 'RealtimeScalping1MStrategy':

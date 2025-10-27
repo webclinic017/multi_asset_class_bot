@@ -855,7 +855,9 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 logger.info(f"Original strategy name from DB: '{strategy_name}'")
 
                 # CRITICAL FIX: Proper strategy mapping for futures strategies
-                if 'Backtest Market Making' in strategy_name:
+                if 'Original Market Making' in strategy_name:
+                    strategy_class_name = 'OriginalMarketMakingStrategy'
+                elif 'Backtest Market Making' in strategy_name:
                     strategy_class_name = 'BacktestMarketMakingStrategy'
                 elif 'ES-Enhanced Market Making' in strategy_name:
                     strategy_class_name = 'ESEnhancedMarketMakingHFTStrategy'
@@ -1001,12 +1003,12 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 }
                 
                 # Filter parameters based on strategy type
-                if strategy_class_name == 'EnhancedForexStrategy':
+                if strategy_class_name in ['OriginalMarketMakingStrategy', 'EnhancedForexStrategy']:
                     # Remove HFT-specific parameters
                     filtered_params = {k: v for k, v in strategy_params.items() if k in forex_strategy_params}
                     removed_params = set(strategy_params.keys()) - set(filtered_params.keys())
                     if removed_params:
-                        logger.info(f"Removed incompatible parameters for EnhancedForexStrategy: {removed_params}")
+                        logger.info(f"Removed incompatible parameters for {strategy_class_name}: {removed_params}")
                     strategy_params = filtered_params
                 elif strategy_class_name in ['MarketMakingHFTStrategy', 'ProductionHFTFuturesStrategy']:
                     # Remove forex-specific parameters
