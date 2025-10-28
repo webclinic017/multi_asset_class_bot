@@ -2205,6 +2205,44 @@ class OriginalMarketMakingStrategy(bt.Strategy):
                 self.logger.info(f"  Executed value: {order.executed.value:.2f}")
                 self.logger.info(f"  Commission: {order.executed.comm:.2f}")
                 self.logger.info(f"  Execution time: {order.executed.dt}")
+            
+            # CRITICAL: Store portfolio snapshot after EVERY order execution
+            if hasattr(self, 'portfolio_tracker'):
+                try:
+                    from datetime import datetime
+                    # Get database manager from broker if available
+                    db_manager = None
+                    if hasattr(self.broker, 'db_manager'):
+                        db_manager = self.broker.db_manager
+                    elif hasattr(self.cerebro, 'broker') and hasattr(self.cerebro.broker, 'db_manager'):
+                        db_manager = self.cerebro.broker.db_manager
+                    
+                    # Get session ID from broker
+                    session_id = None
+                    if hasattr(self.broker, 'session_id'):
+                        session_id = self.broker.session_id
+                    elif hasattr(self.cerebro, 'broker') and hasattr(self.cerebro.broker, 'session_id'):
+                        session_id = self.cerebro.broker.session_id
+                    
+                    if db_manager and session_id:
+                        current_value = self.broker.get_value()
+                        current_cash = self.broker.get_cash()
+                        
+                        db_manager.store_portfolio_snapshot(
+                            session_id=session_id,
+                            timestamp=datetime.utcnow(),
+                            total_value=current_value,
+                            cash_balance=current_cash,
+                            unrealized_pnl=0.0,
+                            realized_pnl=current_value - self.initial_capital,
+                            open_positions=1 if self.position else 0,
+                            daily_pnl=0.0
+                        )
+                        self.logger.info(f"*** PORTFOLIO SNAPSHOT STORED: ${current_value:.2f} ***")
+                    else:
+                        self.logger.warning(f"Cannot store snapshot: db_manager={db_manager is not None}, session_id={session_id}")
+                except Exception as snapshot_error:
+                    self.logger.error(f"Failed to store portfolio snapshot: {snapshot_error}")
                 
             # Enhanced portfolio impact analysis with FORCED VALUE CORRECTION
             self.logger.info(f"*** POST-EXECUTION PORTFOLIO STATE ***")
@@ -2366,6 +2404,61 @@ class OriginalMarketMakingStrategy(bt.Strategy):
             self.log(f'TRADE CLOSED - PnL: {trade.pnl:.2f} | Win Rate: {win_rate:.1f}% | Avg PnL: {avg_pnl:.2f}')
         else:
             self.logger.info("Trade opened but not yet closed")
+    
+    def stop(self):
+        """Called when backtest ends - close all open positions to ensure trades are recorded"""
+        self.logger.info("=== STRATEGY STOP() CALLED - BACKTEST ENDING ===")
+        
+        # Close any open positions
+        if self.position:
+            self.logger.info(f"*** CLOSING OPEN POSITION AT END OF BACKTEST ***")
+            self.logger.info(f"  Position size: {self.position.size}")
+            self.logger.info(f"  Entry price: {self.buyprice if self.buyprice else 'Unknown'}")
+            self.logger.info(f"  Current price: {self.dataclose[0]:.5f}")
+            
+            if self.buyprice:
+                unrealized_pnl = (self.dataclose[0] - self.buyprice) * self.position.size
+                self.logger.info(f"  Unrealized P&L: ${unrealized_pnl:.2f}")
+            
+            # Close the position to trigger trade recording
+            self.close()
+            self.logger.info("  Position close order submitted")
+        else:
+            self.logger.info("No open positions to close")
+        
+        # Cancel any pending orders
+        if self.order:
+            self.logger.info(f"*** CANCELING PENDING ORDER AT END OF BACKTEST ***")
+            self.logger.info(f"  Order ref: {self.order.ref}")
+            self.logger.info(f"  Order status: {self.order.getstatusname()}")
+            try:
+                self.cancel(self.order)
+                self.logger.info("  Order canceled successfully")
+            except Exception as e:
+                self.logger.error(f"  Failed to cancel order: {e}")
+            self.order = None
+        
+        # Log final statistics
+        self.logger.info("=== FINAL STRATEGY STATISTICS ===")
+        self.logger.info(f"Total trades: {self.trade_count}")
+        self.logger.info(f"Winning trades: {self.winning_trades}")
+        self.logger.info(f"Losing trades: {self.trade_count - self.winning_trades}")
+        self.logger.info(f"Win rate: {(self.winning_trades / self.trade_count * 100) if self.trade_count > 0 else 0:.1f}%")
+        self.logger.info(f"Total P&L: ${self.total_pnl:.2f}")
+        self.logger.info(f"Max drawdown: {self.max_drawdown:.2%}")
+        self.logger.info(f"Final portfolio value: ${self.broker.get_value():.2f}")
+        self.logger.info(f"Total return: {((self.broker.get_value() - self.initial_capital) / self.initial_capital * 100):.2f}%")
+        
+        # Get portfolio tracker summary
+        portfolio_summary = self.portfolio_tracker.get_portfolio_summary()
+        self.logger.info("=== PORTFOLIO TRACKER FINAL SUMMARY ===")
+        self.logger.info(f"Tracker total value: ${portfolio_summary['total_value']:.2f}")
+        self.logger.info(f"Tracker total return: {portfolio_summary['total_return']:.2f}%")
+        self.logger.info(f"Tracker realized P&L: ${portfolio_summary['realized_pnl']:.2f}")
+        self.logger.info(f"Tracker unrealized P&L: ${portfolio_summary['unrealized_pnl']:.2f}")
+        self.logger.info(f"Tracker net P&L: ${portfolio_summary['net_pnl']:.2f}")
+        
+        self.logger.info("=== STRATEGY STOP() COMPLETE ===")
 
 if __name__ == '__main__':
     print("Original Market Making Strategy with Advanced Quantitative Features loaded successfully")
