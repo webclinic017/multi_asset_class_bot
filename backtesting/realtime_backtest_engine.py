@@ -401,33 +401,51 @@ class TradeLoggingAnalyzer(bt.Analyzer):
                 commission = trade.commission if hasattr(trade, 'commission') else 0.0
                 exit_price = trade.price + ((trade.pnl + commission) / trade.size) if trade.size != 0 else trade.price
 
-                # Store trade in database
-                trade_id = self.db_manager.create_trade(
-                    session_id=self.session_id,
-                    symbol=trade.data._name if hasattr(trade.data, '_name') else 'UNKNOWN',
-                    side='BUY' if trade.long else 'SELL',
-                    entry_time=entry_time,
-                    entry_price=trade.price,
-                    quantity=trade.size,
-                    exit_time=exit_time,
-                    exit_price=exit_price,
-                    pnl=trade.pnl,
-                    pnl_pips=trade.pnlcomm,  # Commission-adjusted P&L
-                    commission=commission,
-                    duration_seconds=duration_seconds,
-                    exit_reason=exit_reason,
-                    status='closed'
-                )
-                
-                self.logger.info(f"Stored trade {trade_id} in database: "
-                               f"{'BUY' if trade.long else 'SELL'} "
-                               f"{trade.size} @ {trade.price:.5f}, "
-                               f"P&L: {trade.pnl:.2f}")
+                # Store trade in database with proper error handling
+                try:
+                    trade_id = self.db_manager.create_trade(
+                        session_id=self.session_id,
+                        symbol=trade.data._name if hasattr(trade.data, '_name') else 'UNKNOWN',
+                        side='BUY' if trade.long else 'SELL',
+                        entry_time=entry_time,
+                        entry_price=trade.price,
+                        quantity=abs(trade.size),  # Ensure positive quantity
+                        exit_time=exit_time,
+                        exit_price=exit_price,
+                        pnl=trade.pnl,
+                        pnl_pips=trade.pnlcomm,  # Commission-adjusted P&L
+                        commission=commission,
+                        duration_seconds=duration_seconds,
+                        exit_reason=exit_reason,
+                        status='closed'
+                    )
+                    
+                    self.logger.info(f"✓ Successfully stored trade {trade_id} in database:")
+                    self.logger.info(f"  Session: {self.session_id}")
+                    self.logger.info(f"  Side: {'BUY' if trade.long else 'SELL'}")
+                    self.logger.info(f"  Size: {abs(trade.size)}")
+                    self.logger.info(f"  Entry: {trade.price:.5f} at {entry_time}")
+                    self.logger.info(f"  Exit: {exit_price:.5f} at {exit_time}")
+                    self.logger.info(f"  P&L: ${trade.pnl:.2f}")
+                    self.logger.info(f"  Duration: {duration_seconds}s")
+                    
+                except Exception as db_error:
+                    self.logger.error(f"✗ Database error storing trade: {db_error}")
+                    import traceback
+                    self.logger.error(f"Traceback: {traceback.format_exc()}")
+                    raise
                 
             except Exception as e:
-                self.logger.error(f"Error storing trade in database: {e}")
+                self.logger.error(f"✗ Error in notify_trade: {e}")
                 import traceback
                 self.logger.error(f"Traceback: {traceback.format_exc()}")
+    
+    def notify_order(self, order):
+        """Called when an order status changes - log for debugging"""
+        if order.status in [order.Completed]:
+            self.logger.info(f"TradeLoggingAnalyzer: Order {order.ref} completed - "
+                           f"{'BUY' if order.isbuy() else 'SELL'} "
+                           f"{order.executed.size} @ {order.executed.price:.5f}")
     
     def get_analysis(self):
         """Return analysis results"""

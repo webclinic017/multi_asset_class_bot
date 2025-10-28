@@ -626,17 +626,18 @@ class EnhancedRealTimeBroker(bt.brokers.BackBroker):
         """Override next to ensure all pending orders are processed"""
         result = super().next()
         
-        # Force processing of any stuck orders
+        # Force processing of ANY pending orders (Submitted OR Accepted)
         if hasattr(self, '_orders'):
-            stuck_orders = [o for o in self._orders if o.alive() and o.status == bt.Order.Submitted]
-            if stuck_orders:
-                self.logger.warning(f"Found {len(stuck_orders)} stuck orders - forcing execution")
-                for order in stuck_orders:
-                    # Execute ALL stuck orders, not just market orders
+            pending_orders = [o for o in self._orders if o.alive() and o.status in [bt.Order.Submitted, bt.Order.Accepted]]
+            if pending_orders:
+                self.logger.info(f"Found {len(pending_orders)} pending orders - forcing immediate execution")
+                for order in pending_orders:
+                    # Execute ALL pending orders immediately
                     try:
+                        self.logger.info(f"Forcing execution of order {order.ref} (status: {order.getstatusname()})")
                         self._execute_order_immediately(order)
                     except Exception as e:
-                        self.logger.error(f"Failed to execute stuck order {order.ref}: {e}")
+                        self.logger.error(f"Failed to execute pending order {order.ref}: {e}")
         
         return result
     
