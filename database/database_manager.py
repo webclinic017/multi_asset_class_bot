@@ -647,6 +647,48 @@ class DatabaseManager:
                 df.set_index('timestamp', inplace=True)
             
             return df
+    
+    # Sentiment History Management
+    def store_sentiment_data(self, symbol: str, timestamp: datetime, sentiment_score: float,
+                            news_count: int = 0, confidence: float = 0.0, signal: str = None,
+                            category: str = None, metadata: Dict = None):
+        """Store historical sentiment data"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO sentiment_history
+                (symbol, timestamp, sentiment_score, news_count, confidence, signal, category, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (symbol, timestamp, sentiment_score, news_count, confidence, signal, category,
+                  json.dumps(metadata) if metadata else None))
+            conn.commit()
+    
+    def get_sentiment_data(self, symbol: str, start_date: datetime = None,
+                          end_date: datetime = None, limit: int = 1000) -> pd.DataFrame:
+        """Get historical sentiment data"""
+        with self.get_connection() as conn:
+            query = "SELECT * FROM sentiment_history WHERE symbol = ?"
+            params = [symbol]
+            
+            if start_date:
+                query += " AND timestamp >= ?"
+                params.append(start_date)
+            
+            if end_date:
+                query += " AND timestamp <= ?"
+                params.append(end_date)
+            
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            
+            if not df.empty:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+            
+            return df
+            
             self.logger.info(f"Cleaned up data older than {days_to_keep} days")
 
 if __name__ == "__main__":

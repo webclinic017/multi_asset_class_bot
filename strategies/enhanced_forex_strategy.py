@@ -54,6 +54,19 @@ class OriginalMarketMakingStrategy(bt.Strategy):
     params = (
         # Initial Capital Parameter
         ('initial_capital', 100000.0),  # Explicit initial capital parameter
+        
+        # Backtest Date Range (for fundamental/sentiment data filtering)
+        ('backtest_start_date', None),       # Backtest start date
+        ('backtest_end_date', None),         # Backtest end date
+        ('backtest_symbol', None),           # Backtest symbol
+        
+        # Fundamental and Sentiment Integration
+        ('use_fundamental_data', True),      # Enable fundamental data integration
+        ('use_sentiment_data', True),        # Enable sentiment analysis
+        ('fundamental_weight', 0.10),        # 10% weight for fundamental signals
+        ('sentiment_weight', 0.20),          # 20% weight for sentiment signals
+        ('price_action_weight', 0.60),       # 60% weight for price action
+        ('technical_weight', 0.10),          # 10% weight for technical indicators
 
         # Optimized Core Moving Average Parameters
         ('fast_length', 8),   # Faster for quicker signals
@@ -133,8 +146,7 @@ class OriginalMarketMakingStrategy(bt.Strategy):
         ('max_drawdown_threshold', 0.80), # Allow 80% drawdown for ultra-high returns
         ('profit_factor_threshold', 0.1), # Ultra-low threshold for constant trading
         
-        # Enhanced Sentiment Integration
-        ('sentiment_weight', 0.35),    # Higher sentiment weight
+        # Sentiment Thresholds (weight is defined above with other weights)
         ('sentiment_threshold', 0.25), # Lower threshold for more signals
         ('news_impact_decay', 0.92),   # Faster decay for more responsive sentiment
         
@@ -153,8 +165,6 @@ class OriginalMarketMakingStrategy(bt.Strategy):
         # ULTRA-ULTRA-AGGRESSIVE Signal Parameters for Maximum Trading Frequency
         ('signal_strength_threshold', 0.005), # Ultra-ultra-low threshold for constant trading
         ('high_confidence_threshold', 0.05),  # Ultra-ultra-low confidence threshold
-        ('price_action_weight', 0.6),         # Price action weight in hybrid system
-        ('technical_weight', 0.4),            # Technical indicator weight
         
         # ULTRA-ULTRA-HIGH-FREQUENCY Trading Parameters for 2-3% Daily Returns
         ('max_trades_per_hour', 240),         # Ultra-ultra-high frequency trading (4 trades per minute)
@@ -178,6 +188,15 @@ class OriginalMarketMakingStrategy(bt.Strategy):
         # Use the same initial capital as the strategy parameter
         self.portfolio_tracker = PortfolioValueTracker(self.p.initial_capital)
         self.logger.info(f"Portfolio value tracker initialized with ${self.portfolio_tracker.initial_capital:,.2f}")
+        
+        # Initialize fundamental and sentiment data
+        self.fundamental_data = {}
+        self.sentiment_data = {}
+        self.sentiment_analyzer = None
+        
+        if self.p.use_fundamental_data or self.p.use_sentiment_data:
+            self.logger.info("=== INITIALIZING FUNDAMENTAL AND SENTIMENT DATA ===")
+            self._load_fundamental_and_sentiment_data()
         
         # Basic price data
         self.dataclose = self.datas[0].close
@@ -326,6 +345,500 @@ class OriginalMarketMakingStrategy(bt.Strategy):
             except:
                 self.logger.warning("Supply/Demand zones not available")
                 
+    def _load_fundamental_and_sentiment_data(self):
+        """Load fundamental data and initialize sentiment analyzer based on symbol and date range"""
+        try:
+            # Get symbol from data feed or parameters
+            symbol = self.p.backtest_symbol if self.p.backtest_symbol else (
+                self.datas[0]._name if hasattr(self.datas[0], '_name') else 'ES'
+            )
+            self.logger.info(f"Loading fundamental and sentiment data for symbol: {symbol}")
+            
+            # Get date range from parameters
+            start_date = self.p.backtest_start_date
+            end_date = self.p.backtest_end_date
+            
+            if start_date and end_date:
+                self.logger.info(f"Using backtest date range: {start_date} to {end_date}")
+                self.is_backtest_mode = True
+            else:
+                self.logger.warning("No backtest date range provided, using live/current data")
+                self.is_backtest_mode = False
+            
+            # Initialize sentiment analyzer if enabled
+            if self.p.use_sentiment_data:
+                try:
+                    from sentiment.futures_sentiment_analyzer import FuturesSentimentAnalyzer
+                    self.sentiment_analyzer = FuturesSentimentAnalyzer()
+                    self.logger.info("Sentiment analyzer initialized successfully")
+                    
+                    # Load historical sentiment data if in backtest mode
+                    if self.is_backtest_mode:
+                        from database.database_manager import DatabaseManager
+                        db = DatabaseManager()
+                        from datetime import datetime
+                        
+                        start_dt = datetime.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+                        end_dt = datetime.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+                        
+                        # Extract base symbol for sentiment
+                        base_symbol = symbol[:2] if len(symbol) > 2 else symbol
+                        
+                        # Load historical sentiment from database
+                        self.historical_sentiment = db.get_sentiment_data(base_symbol, start_dt, end_dt, limit=10000)
+                        
+                        if not self.historical_sentiment.empty:
+                            self.logger.info(f"Loaded {len(self.historical_sentiment)} historical sentiment records")
+                            self.logger.info(f"  Date range: {self.historical_sentiment.index.min()} to {self.historical_sentiment.index.max()}")
+                        else:
+                            self.logger.warning(f"No historical sentiment data found for {base_symbol} in backtest range")
+                            self.logger.warning("  Will use current sentiment as fallback")
+                            self.historical_sentiment = pd.DataFrame()
+                    else:
+                        self.historical_sentiment = pd.DataFrame()
+                        
+                except Exception as sentiment_error:
+                    self.logger.warning(f"Could not initialize sentiment analyzer: {sentiment_error}")
+                    self.sentiment_analyzer = None
+                    self.historical_sentiment = pd.DataFrame()
+            else:
+                self.historical_sentiment = pd.DataFrame()
+            
+            # Load fundamental data if enabled
+            if self.p.use_fundamental_data:
+                try:
+                    from database.database_manager import DatabaseManager
+                    db = DatabaseManager()
+                    
+                    # Convert date strings to datetime if needed
+                    start_dt = None
+                    end_dt = None
+                    if start_date:
+                        from datetime import datetime
+                        start_dt = datetime.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+                    if end_date:
+                        from datetime import datetime
+                        end_dt = datetime.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+                    
+                    # Determine which fundamental data to load based on symbol
+                    if symbol.startswith('ES') or symbol.startswith('NQ') or symbol.startswith('YM') or symbol.startswith('RTY'):
+                        # Equity index futures - load FRED data within date range
+                        self.logger.info(f"Loading FRED data for equity index futures: {symbol}")
+                        
+                        # Get data and filter by date range
+                        fed_funds_all = db.get_fundamental_data(symbol, 'FRED', 'Federal Funds Rate', limit=10000)
+                        vix_all = db.get_fundamental_data(symbol, 'FRED', 'VIX', limit=10000)
+                        treasury_all = db.get_fundamental_data(symbol, 'FRED', '10Y-2Y Spread', limit=10000)
+                        
+                        # Filter by date range if provided
+                        if start_dt and end_dt:
+                            if not fed_funds_all.empty:
+                                self.fundamental_data['fed_funds'] = fed_funds_all[(fed_funds_all.index >= start_dt) & (fed_funds_all.index <= end_dt)]
+                            if not vix_all.empty:
+                                self.fundamental_data['vix'] = vix_all[(vix_all.index >= start_dt) & (vix_all.index <= end_dt)]
+                            if not treasury_all.empty:
+                                self.fundamental_data['treasury_spread'] = treasury_all[(treasury_all.index >= start_dt) & (treasury_all.index <= end_dt)]
+                        else:
+                            self.fundamental_data['fed_funds'] = fed_funds_all
+                            self.fundamental_data['vix'] = vix_all
+                            self.fundamental_data['treasury_spread'] = treasury_all
+                        
+                        self.logger.info(f"Loaded {len(self.fundamental_data)} FRED series for {symbol}")
+                        for key, data in self.fundamental_data.items():
+                            if not data.empty:
+                                self.logger.info(f"  {key}: {len(data)} points from {data.index.min()} to {data.index.max()}")
+                        
+                    elif symbol.startswith('CL') or symbol.startswith('NG') or symbol.startswith('RB') or symbol.startswith('HO'):
+                        # Energy futures - load EIA data within date range
+                        self.logger.info(f"Loading EIA data for energy futures: {symbol}")
+                        
+                        if symbol.startswith('CL'):
+                            inventory_all = db.get_fundamental_data(symbol, 'EIA', 'Crude Oil Stocks', limit=10000)
+                            production_all = db.get_fundamental_data(symbol, 'EIA', 'Crude Oil Production', limit=10000)
+                            
+                            if start_dt and end_dt:
+                                if not inventory_all.empty:
+                                    self.fundamental_data['inventory'] = inventory_all[(inventory_all.index >= start_dt) & (inventory_all.index <= end_dt)]
+                                if not production_all.empty:
+                                    self.fundamental_data['production'] = production_all[(production_all.index >= start_dt) & (production_all.index <= end_dt)]
+                            else:
+                                self.fundamental_data['inventory'] = inventory_all
+                                self.fundamental_data['production'] = production_all
+                                
+                        elif symbol.startswith('NG'):
+                            storage_all = db.get_fundamental_data(symbol, 'EIA', 'Natural Gas Storage', limit=10000)
+                            
+                            if start_dt and end_dt and not storage_all.empty:
+                                self.fundamental_data['storage'] = storage_all[(storage_all.index >= start_dt) & (storage_all.index <= end_dt)]
+                            else:
+                                self.fundamental_data['storage'] = storage_all
+                        
+                        self.logger.info(f"Loaded {len(self.fundamental_data)} EIA series for {symbol}")
+                        for key, data in self.fundamental_data.items():
+                            if not data.empty:
+                                self.logger.info(f"  {key}: {len(data)} points from {data.index.min()} to {data.index.max()}")
+                        
+                    elif symbol.startswith('ZC') or symbol.startswith('ZS') or symbol.startswith('ZW'):
+                        # Agricultural futures - load USDA data within date range
+                        self.logger.info(f"Loading USDA data for agricultural futures: {symbol}")
+                        crop_name = {'ZC': 'Corn', 'ZS': 'Soybean', 'ZW': 'Wheat'}.get(symbol[:2], 'Corn')
+                        
+                        stocks_all = db.get_fundamental_data(symbol, 'USDA', f'{crop_name} Stocks', limit=10000)
+                        export_all = db.get_fundamental_data(symbol, 'USDA', f'{crop_name} Export Sales', limit=10000)
+                        
+                        if start_dt and end_dt:
+                            if not stocks_all.empty:
+                                self.fundamental_data['stocks'] = stocks_all[(stocks_all.index >= start_dt) & (stocks_all.index <= end_dt)]
+                            if not export_all.empty:
+                                self.fundamental_data['export_sales'] = export_all[(export_all.index >= start_dt) & (export_all.index <= end_dt)]
+                        else:
+                            self.fundamental_data['stocks'] = stocks_all
+                            self.fundamental_data['export_sales'] = export_all
+                        
+                        self.logger.info(f"Loaded {len(self.fundamental_data)} USDA series for {symbol}")
+                        for key, data in self.fundamental_data.items():
+                            if not data.empty:
+                                self.logger.info(f"  {key}: {len(data)} points from {data.index.min()} to {data.index.max()}")
+                        
+                    elif symbol.startswith('GC') or symbol.startswith('SI'):
+                        # Precious metals - load FRED data within date range
+                        self.logger.info(f"Loading FRED data for precious metals: {symbol}")
+                        
+                        real_rates_all = db.get_fundamental_data(symbol, 'FRED', 'Real Interest Rates', limit=10000)
+                        dollar_all = db.get_fundamental_data(symbol, 'FRED', 'Dollar Index', limit=10000)
+                        
+                        if start_dt and end_dt:
+                            if not real_rates_all.empty:
+                                self.fundamental_data['real_rates'] = real_rates_all[(real_rates_all.index >= start_dt) & (real_rates_all.index <= end_dt)]
+                            if not dollar_all.empty:
+                                self.fundamental_data['dollar_index'] = dollar_all[(dollar_all.index >= start_dt) & (dollar_all.index <= end_dt)]
+                        else:
+                            self.fundamental_data['real_rates'] = real_rates_all
+                            self.fundamental_data['dollar_index'] = dollar_all
+                        
+                        self.logger.info(f"Loaded {len(self.fundamental_data)} FRED series for {symbol}")
+                        for key, data in self.fundamental_data.items():
+                            if not data.empty:
+                                self.logger.info(f"  {key}: {len(data)} points from {data.index.min()} to {data.index.max()}")
+                    
+                    else:
+                        self.logger.info(f"No specific fundamental data mapping for {symbol}, using generic economic data")
+                        fed_funds_all = db.get_fundamental_data('ES', 'FRED', 'Federal Funds Rate', limit=10000)
+                        
+                        if start_dt and end_dt and not fed_funds_all.empty:
+                            self.fundamental_data['fed_funds'] = fed_funds_all[(fed_funds_all.index >= start_dt) & (fed_funds_all.index <= end_dt)]
+                        else:
+                            self.fundamental_data['fed_funds'] = fed_funds_all
+                    
+                except Exception as fundamental_error:
+                    self.logger.warning(f"Could not load fundamental data: {fundamental_error}")
+                    self.fundamental_data = {}
+            
+            self.logger.info(f"Fundamental data loaded: {len(self.fundamental_data)} series")
+            self.logger.info(f"Sentiment analyzer: {'Enabled' if self.sentiment_analyzer else 'Disabled'}")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading fundamental and sentiment data: {e}")
+            self.fundamental_data = {}
+            self.sentiment_analyzer = None
+
+    def generate_fundamental_signals(self) -> Dict[str, float]:
+        """Generate trading signals from fundamental data (10% weight)"""
+        signals = {
+            'bullish_score': 0.0,
+            'bearish_score': 0.0,
+            'confidence': 0.0,
+            'components': {}
+        }
+        
+        if not self.p.use_fundamental_data or not self.fundamental_data:
+            return signals
+        
+        try:
+            symbol = self.datas[0]._name if hasattr(self.datas[0], '_name') else 'ES'
+            self.logger.info(f"=== FUNDAMENTAL ANALYSIS FOR {symbol} ===")
+            
+            # ES/NQ: Fed policy and VIX signals
+            if symbol.startswith('ES') or symbol.startswith('NQ'):
+                # Federal Funds Rate analysis
+                if 'fed_funds' in self.fundamental_data and not self.fundamental_data['fed_funds'].empty:
+                    fed_data = self.fundamental_data['fed_funds']
+                    if len(fed_data) >= 2:
+                        latest_rate = fed_data.iloc[-1]['value']
+                        prev_rate = fed_data.iloc[-2]['value']
+                        rate_change = latest_rate - prev_rate
+                        
+                        self.logger.info(f"Fed Funds Rate: {latest_rate:.2f}% (change: {rate_change:+.2f}%)")
+                        
+                        # Rising rates = bearish for equities
+                        if rate_change > 0.25:  # 25bps increase
+                            signals['bearish_score'] += 0.4
+                            signals['components']['fed_policy'] = -0.4
+                            self.logger.info("  Fed hiking aggressively: -0.4 bearish")
+                        elif rate_change < -0.25:  # 25bps decrease
+                            signals['bullish_score'] += 0.4
+                            signals['components']['fed_policy'] = 0.4
+                            self.logger.info("  Fed cutting rates: +0.4 bullish")
+                
+                # VIX analysis
+                if 'vix' in self.fundamental_data and not self.fundamental_data['vix'].empty:
+                    vix_data = self.fundamental_data['vix']
+                    latest_vix = vix_data.iloc[-1]['value']
+                    
+                    self.logger.info(f"VIX Level: {latest_vix:.2f}")
+                    
+                    if latest_vix > 25:  # High fear
+                        signals['bearish_score'] += 0.3
+                        signals['components']['vix'] = -0.3
+                        self.logger.info("  High VIX (fear): -0.3 bearish")
+                    elif latest_vix < 15:  # Low fear (complacency)
+                        signals['bullish_score'] += 0.3
+                        signals['components']['vix'] = 0.3
+                        self.logger.info("  Low VIX (complacency): +0.3 bullish")
+            
+            # CL: Oil inventory signals
+            elif symbol.startswith('CL'):
+                if 'inventory' in self.fundamental_data and not self.fundamental_data['inventory'].empty:
+                    inventory_data = self.fundamental_data['inventory']
+                    if len(inventory_data) >= 2:
+                        latest_inventory = inventory_data.iloc[-1]['value']
+                        prev_inventory = inventory_data.iloc[-2]['value']
+                        inventory_change_pct = (latest_inventory - prev_inventory) / prev_inventory
+                        
+                        self.logger.info(f"Crude Oil Inventory: {latest_inventory:.0f} (change: {inventory_change_pct*100:+.2f}%)")
+                        
+                        # Rising inventory = bearish (oversupply)
+                        if inventory_change_pct > 0.02:  # 2% increase
+                            signals['bearish_score'] += 0.5
+                            signals['components']['inventory'] = -0.5
+                            self.logger.info("  Inventory building: -0.5 bearish")
+                        elif inventory_change_pct < -0.02:  # 2% decrease
+                            signals['bullish_score'] += 0.5
+                            signals['components']['inventory'] = 0.5
+                            self.logger.info("  Inventory declining: +0.5 bullish")
+            
+            # ZC/ZS/ZW: Crop stocks signals
+            elif symbol.startswith('Z'):
+                if 'stocks' in self.fundamental_data and not self.fundamental_data['stocks'].empty:
+                    stocks_data = self.fundamental_data['stocks']
+                    latest_stocks = stocks_data.iloc[-1]['value']
+                    historical_avg = stocks_data['value'].mean()
+                    
+                    stocks_ratio = latest_stocks / historical_avg
+                    self.logger.info(f"Crop Stocks: {latest_stocks:.0f} (vs avg: {stocks_ratio:.2f}x)")
+                    
+                    # Below average stocks = bullish (tight supply)
+                    if stocks_ratio < 0.9:
+                        signals['bullish_score'] += 0.4
+                        signals['components']['stocks'] = 0.4
+                        self.logger.info("  Low stocks (tight supply): +0.4 bullish")
+                    elif stocks_ratio > 1.1:
+                        signals['bearish_score'] += 0.4
+                        signals['components']['stocks'] = -0.4
+                        self.logger.info("  High stocks (oversupply): -0.4 bearish")
+            
+            # GC/SI: Real rates and dollar signals
+            elif symbol.startswith('GC') or symbol.startswith('SI'):
+                if 'real_rates' in self.fundamental_data and not self.fundamental_data['real_rates'].empty:
+                    rates_data = self.fundamental_data['real_rates']
+                    if len(rates_data) >= 2:
+                        latest_rate = rates_data.iloc[-1]['value']
+                        prev_rate = rates_data.iloc[-2]['value']
+                        
+                        self.logger.info(f"Real Interest Rates: {latest_rate:.2f}%")
+                        
+                        # Falling real rates = bullish for gold
+                        if latest_rate < prev_rate:
+                            signals['bullish_score'] += 0.3
+                            signals['components']['real_rates'] = 0.3
+                            self.logger.info("  Falling real rates: +0.3 bullish")
+                        elif latest_rate > prev_rate:
+                            signals['bearish_score'] += 0.3
+                            signals['components']['real_rates'] = -0.3
+                            self.logger.info("  Rising real rates: -0.3 bearish")
+            
+            # Calculate confidence based on data availability and freshness
+            data_count = sum(1 for data in self.fundamental_data.values() if not data.empty)
+            signals['confidence'] = min(data_count / 3.0, 1.0)  # Max confidence with 3+ data series
+            
+            self.logger.info(f"Fundamental Signals Summary:")
+            self.logger.info(f"  Bullish Score: {signals['bullish_score']:.3f}")
+            self.logger.info(f"  Bearish Score: {signals['bearish_score']:.3f}")
+            self.logger.info(f"  Confidence: {signals['confidence']:.3f}")
+            self.logger.info(f"  Components: {signals['components']}")
+            
+        except Exception as e:
+            self.logger.error(f"Error generating fundamental signals: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        return signals
+
+    def generate_sentiment_signals(self) -> Dict[str, float]:
+        """
+        Generate trading signals from sentiment analysis (20% weight)
+        
+        For current year backtests: Uses real-time sentiment
+        For historical backtests: Returns neutral (weight redistributed to fundamental)
+        For live trading: Uses real-time sentiment
+        """
+        signals = {
+            'bullish_score': 0.0,
+            'bearish_score': 0.0,
+            'confidence': 0.0,
+            'sentiment_score': 0.0,
+            'news_count': 0
+        }
+        
+        if not self.p.use_sentiment_data:
+            return signals
+        
+        try:
+            # DEBUG: Log all parameter values
+            self.logger.info(f"DEBUG: backtest_start_date = {self.p.backtest_start_date}")
+            self.logger.info(f"DEBUG: backtest_end_date = {self.p.backtest_end_date}")
+            self.logger.info(f"DEBUG: backtest_symbol = {self.p.backtest_symbol}")
+            
+            # Get symbol - try multiple sources
+            symbol = None
+            if self.p.backtest_symbol:
+                symbol = self.p.backtest_symbol
+                self.logger.info(f"Using backtest_symbol parameter: {symbol}")
+            elif hasattr(self.datas[0], '_name'):
+                symbol = self.datas[0]._name
+                self.logger.info(f"Using data feed _name: {symbol}")
+            else:
+                symbol = 'ES'  # Default fallback
+                self.logger.info(f"Using default symbol: {symbol}")
+            
+            # Clean symbol (remove underscores, futures contract codes)
+            original_symbol = symbol
+            symbol = symbol.replace('_', '').replace('/', '') if symbol else 'ES'
+            
+            # Extract base symbol for sentiment analysis (first 2 chars for futures)
+            base_symbol = symbol[:2] if len(symbol) >= 2 else symbol
+            
+            self.logger.info(f"=== SENTIMENT ANALYSIS FOR {base_symbol} (from {original_symbol}) ===")
+            
+            # Check if this is a backtest and determine mode based on year
+            if self.p.backtest_start_date and self.p.backtest_end_date:
+                self.logger.info(f"DEBUG: Backtest dates detected - start: {self.p.backtest_start_date}, end: {self.p.backtest_end_date}")
+                # BACKTEST MODE - Check year to determine if we use sentiment
+                from datetime import datetime
+                
+                start_dt = datetime.fromisoformat(self.p.backtest_start_date) if isinstance(self.p.backtest_start_date, str) else self.p.backtest_start_date
+                end_dt = datetime.fromisoformat(self.p.backtest_end_date) if isinstance(self.p.backtest_end_date, str) else self.p.backtest_end_date
+                current_year = datetime.now().year
+                
+                self.logger.info(f"Backtest mode detected: {start_dt.year}-{end_dt.year}, Current year: {current_year}")
+                
+                # CRITICAL: Only use sentiment if BOTH start AND end years equal current year
+                if start_dt.year == current_year and end_dt.year == current_year:
+                    # Current year backtest - use real-time sentiment
+                    self.logger.info(f"Current year backtest ({current_year}): Fetching real-time sentiment")
+                    
+                    if self.sentiment_analyzer:
+                        sentiment_result = self.sentiment_analyzer.get_commodity_sentiment(base_symbol, hours_back=24)
+                        sentiment_score = sentiment_result['sentiment_score']
+                        news_count = sentiment_result['news_count']
+                        confidence = sentiment_result['confidence']
+                        signal = sentiment_result['signal']
+                        self.logger.info(f"  Real-time sentiment fetched: score={sentiment_score:.3f}, news={news_count}")
+                    else:
+                        sentiment_score = 0.0
+                        news_count = 0
+                        confidence = 0.0
+                        signal = 'NEUTRAL'
+                        self.logger.warning("  Sentiment analyzer not available, using neutral")
+                else:
+                    # Historical backtest (any year before current) - use neutral
+                    self.logger.info(f"Historical backtest ({start_dt.year}-{end_dt.year} < {current_year}): Using neutral sentiment")
+                    self.logger.info(f"  Sentiment weight (20%) will be redistributed to fundamental (30% total)")
+                    sentiment_score = 0.0
+                    news_count = 0
+                    confidence = 0.0
+                    signal = 'NEUTRAL'
+            else:
+                # LIVE TRADING MODE (no backtest dates) - always use real-time sentiment
+                self.logger.info(f"Live trading mode (no backtest dates): Fetching real-time sentiment")
+                
+                if self.sentiment_analyzer:
+                    sentiment_result = self.sentiment_analyzer.get_commodity_sentiment(base_symbol, hours_back=24)
+                    sentiment_score = sentiment_result['sentiment_score']
+                    news_count = sentiment_result['news_count']
+                    confidence = sentiment_result['confidence']
+                    signal = sentiment_result['signal']
+                    self.logger.info(f"  Real-time sentiment fetched: score={sentiment_score:.3f}, news={news_count}")
+                else:
+                    self.logger.warning("Sentiment analyzer not available, using neutral")
+                    sentiment_score = 0.0
+                    news_count = 0
+                    confidence = 0.0
+                    signal = 'NEUTRAL'
+            
+            self.logger.info(f"Sentiment Analysis Results:")
+            self.logger.info(f"  Sentiment Score: {sentiment_score:.3f}")
+            self.logger.info(f"  Signal: {signal}")
+            self.logger.info(f"  News Count: {news_count}")
+            self.logger.info(f"  Confidence: {confidence:.3f}")
+            
+            # Convert sentiment score to bullish/bearish signals
+            if sentiment_score > 0.3:
+                signals['bullish_score'] = sentiment_score
+                self.logger.info(f"  Bullish sentiment: +{sentiment_score:.3f}")
+            elif sentiment_score < -0.3:
+                signals['bearish_score'] = abs(sentiment_score)
+                self.logger.info(f"  Bearish sentiment: {sentiment_score:.3f}")
+            else:
+                self.logger.info(f"  Neutral sentiment")
+            
+            signals['sentiment_score'] = sentiment_score
+            signals['news_count'] = news_count
+            signals['confidence'] = confidence
+            
+            # Store for later use
+            from datetime import datetime
+            self.sentiment_data = {
+                'score': sentiment_score,
+                'signal': signal,
+                'confidence': confidence,
+                'news_count': news_count,
+                'timestamp': datetime.now()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error generating sentiment signals: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        return signals
+
+    def check_fundamental_filters(self, signal_direction: str) -> bool:
+        """Check if fundamental data supports the trade direction"""
+        if not self.p.use_fundamental_data or not self.fundamental_data:
+            return True  # No filter if fundamentals not enabled
+        
+        try:
+            fundamental_signals = self.generate_fundamental_signals()
+            
+            # Strong fundamental bearish signal
+            if fundamental_signals['bearish_score'] > 0.6:
+                if signal_direction == 'BUY':
+                    self.logger.warning("Fundamental filter: Blocking BUY due to strong bearish fundamentals")
+                    return False
+            
+            # Strong fundamental bullish signal
+            if fundamental_signals['bullish_score'] > 0.6:
+                if signal_direction == 'SELL':
+                    self.logger.warning("Fundamental filter: Blocking SELL due to strong bullish fundamentals")
+                    return False
+            
+            return True  # Fundamentals don't contradict signal
+            
+        except Exception as e:
+            self.logger.error(f"Error in fundamental filter: {e}")
+            return True  # Allow trade on error
+
     def _init_ml_features(self):
         """Initialize machine learning features"""
         # Momentum features
@@ -1280,8 +1793,9 @@ class OriginalMarketMakingStrategy(bt.Strategy):
 
     def generate_hybrid_signals(self) -> Dict[str, Any]:
         """
-        Generate hybrid trading signals with dynamic weighting: adaptive price action + technical indicators
-        Combines candlestick patterns, S/R levels, trend lines with traditional indicators
+        Generate hybrid trading signals with NEW weighting:
+        60% Price Action + 10% Technical + 10% Fundamental + 20% Sentiment
+        Combines candlestick patterns, S/R levels, trend lines, indicators, fundamentals, and sentiment
         """
         signals = {
             'buy_score': 0.0,
@@ -1292,13 +1806,17 @@ class OriginalMarketMakingStrategy(bt.Strategy):
             'volatility_filter': True,
             'price_action_score': 0.0,
             'technical_score': 0.0,
+            'fundamental_score': 0.0,
+            'sentiment_score': 0.0,
             'components': {},
             'price_action_details': {},
-            'technical_details': {}
+            'technical_details': {},
+            'fundamental_details': {},
+            'sentiment_details': {}
         }
         
         try:
-            self.logger.info("=== HYBRID SIGNAL GENERATION (60% Price Action + 40% Technical) ===")
+            self.logger.info("=== HYBRID SIGNAL GENERATION (60% PA + 10% Tech + 10% Fund + 20% Sent) ===")
             
             # === PRICE ACTION ANALYSIS (60% WEIGHT) ===
             self.logger.info("=== PRICE ACTION ANALYSIS (60% WEIGHT) ===")
@@ -1464,46 +1982,137 @@ class OriginalMarketMakingStrategy(bt.Strategy):
                 'bb_position': bb_position
             }
             
-            # === HYBRID SIGNAL CALCULATION WITH DYNAMIC WEIGHTS ===
-            self.logger.info("=== HYBRID SIGNAL CALCULATION WITH DYNAMIC WEIGHTS ===")
-
-            # Get dynamic weights based on performance and regime
-            dynamic_weights = self.calculate_dynamic_signal_weights()
-            price_action_weight = dynamic_weights['price_action']
-            technical_weight = dynamic_weights['technical']
-
-            self.logger.info(f"Dynamic Weights - Price Action: {price_action_weight:.3f}, Technical: {technical_weight:.3f}")
+            # === FUNDAMENTAL ANALYSIS (10% WEIGHT) ===
+            self.logger.info("=== FUNDAMENTAL ANALYSIS (10% WEIGHT) ===")
+            
+            fundamental_signals = self.generate_fundamental_signals()
+            fund_bullish = fundamental_signals['bullish_score']
+            fund_bearish = fundamental_signals['bearish_score']
+            fund_confidence = fundamental_signals['confidence']
+            
+            self.logger.info(f"Fundamental Scores:")
+            self.logger.info(f"  Bullish: {fund_bullish:.4f}")
+            self.logger.info(f"  Bearish: {fund_bearish:.4f}")
+            self.logger.info(f"  Confidence: {fund_confidence:.4f}")
+            self.logger.info(f"  Components: {fundamental_signals.get('components', {})}")
+            
+            signals['fundamental_details'] = fundamental_signals
+            
+            # === SENTIMENT ANALYSIS (20% WEIGHT) ===
+            self.logger.info("=== SENTIMENT ANALYSIS (20% WEIGHT) ===")
+            
+            sentiment_signals = self.generate_sentiment_signals()
+            sent_bullish = sentiment_signals['bullish_score']
+            sent_bearish = sentiment_signals['bearish_score']
+            sent_confidence = sentiment_signals['confidence']
+            
+            self.logger.info(f"Sentiment Scores:")
+            self.logger.info(f"  Bullish: {sent_bullish:.4f}")
+            self.logger.info(f"  Bearish: {sent_bearish:.4f}")
+            self.logger.info(f"  Confidence: {sent_confidence:.4f}")
+            self.logger.info(f"  Sentiment Score: {sentiment_signals.get('sentiment_score', 0):.4f}")
+            self.logger.info(f"  News Count: {sentiment_signals.get('news_count', 0)}")
+            
+            signals['sentiment_details'] = sentiment_signals
+            
+            # === HYBRID SIGNAL CALCULATION WITH YEAR-BASED DYNAMIC WEIGHTS ===
+            # Current year backtest (2025): 60% PA + 10% Tech + 10% Fund + 20% Sent
+            # Historical backtest (2020-2024): 60% PA + 10% Tech + 30% Fund + 0% Sent
+            # Live trading (no dates): 60% PA + 10% Tech + 10% Fund + 20% Sent
+            
+            # Determine if we should use sentiment based on backtest year
+            use_sentiment_for_signals = False
+            mode_label = "LIVE TRADING MODE"
+            
+            if self.p.backtest_start_date and self.p.backtest_end_date:
+                # Backtest mode - check if BOTH start and end years equal current year
+                from datetime import datetime
+                
+                start_dt = datetime.fromisoformat(self.p.backtest_start_date) if isinstance(self.p.backtest_start_date, str) else self.p.backtest_start_date
+                end_dt = datetime.fromisoformat(self.p.backtest_end_date) if isinstance(self.p.backtest_end_date, str) else self.p.backtest_end_date
+                current_year = datetime.now().year  # 2025
+                
+                # CRITICAL: Only use sentiment if BOTH years equal current year (2025)
+                # This means 2024 backtests will NOT use sentiment
+                if start_dt.year == current_year and end_dt.year == current_year:
+                    use_sentiment_for_signals = True
+                    mode_label = f"BACKTEST (CURRENT YEAR {current_year})"
+                    self.logger.info(f"[OK] Backtest in current year {current_year}: Using real-time sentiment (20%)")
+                else:
+                    use_sentiment_for_signals = False
+                    mode_label = f"BACKTEST (HISTORICAL {start_dt.year}-{end_dt.year})"
+                    self.logger.info(f"[OK] Historical backtest ({start_dt.year}-{end_dt.year}): No sentiment, redistributing 20% to fundamental (30% total)")
+            else:
+                # Live trading mode (no backtest dates) - always use sentiment
+                use_sentiment_for_signals = True
+                mode_label = "LIVE TRADING"
+                self.logger.info(f"[OK] Live trading mode: Using real-time sentiment (20%)")
+            
+            # Apply weights based on mode
+            if use_sentiment_for_signals:
+                # Use full sentiment weight (current year backtest or live trading)
+                price_action_weight = self.p.price_action_weight  # 0.60
+                technical_weight = self.p.technical_weight        # 0.10
+                fundamental_weight = self.p.fundamental_weight    # 0.10
+                sentiment_weight = self.p.sentiment_weight        # 0.20
+            else:
+                # Historical backtest - redistribute sentiment weight to fundamental
+                price_action_weight = self.p.price_action_weight  # 0.60
+                technical_weight = self.p.technical_weight        # 0.10
+                fundamental_weight = self.p.fundamental_weight + self.p.sentiment_weight  # 0.30 (10% + 20%)
+                sentiment_weight = 0.0  # 0.00
+            
+            self.logger.info(f"=== HYBRID SIGNAL CALCULATION ({mode_label}) ===")
+            self.logger.info(f"Signal Weights:")
+            self.logger.info(f"  Price Action: {price_action_weight:.1%}")
+            self.logger.info(f"  Technical: {technical_weight:.1%}")
+            self.logger.info(f"  Fundamental: {fundamental_weight:.1%}")
+            self.logger.info(f"  Sentiment: {sentiment_weight:.1%}")
+            self.logger.info(f"  Total: {(price_action_weight + technical_weight + fundamental_weight + sentiment_weight):.1%}")
             
             # Calculate weighted scores
             weighted_pa_bullish = pa_bullish * price_action_weight
             weighted_pa_bearish = pa_bearish * price_action_weight
             weighted_tech_bullish = tech_bullish * technical_weight
             weighted_tech_bearish = tech_bearish * technical_weight
+            weighted_fund_bullish = fund_bullish * fundamental_weight
+            weighted_fund_bearish = fund_bearish * fundamental_weight
+            weighted_sent_bullish = sent_bullish * sentiment_weight
+            weighted_sent_bearish = sent_bearish * sentiment_weight
             
             self.logger.info(f"Weighted Scores:")
-            self.logger.info(f"  Price Action Bullish (60%): {pa_bullish:.4f} * 0.6 = {weighted_pa_bullish:.4f}")
-            self.logger.info(f"  Price Action Bearish (60%): {pa_bearish:.4f} * 0.6 = {weighted_pa_bearish:.4f}")
-            self.logger.info(f"  Technical Bullish (40%): {tech_bullish:.4f} * 0.4 = {weighted_tech_bullish:.4f}")
-            self.logger.info(f"  Technical Bearish (40%): {tech_bearish:.4f} * 0.4 = {weighted_tech_bearish:.4f}")
+            self.logger.info(f"  Price Action Bullish (60%): {pa_bullish:.4f} * {price_action_weight} = {weighted_pa_bullish:.4f}")
+            self.logger.info(f"  Price Action Bearish (60%): {pa_bearish:.4f} * {price_action_weight} = {weighted_pa_bearish:.4f}")
+            self.logger.info(f"  Technical Bullish (10%): {tech_bullish:.4f} * {technical_weight} = {weighted_tech_bullish:.4f}")
+            self.logger.info(f"  Technical Bearish (10%): {tech_bearish:.4f} * {technical_weight} = {weighted_tech_bearish:.4f}")
+            self.logger.info(f"  Fundamental Bullish (10%): {fund_bullish:.4f} * {fundamental_weight} = {weighted_fund_bullish:.4f}")
+            self.logger.info(f"  Fundamental Bearish (10%): {fund_bearish:.4f} * {fundamental_weight} = {weighted_fund_bearish:.4f}")
+            self.logger.info(f"  Sentiment Bullish (20%): {sent_bullish:.4f} * {sentiment_weight} = {weighted_sent_bullish:.4f}")
+            self.logger.info(f"  Sentiment Bearish (20%): {sent_bearish:.4f} * {sentiment_weight} = {weighted_sent_bearish:.4f}")
             
-            # Final hybrid scores
-            final_bullish = weighted_pa_bullish + weighted_tech_bullish
-            final_bearish = weighted_pa_bearish + weighted_tech_bearish
+            # Final hybrid scores with all four components
+            final_bullish = weighted_pa_bullish + weighted_tech_bullish + weighted_fund_bullish + weighted_sent_bullish
+            final_bearish = weighted_pa_bearish + weighted_tech_bearish + weighted_fund_bearish + weighted_sent_bearish
             
             signals['buy_score'] = final_bullish
             signals['sell_score'] = final_bearish
             signals['signal_strength'] = max(final_bullish, final_bearish)
             signals['price_action_score'] = pa_bullish + pa_bearish
             signals['technical_score'] = tech_bullish + tech_bearish
+            signals['fundamental_score'] = fund_bullish + fund_bearish
+            signals['sentiment_score'] = sent_bullish + sent_bearish
             
-            # Calculate combined confidence
-            pa_weight_in_confidence = 0.6
-            tech_weight_in_confidence = 0.4
-            
+            # Calculate combined confidence from all components
             # Technical confidence based on indicator agreement
             tech_confidence = min(abs(tech_bullish - tech_bearish) / max(tech_bullish + tech_bearish, 0.1), 1.0)
             
-            combined_confidence = (pa_confidence * pa_weight_in_confidence) + (tech_confidence * tech_weight_in_confidence)
+            # Weighted confidence calculation
+            combined_confidence = (
+                (pa_confidence * price_action_weight) +
+                (tech_confidence * technical_weight) +
+                (fund_confidence * fundamental_weight) +
+                (sent_confidence * sentiment_weight)
+            )
             signals['confidence'] = combined_confidence
             
             self.logger.info(f"Final Hybrid Scores:")
@@ -1511,8 +2120,10 @@ class OriginalMarketMakingStrategy(bt.Strategy):
             self.logger.info(f"  Sell Score: {signals['sell_score']:.4f}")
             self.logger.info(f"  Signal Strength: {signals['signal_strength']:.4f}")
             self.logger.info(f"  Combined Confidence: {signals['confidence']:.4f}")
-            self.logger.info(f"  Price Action Contribution: {signals['price_action_score']:.4f}")
-            self.logger.info(f"  Technical Contribution: {signals['technical_score']:.4f}")
+            self.logger.info(f"  Price Action Contribution (60%): {signals['price_action_score']:.4f}")
+            self.logger.info(f"  Technical Contribution (10%): {signals['technical_score']:.4f}")
+            self.logger.info(f"  Fundamental Contribution (10%): {signals['fundamental_score']:.4f}")
+            self.logger.info(f"  Sentiment Contribution (20%): {signals['sentiment_score']:.4f}")
             
             # Enhanced filters
             self.logger.info("=== FILTER EVALUATION ===")
@@ -1544,8 +2155,14 @@ class OriginalMarketMakingStrategy(bt.Strategy):
                 'price_action_bearish': weighted_pa_bearish,
                 'technical_bullish': weighted_tech_bullish,
                 'technical_bearish': weighted_tech_bearish,
+                'fundamental_bullish': weighted_fund_bullish,
+                'fundamental_bearish': weighted_fund_bearish,
+                'sentiment_bullish': weighted_sent_bullish,
+                'sentiment_bearish': weighted_sent_bearish,
                 'price_action_confidence': pa_confidence,
                 'technical_confidence': tech_confidence,
+                'fundamental_confidence': fund_confidence,
+                'sentiment_confidence': sent_confidence,
                 **tech_components
             }
             
@@ -1554,7 +2171,9 @@ class OriginalMarketMakingStrategy(bt.Strategy):
             self.logger.info(f"  Signal Strength: {signals['signal_strength']:.4f}")
             self.logger.info(f"  Confidence: {signals['confidence']:.4f}")
             self.logger.info(f"  Price Action Weight: 60%")
-            self.logger.info(f"  Technical Weight: 40%")
+            self.logger.info(f"  Technical Weight: 10%")
+            self.logger.info(f"  Fundamental Weight: 10%")
+            self.logger.info(f"  Sentiment Weight: 20%")
             
             return signals
             
@@ -1753,6 +2372,11 @@ class OriginalMarketMakingStrategy(bt.Strategy):
             
             # Apply filters only if we have a valid signal direction
             filters_pass = signals['volatility_filter'] and signals['regime_filter']
+            
+            # Apply fundamental filter if enabled
+            if signal_direction and not self.check_fundamental_filters(signal_direction):
+                self.logger.info(f"Trade blocked by fundamental filter for {signal_direction}")
+                filters_pass = False
             
             # Entry logic with corrected signal direction logic
             if (signal_direction == 'BUY' and filters_pass):

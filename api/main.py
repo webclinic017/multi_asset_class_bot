@@ -588,6 +588,7 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
         
         # Get initial sentiment for the symbol if available
         initial_sentiment = None
+        sentiment_data_for_strategy = None
         if sentiment_analyzer:
             try:
                 # Extract base symbol (e.g., EUR_USD -> EURUSD or ES)
@@ -598,6 +599,16 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 
                 initial_sentiment = sentiment_analyzer.get_commodity_sentiment(symbol_for_sentiment, hours_back=24)
                 logger.info(f"Initial sentiment for {symbol_for_sentiment}: {initial_sentiment['signal']} (score: {initial_sentiment['sentiment_score']:.2f})")
+                
+                # Store sentiment data for strategy use
+                sentiment_data_for_strategy = {
+                    'symbol': symbol_for_sentiment,
+                    'score': initial_sentiment['sentiment_score'],
+                    'signal': initial_sentiment['signal'],
+                    'confidence': initial_sentiment['confidence'],
+                    'news_count': initial_sentiment['news_count'],
+                    'timestamp': initial_sentiment['timestamp']
+                }
                 
                 # Broadcast sentiment data
                 await manager.broadcast(json.dumps({
@@ -1015,6 +1026,14 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                 logger.info("=== ADDING INITIAL CAPITAL PARAMETER ===")
                 strategy_params['initial_capital'] = backtest_request.initial_capital
                 logger.info(f"Added initial_capital: {backtest_request.initial_capital}")
+                
+                # Add backtest date range for fundamental/sentiment data filtering
+                logger.info("=== ADDING BACKTEST DATE RANGE FOR FUNDAMENTAL/SENTIMENT ===")
+                strategy_params['backtest_start_date'] = backtest_request.start_date
+                strategy_params['backtest_end_date'] = backtest_request.end_date
+                strategy_params['backtest_symbol'] = backtest_request.symbol
+                logger.info(f"Added backtest date range: {backtest_request.start_date} to {backtest_request.end_date}")
+                logger.info(f"Added backtest symbol: {backtest_request.symbol}")
 
                 # Add printlog parameter
                 logger.info("=== MODIFYING STRATEGY PARAMETERS ===")
@@ -1043,7 +1062,10 @@ async def run_real_backtest_task(session_id: int, backtest_request: BacktestRequ
                     'breakout_multiplier', 'mean_reversion_factor', 'volatility_expansion_threshold',
                     'use_gpu', 'gpu_batch_size', 'gpu_lookback', 'signal_strength_threshold',
                     'high_confidence_threshold', 'price_action_weight', 'technical_weight',
-                    'max_trades_per_hour', 'min_time_between_trades', 'quick_exit_threshold', 'printlog'
+                    'max_trades_per_hour', 'min_time_between_trades', 'quick_exit_threshold', 'printlog',
+                    # Fundamental and Sentiment Integration Parameters
+                    'backtest_start_date', 'backtest_end_date', 'backtest_symbol',
+                    'use_fundamental_data', 'use_sentiment_data', 'fundamental_weight'
                 }
                 
                 hft_strategy_params = {
